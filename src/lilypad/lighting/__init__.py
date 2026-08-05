@@ -34,6 +34,11 @@ def make_backend(preference: str = "auto") -> LightingBackend:
     for name in order:
         backend = _try(name)
         if backend is not None:
+            if name != "mock":
+                # Hardware backends block on USB/daemon I/O — keep that out
+                # of the render loop.
+                from .threaded import ThreadedLightingBackend
+                backend = ThreadedLightingBackend(backend)
             log.info("lighting backend: %s", backend.name)
             return backend
     log.warning("falling back to mock lighting backend")

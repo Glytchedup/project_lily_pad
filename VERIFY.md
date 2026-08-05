@@ -24,6 +24,9 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       and **nothing OS-ish happens** (no console, no VT switch, no blanking).
 - [ ] Two keys at once → chord supernova; palm-mash 5+ keys → rainbow chaos
       mode, calming down when released.
+- Note: the left-edge M1–M5 macro keys may do nothing at all — the lighting
+  driver owns their USB interface (RESEARCH.md §1), so they can't emit
+  events. That's expected and harmless; every standard key must work.
 
 ## 3. Exclusive capture (the security property)
 

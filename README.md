@@ -108,7 +108,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 47 unit tests
+pytest                         # 52 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 
@@ -133,5 +133,5 @@ procedurally generated (synth + espeak-ng) — no copyrighted assets.
 
 ## License
 
-MIT — see [pyproject.toml](pyproject.toml). Original code and art; inspired by
+MIT — see [LICENSE](LICENSE). Original code and art; inspired by
 the spirit of BabySmash and bambam (see RESEARCH.md §6), sharing no code.

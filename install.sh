@@ -34,7 +34,7 @@ apt-get update
 apt-get install -y --no-install-recommends \
     python3-venv python3-dev build-essential \
     libegl1 libgles2 libgbm1 libdrm2 libegl-dev \
-    libasound2 alsa-utils \
+    alsa-utils \
     espeak-ng
 
 say "2/6 Creating venv and installing lilypad"

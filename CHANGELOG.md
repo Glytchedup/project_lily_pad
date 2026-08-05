@@ -47,6 +47,21 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 - Docs: `README.md` (flash-to-playing walkthrough, config table,
   troubleshooting), `VERIFY.md` (on-device checklist), MIT `LICENSE`.
 
+### Changed (post-build quality audit)
+- Hardware lighting backends now run behind a threaded latest-wins wrapper:
+  razer_hid's ~7 USB control transfers per frame no longer block the render
+  loop (they cost ~300 ms/s at 30 lighting fps — guaranteed stutter).
+- `install.sh` no longer requests `libasound2` explicitly (Debian 13 t64
+  package rename hazard); `alsa-utils` pulls the correct ALSA lib.
+- Tests: 52 (added threaded-wrapper coverage: async delivery, frame
+  collapsing, non-blocking apply, exception survival, clean shutdown).
+
 ### Fixed
 - Lighting engine dropped its first frame when ticked at t=0 (`_last_frame`
   now starts at −∞).
+- Frame-time measurement included `clock.tick`'s fps-cap sleep, so the
+  graceful-degradation *recovery* path could never trigger; now measures
+  work time only.
+- `install.sh` was committed without its executable bit (authored on
+  Windows) — `sudo ./install.sh` would have failed on the Pi.
+- README license link pointed at pyproject.toml instead of LICENSE.

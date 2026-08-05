@@ -128,8 +128,10 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
     try:
         while running:
-            frame_start = time.perf_counter()
             dt = clock.tick(cfg.display.fps) / 1000.0
+            # Measure work time only — clock.tick's fps-cap sleep must not
+            # count against the frame budget or degradation can never recover.
+            frame_start = time.perf_counter()
             now = time.monotonic()
 
             events = input_backend.poll()
