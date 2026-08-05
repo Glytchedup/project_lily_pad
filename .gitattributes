@@ -1,0 +1,8 @@
+# Normalize text; force LF for anything the Pi executes or parses
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.service text eol=lf
+*.rules text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
