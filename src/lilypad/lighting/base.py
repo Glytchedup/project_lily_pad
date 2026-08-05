@@ -120,7 +120,7 @@ class LightingEngine:
         self._ripples: list[Ripple] = []
         self._lit: dict[str, tuple[float, float]] = {}
         self._mash = False
-        self._last_frame = 0.0
+        self._last_frame = float("-inf")  # first tick always renders
         self._hue_cursor = 0.13
         backend.set_brightness(brightness)
 
