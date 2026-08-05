@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart Lily Pad when the Razer keyboard is (re)plugged
+# Triggered by udev (99-lilypad.rules) on device add. try-restart is a no-op
+# unless lilypad.service is already running, so boot-time enumeration and a
+# stopped (parent-escaped) app are both left alone.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl try-restart lilypad.service

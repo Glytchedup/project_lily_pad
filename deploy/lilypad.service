@@ -1,0 +1,25 @@
+[Unit]
+Description=Lily Pad - Toddler Keyboard Playground (kiosk)
+Documentation=https://github.com/Glytchedup/project_lily_pad
+# Own the console: never let a login prompt share tty1 with the toddler.
+Conflicts=getty@tty1.service
+After=systemd-user-sessions.service getty@tty1.service
+Wants=multi-user.target
+
+[Service]
+Type=simple
+# Root on purpose: evdev EVIOCGRAB + DRM master + USB control transfers
+# on a single-purpose appliance (RESEARCH.md §2, PLAN.md D5).
+User=root
+WorkingDirectory=/opt/lilypad
+ExecStart=/opt/lilypad/venv/bin/python -m lilypad --kiosk --config /etc/lilypad/config.toml
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=PYTHONUNBUFFERED=1
+# Clean exit (parent escape combo) stays stopped; crashes restart in 2s.
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

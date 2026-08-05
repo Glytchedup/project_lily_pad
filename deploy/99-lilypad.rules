@@ -1,0 +1,6 @@
+# Razer BlackWidow Chroma (1532:0203) — Lily Pad appliance rules.
+# 1) Re-grab input + lighting when the keyboard is unplugged/replugged
+#    mid-session by restarting the app (no-op if it isn't running).
+# 2) Relax node permissions defensively for manual debugging as non-root.
+ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0203", TAG+="systemd", ENV{SYSTEMD_WANTS}+="lilypad-replug.service"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0203", MODE="0660", GROUP="input"
