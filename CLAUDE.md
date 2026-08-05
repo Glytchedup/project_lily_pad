@@ -54,6 +54,19 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 
 ```bash
 pip install -e .[dev]
-python -m lilypad --dev     # windowed dev mode, mock lighting
-pytest                      # unit tests (mapper, registry, config, escape, keymap)
+python -m lilypad --dev       # windowed dev mode, mock lighting
+python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
+pytest                        # 47 unit tests (mapper, registry, config, escape, lighting, synth)
 ```
+
+## Status / gotchas
+
+- Target OS is Raspberry Pi OS Lite 64-bit **Trixie** (research bumped it from
+  the spec's Bookworm — see RESEARCH.md §0); everything hardware-facing is
+  unverified on real metal until VERIFY.md is run on-device.
+- The lighting keymap (`lighting/keymap.py`) is documentation-derived; ripple
+  origins may need on-device nudging (cosmetic only).
+- `install.sh` is the single source of deployment truth; keep unit/udev/sysctl
+  files in `deploy/` and the installer in sync.
+- Windows dev box: line endings are handled by `.gitattributes` (LF forced for
+  `.sh`/`.py`/`.service`/`.rules`/`.toml`/`.conf`) — don't fight it.
