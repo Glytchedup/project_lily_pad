@@ -1,0 +1,39 @@
+# Lily Pad configuration.
+# On the Pi this lives at /etc/lilypad/config.toml (install.sh copies it there);
+# in dev mode the copy in the repo root is used.
+
+[audio]
+# Master mute. true = no sound at all, regardless of volume.
+mute = false
+# 0.0 .. 1.0
+volume = 0.8
+
+[display]
+# Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.
+dev_window = [1280, 720]
+# Target frames per second.
+fps = 60
+# Seconds of no keypresses before the idle "attract" animation starts.
+idle_timeout = 60.0
+
+[effects]
+# Hard cap on live particles; the engine lowers this automatically if the frame
+# budget is exceeded (graceful degradation).
+max_particles = 900
+# 2-key chord detection window, seconds.
+chord_window = 0.15
+
+[lighting]
+# Backend: "auto" tries razer_hid, then openrazer, then mock.
+# Force one with "razer_hid" | "openrazer" | "mock".
+backend = "auto"
+# Keyboard LED brightness, 0.0 .. 1.0.
+brightness = 0.9
+# Lighting frame rate (keyboard USB updates per second).
+fps = 30
+
+[escape]
+# Parent escape hatch: hold ALL of these keys together for `hold_seconds`.
+# Key names follow Linux evdev naming without the KEY_ prefix.
+combo = ["LEFTSHIFT", "RIGHTSHIFT", "BACKSPACE"]
+hold_seconds = 5.0
