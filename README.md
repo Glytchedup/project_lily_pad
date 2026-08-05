@@ -24,10 +24,11 @@ Docs: [RESEARCH.md](RESEARCH.md) · [PLAN.md](PLAN.md) · [BOM.md](BOM.md) ·
 
 ## Hardware
 
-See [BOM.md](BOM.md). Short version: **Raspberry Pi 5 (4 GB) + official 27 W
-USB-C PSU** (the 27 W supply is required — it unlocks the 1.6 A USB budget the
-keyboard's lighting needs), 32 GB A2 microSD, micro-HDMI→HDMI cable, case with
-fan. You already have the keyboard and monitor.
+See [BOM.md](BOM.md). Short version: **Raspberry Pi 5 (2 GB, given 2026 memory
+prices — 4 GB is fine too) + official 27 W USB-C PSU** (the 27 W supply is
+required — it unlocks the 1.6 A USB budget the keyboard's lighting needs),
+32 GB A2 microSD, micro-HDMI→HDMI cable, case with fan. You already have the
+keyboard and monitor.
 
 ## Flash → playing, start to finish
 

@@ -1,19 +1,25 @@
 # BOM.md — Hardware shopping list
 
 Already owned (not listed below): **Razer BlackWidow Chroma** (original, USB) and an
-**HDMI monitor**. Prices are approximate US street prices (2026); everything is stock
-Raspberry Pi ecosystem gear.
+**HDMI monitor**. Everything is stock Raspberry Pi ecosystem gear.
 
-## Recommended build (~$100)
+> **2026 price-shock note (checked 2026-08):** the LPDDR4 shortage pushed official
+> prices up twice (Dec 2025, Feb 2026) and street prices further — 4 GB Pi 5 boards
+> now run $110–130 at resellers. The **1 GB ($45) and 2 GB ($65) Pi 5** kept official
+> pricing and are in stock at PiShop.us. Lily Pad uses well under 500 MB, so the
+> **2 GB is now the recommended board** (1 GB works if you want the absolute floor).
+> If prices normalize, 4 GB at ~$70–85 is a fine choice again.
+
+## Recommended build (~$104 + shipping, 2026 market)
 
 | Item | Exact recommendation | Why | ~Price |
 |---|---|---|---|
-| Board | **Raspberry Pi 5, 4 GB** | Comfortable 1080p60 headroom for particle-heavy scenes; current board = longest support. 8 GB buys nothing for this app. | $60 |
+| Board | **Raspberry Pi 5, 2 GB** (PiShop.us, at MSRP) | Same CPU/GPU as every Pi 5; this app needs <500 MB. 4 GB variants are scalped to $110+ in 2026. | $65 |
 | Power supply | **Official Raspberry Pi 27 W USB-C PD supply** | **Required, not optional**: only a negotiated 5 V/5 A supply raises the Pi 5's USB port budget from 600 mA to 1.6 A — the keyboard's ~500 mA lighting draw needs that headroom (RESEARCH.md §5). | $12 |
 | microSD | **SanDisk (or Samsung) 32 GB, A2/U3** (e.g. SanDisk Extreme 32 GB) | OS + app + sounds use <4 GB; A2 rating helps boot time; bigger cards add nothing. | $9 |
 | Video cable | **micro-HDMI → HDMI, 1–2 m** (official or Amazon Basics) | Pi 5/4 use micro-HDMI (port HDMI0, nearest USB-C). | $8 |
-| Case + cooling | **Official Pi 5 case (fan included)** — or any case + **Official Active Cooler** | Sustained GPU load in a closed room; also keeps toddler fingers off the board. | $10 |
-| **Total** | | | **~$99** |
+| Case + cooling | **Official Pi 5 case (fan included)** — or any case + **Official Active Cooler** | Sustained GPU load in a closed room; also keeps toddler fingers off the board. | $11 |
+| **Total** | | | **~$104** |
 
 ## Budget alternative (~$70) — Raspberry Pi 4
 
