@@ -7,6 +7,11 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 ## [Unreleased]
 
 ### Added
+- `VISUAL_REVIEW.md`: visual-design review of the effects layer with 10 ranked
+  recommendations (glossy bubbles, farm-animal cast, additive glow, motion
+  trails, shaped fireworks, characterful letters, countable objects, pond
+  scene, key-hold comets, milestone celebrations) plus build order and Pi
+  performance guardrails.
 - Repo bootstrap: `.gitignore`, `.gitattributes` (LF for Pi-executed files),
   `CLAUDE.md` project context, this changelog.
 - `RESEARCH.md`: verified findings + citations for RGB control (direct-HID
