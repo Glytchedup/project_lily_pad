@@ -7,10 +7,11 @@ import math
 import pygame
 
 from .base import EffectContext, random_bright
+from .bubbles import bubble_sprite
 
 
 class AttractMode:
-    """Gentle drifting glow-bubbles after 60 s idle — an invitation, not a
+    """Gentle drifting glossy bubbles after 60 s idle — an invitation, not a
     show. Killed instantly by any keypress (engine removes it)."""
 
     def __init__(self, ctx: EffectContext, bubbles: int = 12) -> None:
@@ -37,10 +38,15 @@ class AttractMode:
         return True  # engine removes it on keypress
 
     def draw(self, surface: pygame.Surface) -> None:
+        # Glossy cached sprites (shared with BubbleField), plus a soft pulsing
+        # colored rim so idle mode still breathes with color.
         pulse = 0.55 + 0.45 * math.sin(self.age * 1.4)
         for b in self.bubbles:
+            r = int(b["r"])
+            sprite = bubble_sprite(r)
+            surface.blit(sprite, sprite.get_rect(center=(int(b["x"]), int(b["y"]))))
             color = tuple(int(c * 0.35 * (0.6 + 0.4 * pulse)) for c in b["color"])
-            pygame.draw.circle(surface, color, (int(b["x"]), int(b["y"])), int(b["r"]), 4)
+            pygame.draw.circle(surface, color, (int(b["x"]), int(b["y"])), r, 2)
 
     def __len__(self) -> int:
         return len(self.bubbles)
@@ -89,3 +95,18 @@ class ChaosOverlay:
 
     def __len__(self) -> int:
         return 30
+
+
+class CelebrationPulse(ChaosOverlay):
+    """A ChaosOverlay that stops itself after a fixed duration — the rainbow
+    border pulse for milestone celebrations (VISUAL_REVIEW.md #10), so the
+    party ends without the engine having to remember to call stop()."""
+
+    def __init__(self, ctx, duration: float = 2.5) -> None:
+        super().__init__(ctx)
+        self.duration = duration
+
+    def update(self, dt: float) -> bool:
+        if not self.ending and self.age >= self.duration:
+            self.stop()
+        return super().update(dt)

@@ -52,3 +52,19 @@ def test_repo_config_file_is_valid():
     # The checked-in config.toml must always load.
     cfg = load("config.toml")
     assert cfg.display.dev_window == (1280, 720)
+
+
+def test_effects_new_toggles_default(tmp_path):
+    from lilypad.config import load
+    cfg = load(None)
+    assert cfg.effects.trails is True
+    assert cfg.effects.milestone_every == 50
+
+
+def test_effects_new_toggles_from_toml(tmp_path):
+    from lilypad.config import load
+    p = tmp_path / "c.toml"
+    p.write_text("[effects]\ntrails = false\nmilestone_every = -5\n")
+    cfg = load(p)
+    assert cfg.effects.trails is False
+    assert cfg.effects.milestone_every == 0   # negative clamps to disabled

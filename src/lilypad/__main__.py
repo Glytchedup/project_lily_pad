@@ -121,7 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     engine = EffectEngine(size,
                           max_particles=cfg.effects.max_particles,
                           idle_timeout=cfg.display.idle_timeout,
-                          fps=cfg.display.fps)
+                          fps=cfg.display.fps,
+                          trails=cfg.effects.trails,
+                          milestone_every=cfg.effects.milestone_every)
 
     clock = pygame.time.Clock()
     running = True
@@ -150,6 +152,11 @@ def main(argv: list[str] | None = None) -> int:
                         lighting.set_mash(True)
                     elif action.kind == "mash_end":
                         lighting.set_mash(False)
+            # Time-based: keys held past the threshold become rainbow comets.
+            for action in mapper.poll_holds(now):
+                engine.spawn(action, now)
+            if engine.consume_celebration():
+                audio.on_celebration()
 
             if escape.update(input_backend.held_keys(), now):
                 log.info("parent escape combo held — exiting cleanly")

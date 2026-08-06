@@ -27,8 +27,11 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `input/` — backend interface; `evdev_backend` (Pi: exclusive `EVIOCGRAB` grab) vs
   `sdl_backend` (dev: normal pygame events); `mapper.py` turns keycodes into semantic
   actions and detects 2-key chords + mash storms (5+ keys → chaos mode).
-- `effects/` — pygame renderer: engine (60 fps budget, graceful degradation), registry
-  (action → effect factory), particles, letters, numbers, ambient/idle attract.
+- `effects/` — pygame renderer: engine (60 fps budget, graceful degradation, motion
+  trails, milestones), registry (action → effect factory), particles (+ additive glow,
+  shaped fireworks), letters (outline/rainbow/googly eyes), numbers (countable
+  objects), scenery (pond background), bubbles, animals (peekaboo cast), comet
+  (key-hold rainbows), ambient/idle attract.
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
@@ -56,7 +59,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 52 unit tests (mapper, registry, config, escape, lighting, synth, threading)
+pytest                        # 160 unit tests (mapper, registry, config, escape, lighting, synth, threading, effects)
 ```
 
 ## Status / gotchas

@@ -14,6 +14,12 @@ from ..input.mapper import Action
 
 log = logging.getLogger(__name__)
 
+# Letters that summon a farm animal. MUST stay in sync with effects/animals.py
+# (added in a parallel change) — the visual cast and these cues are keyed off
+# the same letters, so adding an animal there means adding it here too.
+ANIMAL_LETTERS = {"C": "cow", "D": "duck", "P": "pig", "S": "sheep"}
+_ANIMAL_CUES = {"cow": "moo", "duck": "quack", "pig": "oink", "sheep": "baa"}
+
 
 class AudioEngine:
     def __init__(self, sounds_dir: str | Path, *, mute: bool = False,
@@ -72,8 +78,16 @@ class AudioEngine:
         kind = action.kind
         if kind == "letter":
             self._play(f"voice/{action.letter}", self._next_chime())
+            animal = ANIMAL_LETTERS.get(action.letter.upper())
+            if animal is not None:
+                # Animal call layers *on top of* the letter name, never replaces it.
+                self._play(_ANIMAL_CUES[animal])
         elif kind == "number":
             self._play(f"voice/{action.count}", "pop")
+            # One cue per press: the top note of the count, so the pitch rises
+            # with the number. (The effect layer paces the visual pops at 0.28 s.)
+            count = max(1, min(action.count, 10))
+            self._play(f"count_{count - 1}")
         elif kind == "space":
             self._play("whoosh")
         elif kind == "enter":
@@ -93,6 +107,11 @@ class AudioEngine:
                 self._play(self._next_chime())
         elif kind == "sparkle":
             self._play("sparkle")
+
+    def on_celebration(self) -> None:
+        """Milestone mega-party fanfare; called by the effects engine's main
+        loop. Falls back to the plain chord if the cue is missing."""
+        self._play("celebration", "chord")
 
     def close(self) -> None:
         if self._enabled:

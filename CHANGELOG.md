@@ -6,6 +6,48 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added (visual WOW upgrade — implements all 10 VISUAL_REVIEW.md recommendations)
+- Pond scene (`effects/scenery.py`): pre-rendered night/dusk/aurora gradient
+  skies with baked moon, stars, and drifting lily pads; slow crossfade between
+  variants every 5 minutes; twinkling star overlay.
+- Additive glow rendering (`effects/glow.py`): cached radial-gradient sprites
+  blitted with `BLEND_ADD` replace flat circles in `ParticleSystem.draw` —
+  overlapping particles now sum toward white.
+- Motion trails: the engine clears each frame with a translucent scene veil
+  (plus a subtract/max-snap pass that defeats pygame's integer-blend ghosting)
+  so lights streak and fade; `effects.trails` config toggle.
+- Glossy interactive bubbles (`effects/bubbles.py`): letter B blows a flotilla
+  of specular-highlight bubbles that Pip pops on contact (droplet spray);
+  attract mode now uses the same glossy sprites.
+- Farm-animal peekaboo cast (`effects/animals.py`): C/D/P/S slide a
+  primitive-drawn cow/duck/pig/sheep up from the bottom edge — blink, wiggle,
+  and a procedural moo/quack/oink/baa — then slide away.
+- Fireworks upgrade: glitter trails on climbing rockets, white crackle
+  micro-pops partway through each burst, and 50% shaped explosions that draw a
+  heart, star, or smiley in the sky.
+- Characterful letters: thick contrasting outline, 1-in-4 rainbow-gradient
+  fill, gentle bob/sway wobble, and googly eyes during the hold phase.
+- Count-along with real things: digits now count ducks/apples/frogs/flowers/
+  stars (one kind per press), with a left-to-right mini-burst fanfare and an
+  ascending pentatonic count note per press.
+- Key-hold rainbow comets (`effects/comet.py`): any key held ~0.4 s becomes a
+  wandering hue-cycling comet (max 4) that grows while held and bursts on
+  release; `KeyMapper.poll_holds` drives hold_start/hold_end actions.
+- Milestone mega-celebrations: every 50th press (configurable via
+  `effects.milestone_every`) fires fireworks + confetti + balloons + a timed
+  rainbow border pulse + frog joy-hops + a celebration fanfare; completing all
+  26 letters adds a heart-shaped burst.
+- Frog splash-down ripples (water rings at his feet on real impacts).
+- Audio: new procedural cues (moo/quack/oink/baa, count_0..9 pentatonic
+  ladder, celebration fanfare) and `AudioEngine.on_celebration()`.
+- Tests: 160 (was 52) — new coverage for animals, bubbles, comet, glow,
+  scenery, synth cues, hold detection, and engine integration.
+
+### Fixed (visual WOW upgrade)
+- A resting frog re-triggered its floor bounce every frame (sub-pixel gravity
+  re-entry), which kept him permanently squashed and would have rained
+  ripples; bounces now require a real impact.
+
 ### Added
 - `VISUAL_REVIEW.md`: visual-design review of the effects layer with 10 ranked
   recommendations (glossy bubbles, farm-animal cast, additive glow, motion

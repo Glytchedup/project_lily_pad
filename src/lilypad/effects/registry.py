@@ -10,7 +10,9 @@ from __future__ import annotations
 from typing import Callable
 
 from ..input.mapper import Action
+from .animals import ANIMAL_LETTERS, PeekabooAnimal
 from .base import BRIGHT_PALETTE, Effect, EffectContext
+from .bubbles import BubbleField
 from .letters import GiantLetter
 from .numbers import CountAlong
 from .particles import (
@@ -21,6 +23,7 @@ from .particles import (
     Vacuum,
     burst,
     confetti_rain,
+    shaped_burst,
 )
 
 Factory = Callable[[EffectContext, Action], list[Effect]]
@@ -28,7 +31,28 @@ Factory = Callable[[EffectContext, Action], list[Effect]]
 
 def _letter(ctx: EffectContext, action: Action) -> list[Effect]:
     letter = GiantLetter(ctx, action.letter)
-    return [burst(ctx, letter.pos, count=45, speed=340), letter]
+    out: list[Effect] = [burst(ctx, letter.pos, count=45, speed=340), letter]
+    # Animal letters bring their animal along ("C is for cow — moo!"),
+    # and B blows bubbles. The letter still shows; the friend joins it.
+    if action.letter in ANIMAL_LETTERS:
+        out.append(PeekabooAnimal(ctx, ANIMAL_LETTERS[action.letter]))
+    elif action.letter == "B":
+        out.append(BubbleField(ctx, count=8))
+    return out
+
+
+def celebration(ctx: EffectContext, big: bool = False) -> list[Effect]:
+    """Milestone mega-party (VISUAL_REVIEW.md #10): everything at once.
+    The engine adds the frog joy-hops and the rainbow border pulse itself."""
+    out: list[Effect] = [
+        Fireworks(ctx, rockets=6 if big else 5),
+        confetti_rain(ctx, count=120),
+        Balloons(ctx, 10),
+    ]
+    if big:  # alphabet complete — a heart in the sky
+        out.append(shaped_burst(ctx, (ctx.width / 2, ctx.height * 0.35), "heart",
+                                count=110, spread=300))
+    return out
 
 
 def _number(ctx: EffectContext, action: Action) -> list[Effect]:

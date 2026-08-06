@@ -22,6 +22,12 @@ idle_timeout = 60.0
 max_particles = 900
 # 2-key chord detection window, seconds.
 chord_window = 0.15
+# Motion trails: effects streak and fade instead of vanishing. Costs two extra
+# full-screen blits per frame — set false if a Pi 4 can't hold 60 fps.
+trails = true
+# A mega-celebration (fireworks + confetti + balloons + frog party) fires every
+# this many keypresses. 0 disables milestones.
+milestone_every = 50
 
 [lighting]
 # Backend: "auto" tries razer_hid, then openrazer, then mock.

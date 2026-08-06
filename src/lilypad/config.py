@@ -24,6 +24,8 @@ class DisplayConfig:
 class EffectsConfig:
     max_particles: int = 900
     chord_window: float = 0.15
+    trails: bool = True          # translucent frame clear → motion trails
+    milestone_every: int = 50    # keypresses per mega-celebration (0 disables)
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,8 @@ def load(path: str | Path | None = None) -> Config:
         effects=EffectsConfig(
             max_particles=int(effects.get("max_particles", 900)),
             chord_window=float(effects.get("chord_window", 0.15)),
+            trails=bool(effects.get("trails", True)),
+            milestone_every=max(0, int(effects.get("milestone_every", 50))),
         ),
         lighting=LightingConfig(
             backend=backend,

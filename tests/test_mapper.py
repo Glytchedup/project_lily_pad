@@ -125,3 +125,45 @@ def test_action_is_frozen():
     except AttributeError:
         raised = True
     assert raised
+
+
+# ---------------------------------------------------------------- hold comets
+
+def test_hold_start_after_threshold():
+    m = KeyMapper()
+    list(m.feed(press("A", 0.0)))
+    assert list(m.poll_holds(0.2)) == []          # too early
+    holds = list(m.poll_holds(0.5))
+    assert [a.kind for a in holds] == ["hold_start"]
+    assert holds[0].key == "A"
+    assert list(m.poll_holds(0.6)) == []          # emitted once per hold
+
+
+def test_hold_end_on_release():
+    m = KeyMapper()
+    list(m.feed(press("A", 0.0)))
+    list(m.poll_holds(0.5))
+    actions = list(m.feed(release("A", 0.7)))
+    assert any(a.kind == "hold_end" and a.key == "A" for a in actions)
+
+
+def test_release_without_hold_start_emits_no_hold_end():
+    m = KeyMapper()
+    list(m.feed(press("A", 0.0)))
+    actions = list(m.feed(release("A", 0.1)))     # released before threshold
+    assert not any(a.kind == "hold_end" for a in actions)
+
+
+def test_arrows_never_start_holds():
+    m = KeyMapper()
+    list(m.feed(press("LEFT", 0.0)))
+    assert list(m.poll_holds(5.0)) == []
+
+
+def test_hold_comet_cap():
+    from lilypad.input.mapper import MAX_COMETS
+    m = KeyMapper()
+    for i, name in enumerate("ABCD" "EFGH"):
+        list(m.feed(press(name, i * 0.001)))
+    holds = list(m.poll_holds(1.0))
+    assert len(holds) == MAX_COMETS

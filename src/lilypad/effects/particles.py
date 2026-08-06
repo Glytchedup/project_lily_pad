@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import pygame
 
 from .base import BRIGHT_PALETTE, EffectContext, random_bright
+from .glow import draw_glow
 
 
 @dataclass
@@ -56,11 +57,13 @@ class ParticleSystem:
         return bool(self.particles)
 
     def draw(self, surface: pygame.Surface) -> None:
+        # Additive glow sprites (VISUAL_REVIEW.md #3): overlapping particles
+        # sum toward white, so bursts read as light instead of confetti dots.
         for p in self.particles:
             fade = 1.0 - p.age / p.life
             r = max(1, int(p.size * (0.4 + 0.6 * fade)))
             color = tuple(int(c * (0.35 + 0.65 * fade)) for c in p.color)
-            pygame.draw.circle(surface, color, (int(p.x), int(p.y)), r)
+            draw_glow(surface, color, (p.x, p.y), r)
 
 
 def burst(ctx: EffectContext, pos: tuple[float, float], count: int = 60,
@@ -81,6 +84,86 @@ def burst(ctx: EffectContext, pos: tuple[float, float], count: int = 60,
             color=ctx.rng.choice(palette),
             size=ctx.rng.uniform(0.6, 1.3) * size,
             gravity=gravity, drag=1.2,
+        ))
+    return sys_
+
+
+def _heart_points(n: int) -> list[tuple[float, float]]:
+    """Unit-ish heart outline (classic parametric curve), y-up flipped for screen."""
+    pts = []
+    for i in range(n):
+        t = (i / n) * math.tau
+        x = 16 * math.sin(t) ** 3
+        y = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+        pts.append((x / 17.0, -y / 17.0))
+    return pts
+
+
+def _star_outline_points(n: int) -> list[tuple[float, float]]:
+    """Points along a 5-point star outline (interpolated between vertices)."""
+    verts = []
+    for i in range(10):
+        r = 1.0 if i % 2 == 0 else 0.45
+        ang = -math.pi / 2 + i * math.pi / 5
+        verts.append((math.cos(ang) * r, math.sin(ang) * r))
+    pts = []
+    per_edge = max(1, n // 10)
+    for i in range(10):
+        ax, ay = verts[i]
+        bx, by = verts[(i + 1) % 10]
+        for j in range(per_edge):
+            f = j / per_edge
+            pts.append((ax + (bx - ax) * f, ay + (by - ay) * f))
+    return pts
+
+
+def _smiley_points(n: int) -> list[tuple[float, float]]:
+    """Face circle + two eyes + smile arc."""
+    pts = []
+    face = int(n * 0.55)
+    for i in range(face):
+        t = (i / face) * math.tau
+        pts.append((math.cos(t), math.sin(t)))
+    per_eye = int(n * 0.1)
+    for ex in (-0.38, 0.38):
+        for i in range(per_eye):
+            t = (i / per_eye) * math.tau
+            pts.append((ex + math.cos(t) * 0.1, -0.3 + math.sin(t) * 0.12))
+    smile = n - face - 2 * per_eye
+    for i in range(smile):
+        t = math.pi * (0.15 + 0.7 * i / max(1, smile - 1))
+        pts.append((math.cos(t) * 0.55, 0.1 + math.sin(t) * 0.5))
+    return pts
+
+
+_SHAPES = {
+    "heart": _heart_points,
+    "star": _star_outline_points,
+    "smiley": _smiley_points,
+}
+
+
+def shaped_burst(ctx: EffectContext, pos: tuple[float, float], shape: str,
+                 colors: list[tuple[int, int, int]] | None = None,
+                 count: int = 90, spread: float = 260.0,
+                 life: float = 1.5) -> ParticleSystem:
+    """Explosion whose particles fly outward into a picture (heart/star/smiley):
+    velocity is proportional to each template point, so with heavy drag the
+    shape forms mid-air and lingers as it falls."""
+    sys_ = ParticleSystem()
+    n = max(12, int(count * ctx.scale))
+    points = _SHAPES.get(shape, _star_outline_points)(n)
+    palette = colors or BRIGHT_PALETTE
+    color = ctx.rng.choice(palette)
+    for px, py in points:
+        jitter = ctx.rng.uniform(0.92, 1.08)
+        sys_.particles.append(Particle(
+            x=pos[0], y=pos[1],
+            vx=px * spread * jitter, vy=py * spread * jitter,
+            life=ctx.rng.uniform(0.85, 1.0) * life,
+            color=color if ctx.rng.random() < 0.8 else (255, 255, 255),
+            size=ctx.rng.uniform(4.5, 6.5),
+            gravity=60.0, drag=2.6,
         ))
     return sys_
 
@@ -147,13 +230,14 @@ class Rings:
 
     def __init__(self, ctx: EffectContext, pos: tuple[float, float],
                  color: tuple[int, int, int] | None = None,
-                 count: int = 3, life: float = 0.9) -> None:
+                 count: int = 3, life: float = 0.9,
+                 max_r: float | None = None) -> None:
         self.pos = pos
         self.color = color or random_bright(ctx.rng)
         self.count = count
         self.life = life
         self.age = 0.0
-        self.max_r = max(ctx.width, ctx.height) * 0.6
+        self.max_r = max_r if max_r is not None else max(ctx.width, ctx.height) * 0.6
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -177,7 +261,13 @@ class Rings:
 
 
 class Fireworks:
-    """Rockets that climb then explode (Enter)."""
+    """Rockets that climb on glitter trails, then explode — half the time as
+    a sphere, half the time drawing a picture (heart/star/smiley), with a
+    white crackle pass partway through each burst (VISUAL_REVIEW.md #5)."""
+
+    SHAPED_CHANCE = 0.5
+    CRACKLE_AT = 0.5          # seconds after a burst is born
+    CRACKLE_SPARKS = 10       # sampled particles that pop white glitter
 
     @dataclass
     class _Rocket:
@@ -189,10 +279,17 @@ class Fireworks:
         age: float = 0.0
         exploded: bool = False
 
+    @dataclass
+    class _Burst:
+        sys: ParticleSystem
+        age: float = 0.0
+        crackled: bool = False
+
     def __init__(self, ctx: EffectContext, rockets: int = 3) -> None:
         self.ctx = ctx
         self.rockets: list[Fireworks._Rocket] = []
-        self.bursts: list[ParticleSystem] = []
+        self.bursts: list[Fireworks._Burst] = []
+        self.trail = ParticleSystem()
         for i in range(max(1, rockets)):
             self.rockets.append(self._Rocket(
                 x=ctx.rng.uniform(ctx.width * 0.2, ctx.width * 0.8),
@@ -202,34 +299,72 @@ class Fireworks:
                 color=random_bright(ctx.rng),
             ))
 
+    def _explode(self, r: "Fireworks._Rocket") -> ParticleSystem:
+        if self.ctx.rng.random() < self.SHAPED_CHANCE:
+            shape = self.ctx.rng.choice(("heart", "star", "smiley"))
+            return shaped_burst(self.ctx, (r.x, r.y), shape,
+                                colors=[r.color], count=90)
+        return burst(self.ctx, (r.x, r.y), count=90,
+                     colors=[r.color, (255, 255, 255)],
+                     speed=520, gravity=300, size=6, life=1.4)
+
+    def _crackle(self, b: "Fireworks._Burst") -> None:
+        """White glitter micro-pops at sampled live burst particles."""
+        rng = self.ctx.rng
+        live = b.sys.particles
+        for p in rng.sample(live, min(self.CRACKLE_SPARKS, len(live))):
+            for _ in range(3):
+                ang = rng.uniform(0, math.tau)
+                spd = rng.uniform(40, 130)
+                b.sys.particles.append(Particle(
+                    x=p.x, y=p.y,
+                    vx=math.cos(ang) * spd, vy=math.sin(ang) * spd,
+                    life=rng.uniform(0.2, 0.4),
+                    color=(255, 255, 255), size=3.0, gravity=120.0,
+                ))
+
     def update(self, dt: float) -> bool:
+        rng = self.ctx.rng
         for r in self.rockets:
             if r.exploded:
                 continue
             r.age += dt
             r.y += r.vy * dt
             r.vy += 300 * dt
+            # Glitter trail while climbing (scaled with the degradation ladder).
+            for _ in range(max(1, round(2 * self.ctx.scale))):
+                self.trail.particles.append(Particle(
+                    x=r.x + rng.uniform(-3, 3), y=r.y + rng.uniform(0, 10),
+                    vx=rng.uniform(-25, 25), vy=rng.uniform(20, 80),
+                    life=rng.uniform(0.25, 0.5),
+                    color=(255, 220, 140), size=3.0,
+                ))
             if r.age >= r.fuse:
                 r.exploded = True
-                self.bursts.append(burst(
-                    self.ctx, (r.x, r.y), count=90,
-                    colors=[r.color, (255, 255, 255)],
-                    speed=520, gravity=300, size=6, life=1.4,
-                ))
-        self.bursts = [b for b in self.bursts if b.update(dt)]
-        return bool(self.bursts) or any(not r.exploded for r in self.rockets)
+                self.bursts.append(self._Burst(self._explode(r)))
+        for b in self.bursts:
+            b.age += dt
+            if not b.crackled and b.age >= self.CRACKLE_AT:
+                b.crackled = True
+                self._crackle(b)
+        self.trail.update(dt)
+        self.bursts = [b for b in self.bursts if b.sys.update(dt)]
+        return (bool(self.bursts) or len(self.trail) > 0
+                or any(not r.exploded for r in self.rockets))
 
     def draw(self, surface: pygame.Surface) -> None:
+        self.trail.draw(surface)
         for r in self.rockets:
             if not r.exploded:
                 pygame.draw.circle(surface, (255, 240, 200), (int(r.x), int(r.y)), 5)
                 pygame.draw.line(surface, (255, 160, 60),
                                  (int(r.x), int(r.y) + 6), (int(r.x), int(r.y) + 22), 3)
         for b in self.bursts:
-            b.draw(surface)
+            b.sys.draw(surface)
 
     def __len__(self) -> int:
-        return sum(len(b) for b in self.bursts) + len(self.rockets)
+        return (sum(len(b.sys) for b in self.bursts) + len(self.rockets)
+                + len(self.trail))
 
 
 class Vacuum:

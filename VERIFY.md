@@ -22,6 +22,16 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 - [ ] Space → confetti; Enter → fireworks; arrows shove the frog.
 - [ ] Esc, Windows key, F-keys, PrtSc, media keys → each fires an effect
       and **nothing OS-ish happens** (no console, no VT switch, no blanking).
+- [ ] Letters C/D/P/S → cow/duck/pig/sheep peeks up and moos/quacks/oinks/baas;
+      B → bubbles that Pip can pop.
+- [ ] Hold any letter ~half a second → a rainbow comet wanders and streaks;
+      release → it bursts.
+- [ ] ~50 presses → mega-celebration (fireworks + confetti + balloons + frog
+      party + fanfare).
+- [ ] Trails: effects streak smoothly with no permanent ghost silhouettes and
+      no fps drop. If a Pi 4 can't hold 60 fps here, set `effects.trails =
+      false` in `/etc/lilypad/config.toml` (the veil costs two extra
+      full-screen blits per frame that graceful degradation cannot shrink).
 - [ ] Two keys at once → chord supernova; palm-mash 5+ keys → rainbow chaos
       mode, calming down when released.
 - Note: the left-edge M1–M5 macro keys may do nothing at all — the lighting

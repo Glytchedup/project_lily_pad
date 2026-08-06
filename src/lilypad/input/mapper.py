@@ -24,10 +24,13 @@ MASH_RELEASE_BELOW = 3      # held-count to drop below to leave chaos mode
 MASH_RATE_COUNT = 8         # presses ...
 MASH_RATE_WINDOW = 1.0      # ... within this many seconds also triggers chaos
 
+HOLD_SECONDS = 0.4          # held this long → a rainbow comet (see poll_holds)
+MAX_COMETS = 4              # cap concurrent hold-comets (mash covers the rest)
+
 
 @dataclass(frozen=True)
 class Action:
-    kind: str                     # letter|number|space|arrow|enter|special|sparkle|chord|mash_start|mash_end
+    kind: str                     # letter|number|space|arrow|enter|special|sparkle|chord|mash_start|mash_end|hold_start|hold_end
     key: str = ""                 # originating key name ("" for synthetic actions)
     letter: str = ""              # for kind == "letter"
     count: int = 0                # for kind == "number"
@@ -88,6 +91,7 @@ class KeyMapper:
     _recent_presses: deque = field(default_factory=lambda: deque(maxlen=32))
     _last_press: tuple[str, float] | None = None
     _in_mash: bool = False
+    _holding: set[str] = field(default_factory=set)   # keys with an active hold-comet
 
     @property
     def in_mash(self) -> bool:
@@ -128,9 +132,25 @@ class KeyMapper:
                 yield Action(kind="mash_start")
         else:
             self._held.pop(event.name, None)
+            if event.name in self._holding:
+                self._holding.discard(event.name)
+                yield Action(kind="hold_end", key=event.name)
             if self._in_mash and len(self._held) < MASH_RELEASE_BELOW:
                 self._in_mash = False
                 yield Action(kind="mash_end")
+
+    def poll_holds(self, now: float) -> Iterator[Action]:
+        """Time-based check the main loop calls every frame: any key held past
+        HOLD_SECONDS starts a rainbow comet (hold_start), ended by its release
+        (hold_end, emitted from feed). Arrows are excluded — holding an arrow
+        already repeats frog shoves and a comet would muddy that mapping."""
+        for name, since in self._held.items():
+            if (name not in self._holding
+                    and name not in ARROWS
+                    and len(self._holding) < MAX_COMETS
+                    and now - since >= HOLD_SECONDS):
+                self._holding.add(name)
+                yield Action(kind="hold_start", key=name)
 
     def _mash_triggered(self, now: float) -> bool:
         if len(self._held) >= MASH_HELD_THRESHOLD:

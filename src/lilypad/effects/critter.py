@@ -31,6 +31,8 @@ class Frog:
         self.squash = 0.0        # 0..1, decays; squashes the draw
         self.age = 0.0
         self.hop_impulse = self.h * 0.9
+        self.just_bounced = False    # set each update; engine spawns ripples
+        self._excited_until = 0.0    # celebration joy-hops while age < this
 
     def shove(self, direction: tuple[int, int]) -> None:
         dx, dy = direction
@@ -39,6 +41,10 @@ class Frog:
         # A hop always gets a little lift so left/right feels like jumping.
         if dy == 0:
             self.vy -= self.hop_impulse * 0.25
+
+    def celebrate(self, seconds: float = 3.0) -> None:
+        """Milestone joy: keep hopping on its own for a few seconds."""
+        self._excited_until = self.age + seconds
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -57,11 +63,23 @@ class Frog:
         if self.y < r:
             self.y, self.vy, bounced = r, abs(self.vy) * 0.85, True
         elif self.y > self.h - r:
-            self.y, self.vy, bounced = self.h - r, -abs(self.vy) * 0.7, True
-            if abs(self.vy) < 40:
+            # A resting frog re-enters the floor by a sub-pixel every frame
+            # (gravity), so only a real impact counts as a bounce — otherwise
+            # he'd stay squashed forever and rain ripples while sitting still.
+            impact = abs(self.vy)
+            self.y = self.h - r
+            if impact < 40:
                 self.vy = 0.0
+            else:
+                self.vy = -impact * 0.7
+                bounced = True
+            # Joy-hop: while excited and touching the floor, launch again.
+            if self.age < self._excited_until:
+                self.vy = -self.hop_impulse * 0.8
+                self.vx += (1 if (int(self.age * 7) % 2) else -1) * self.hop_impulse * 0.3
         if bounced:
             self.squash = 1.0
+        self.just_bounced = bounced
         return True
 
     def draw(self, surface: pygame.Surface) -> None:
