@@ -293,3 +293,30 @@ def test_no_attract_mode_while_comet_held():
     for _ in range(240):
         e.update(1 / 60, now=200.0)  # comet drains, then truly idle
     assert e.attract is not None
+
+
+def test_count_along_does_not_poison_shared_sprite():
+    """set_alpha(None) on the shared cached mini sprite permanently disables
+    per-pixel alpha (black squares for every later count) — the restore must
+    be set_alpha(255)."""
+    from lilypad.effects.numbers import CountAlong
+    ctx = EffectContext(size=SIZE, rng=random.Random(4))
+    s = surf()
+    first = CountAlong(ctx, 3)
+    while first.update(1 / 60):     # run a full lifecycle including the fade
+        first.draw(s)
+    sprite = first.sprite
+    assert sprite.get_alpha() is not None   # per-pixel alpha still enabled
+    # A later count of the same kind must blit transparent corners, not black.
+    probe = surf()
+    probe.fill((123, 45, 67))
+    probe.blit(sprite, (0, 0))
+    assert probe.get_at((0, 0))[:3] == (123, 45, 67)
+
+
+def test_comet_scales_with_resolution():
+    from lilypad.effects.comet import Comet
+    small = Comet(EffectContext(size=(1280, 720), rng=random.Random(5)))
+    big = Comet(EffectContext(size=(3840, 2160), rng=random.Random(5)))
+    assert big.radius > small.radius * 2.5
+    assert big.speed > small.speed * 2.0

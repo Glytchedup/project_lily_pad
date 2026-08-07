@@ -68,6 +68,20 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 - Engine scene and chaos-wash surfaces are convert()ed to the display
   format when possible (avoids potential per-frame pixel-format conversion
   on the Pi's software blit path).
+- SHIP-BLOCKER: the count-along fade restored the shared cached object
+  sprite with `set_alpha(None)`, which in pygame disables per-pixel alpha
+  entirely — after the very first number press faded, every later count
+  rendered opaque black squares instead of objects for the rest of the
+  session. Restore is now `set_alpha(255)`.
+- Comet was resolution-blind (fixed 10-26 px head, fixed px/s speed): a
+  marquee effect at 720p, a crawling speck on a 4K TV. Head, speed, trail
+  and edge-clamp now scale with screen height.
+- Anti-ghost pass strengthened (SUB 6→9/step) to clear the grey "ghost
+  ladder" large peekaboo sprites left when rising through the trail veil.
+- Known cosmetic (documented, not fixed): the aurora pond variant reads
+  as a flat band rather than a curtain; balloons spawn just below the
+  bottom edge so the F-key reaction takes ~0.3 s to become obvious at
+  800x480.
 
 ### Fixed (adversarial review round 2 — three fresh independent reviewers:
 ### whole-branch, fix-regression hunt, and rendered-frame visual QA)

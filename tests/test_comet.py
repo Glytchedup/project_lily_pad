@@ -32,15 +32,17 @@ def test_update_returns_true_while_unreleased():
 
 
 def test_head_radius_grows_monotonically_to_cap():
+    from lilypad.effects.comet import _BIRTH_RADIUS, _CAP_RADIUS, _REF_HEIGHT
     c = Comet(ctx())
+    k = ctx().height / _REF_HEIGHT  # radii scale with resolution
     prev = c.radius
-    assert 9.0 <= prev <= 11.0  # ~10 px at birth
+    assert prev == pytest.approx(_BIRTH_RADIUS * k, rel=0.1)
     for _ in range(60 * 7):  # 7 s, past the ~6 s growth window
         c.update(1 / 60)
         r = c.radius
         assert r >= prev - 1e-9
         prev = r
-    assert prev == pytest.approx(26.0, abs=0.5)
+    assert prev == pytest.approx(_CAP_RADIUS * k, abs=0.5)
 
 
 def test_release_spawns_burst_then_eventually_finishes():

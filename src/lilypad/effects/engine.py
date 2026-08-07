@@ -254,7 +254,9 @@ class EffectEngine:
             # Running this pass every few frames (instead of every frame) cuts
             # its ~2 ms cost to ~0.5 ms; residue just fades a beat slower.
             if self._frame_no % GHOSTBUST_EVERY == 0:
-                surface.fill((6, 6, 6), special_flags=pygame.BLEND_RGB_SUB)
+                # 9/step clears the "ghost ladder" large opaque sprites
+                # (peekaboo animals) leave when rising through the veil.
+                surface.fill((9, 9, 9), special_flags=pygame.BLEND_RGB_SUB)
                 self._scene.set_alpha(None)
                 surface.blit(self._scene, (0, 0),
                              special_flags=pygame.BLEND_RGB_MAX)

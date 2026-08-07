@@ -104,7 +104,11 @@ class CountAlong:
                 img.set_alpha(int(255 * alpha))
                 x, y = spot["pos"]
                 surface.blit(img, img.get_rect(center=(int(x), int(y))))
-                img.set_alpha(None)
+                # Restore with 255, NOT None: set_alpha(None) disables ALL
+                # alpha blending including per-pixel — it permanently poisons
+                # the shared cached sprite, which then blits its transparent
+                # pixels as solid black for every later count-along.
+                img.set_alpha(255)
             else:
                 x, y = spot["pos"]
                 surface.blit(img, img.get_rect(center=(int(x), int(y))))
