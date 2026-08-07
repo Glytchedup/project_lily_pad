@@ -81,13 +81,14 @@ class AudioEngine:
             animal = ANIMAL_LETTERS.get(action.letter.upper())
             if animal is not None:
                 # Animal call layers *on top of* the letter name, never replaces it.
-                self._play(_ANIMAL_CUES[animal])
+                # Fallback for a pre-upgrade sounds dir that lacks the cue.
+                self._play(_ANIMAL_CUES[animal], "boing")
         elif kind == "number":
             self._play(f"voice/{action.count}", "pop")
             # One cue per press: the top note of the count, so the pitch rises
             # with the number. (The effect layer paces the visual pops at 0.28 s.)
             count = max(1, min(action.count, 10))
-            self._play(f"count_{count - 1}")
+            self._play(f"count_{count - 1}", "pop")
         elif kind == "space":
             self._play("whoosh")
         elif kind == "enter":

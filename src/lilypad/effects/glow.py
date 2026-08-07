@@ -11,10 +11,11 @@ bucketed radius) pair, at whatever moment that pair is first requested.
 Cache bound: colors are quantized to 32-wide steps per channel, giving
 256 // 32 == 8 possible values per channel, so 8**3 == 512 distinct
 quantized colors. Radii are bucketed to even steps between 2 and 32,
-giving (32 - 2) // 2 + 1 == 16 distinct buckets. So the cache can never
-hold more than 512 * 16 == 8192 tiny surfaces, however many arbitrarily
-faded particle colors the effects layer throws at it — bounded, small
-(each sprite is at most 128x128 px), and independent of runtime.
+giving (32 - 2) // 2 + 1 == 16 distinct buckets, for a theoretical
+ceiling of 512 * 16 == 8192 sprites. In practice the ceiling is far
+lower: nothing in the effects layer spawns particles bigger than ~9 px,
+so only the 2-10 px buckets are reachable (~2560 sprites of <= 40x40 px,
+a few MB worst case; measured soaks stabilize under ~1500 entries).
 """
 
 from __future__ import annotations

@@ -48,7 +48,7 @@ class CountAlong:
             y = ctx.height * (0.55 - 0.18 * math.sin(frac * math.pi))
             self.spots.append({"pos": (x, y), "born": i * self.POP_INTERVAL})
         self.digit = GiantLetter(
-            ctx, str(count if count < 10 else 10),
+            ctx, str(self.count),
             pos=(ctx.width * 0.5, ctx.height * 0.2), height_frac=0.28,
             eyes=False,
         )
@@ -80,17 +80,26 @@ class CountAlong:
             t = self.age - spot["born"]
             if t <= 0:
                 continue
+            # Continuous overshoot: rise to 1.15 by t=0.8, settle back to 1.0
+            # (the piecewise form must meet at the branch point or the sprite
+            # visibly snaps a whole size step in one frame).
             pop = min(1.0, t / 0.2)
-            pop = 1.15 * pop if pop < 0.8 else 1.15 - 0.15 * ((pop - 0.8) / 0.2)
+            pop = 1.15 * (pop / 0.8) if pop < 0.8 else 1.15 - 0.15 * ((pop - 0.8) / 0.2)
             img = self.sprite
-            if pop < 1.0 or alpha < 1.0:
+            scaled = pop < 0.999 or pop > 1.001
+            if scaled:
                 w = max(1, int(img.get_width() * pop))
                 h = max(1, int(img.get_height() * pop))
                 img = pygame.transform.scale(img, (w, h))
-                if alpha < 1.0:
-                    img.set_alpha(int(255 * alpha))
+            if alpha < 1.0:
+                # The cached sprite is shared, so set alpha only around the
+                # blit — cheaper than rescaling to an identical size for a
+                # private copy every fade frame.
+                img.set_alpha(int(255 * alpha))
             x, y = spot["pos"]
             surface.blit(img, img.get_rect(center=(int(x), int(y))))
+            if alpha < 1.0 and not scaled:
+                img.set_alpha(None)
         self.fanfare.draw(surface)
         if alpha > 0:
             self.digit.draw(surface)

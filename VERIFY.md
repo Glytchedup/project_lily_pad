@@ -29,9 +29,11 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 - [ ] ~50 presses → mega-celebration (fireworks + confetti + balloons + frog
       party + fanfare).
 - [ ] Trails: effects streak smoothly with no permanent ghost silhouettes and
-      no fps drop. If a Pi 4 can't hold 60 fps here, set `effects.trails =
-      false` in `/etc/lilypad/config.toml` (the veil costs two extra
-      full-screen blits per frame that graceful degradation cannot shrink).
+      no fps drop. Test under SUSTAINED two-handed mashing (worst case:
+      mash chaos + a milestone celebration + held keys at once), not single
+      presses. The engine sheds trails automatically when deeply degraded;
+      `effects.trails = false` in `/etc/lilypad/config.toml` forces the
+      cheap opaque clear permanently.
 - [ ] Two keys at once → chord supernova; palm-mash 5+ keys → rainbow chaos
       mode, calming down when released.
 - Note: the left-edge M1–M5 macro keys may do nothing at all — the lighting

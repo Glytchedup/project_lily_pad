@@ -27,6 +27,9 @@ _SPEED_MAX = 350.0
 _HUE_SPEED = 0.18            # full rainbow cycles per second (roughly)
 _EDGE_MARGIN = 0.10          # inward steering kicks in this close to an edge
 _BURST_COUNT = 40
+_SHED_PER_SECOND = 130.0     # trail particles/s (dt-based, frame-rate free)
+_MAX_HOLD_SECONDS = 30.0     # safety valve: auto-release if the key-up never
+                             # arrives (USB unplug mid-hold strands the hold)
 
 
 class Comet:
@@ -58,6 +61,7 @@ class Comet:
         self.released = False
         self.trail = ParticleSystem()
         self.burst: ParticleSystem | None = None
+        self._shed_accum = 0.0
 
     # -- state -----------------------------------------------------------
 
@@ -106,11 +110,16 @@ class Comet:
         self.x = min(max(self.x, 0.0), float(self.width))
         self.y = min(max(self.y, 0.0), float(self.height))
 
-    def _shed_trail(self) -> None:
+    def _shed_trail(self, dt: float) -> None:
+        # dt-based so the shed rate is frames-per-second independent (a
+        # per-tick count doubled the trail at 120 fps and starved it at 30).
+        self._shed_accum += dt * _SHED_PER_SECOND * self.ctx.scale
+        count = int(self._shed_accum)
+        if count <= 0:
+            return
+        self._shed_accum -= count
         color = self._head_color()
-        base = self.ctx.rng.randint(3, 4)
-        count = max(1, int(round(base * self.ctx.scale)))
-        for _ in range(count):
+        for _ in range(min(count, 12)):
             ang = self.ctx.rng.uniform(0.0, math.tau)
             spd = self.ctx.rng.uniform(20.0, 70.0)
             self.trail.particles.append(Particle(
@@ -126,9 +135,11 @@ class Comet:
 
     def update(self, dt: float) -> bool:
         self.age += dt
+        if not self.released and self.age >= _MAX_HOLD_SECONDS:
+            self.release()
         if not self.released:
             self._wander(dt)
-            self._shed_trail()
+            self._shed_trail(dt)
             self.trail.update(dt)
             return True
         trail_alive = self.trail.update(dt)

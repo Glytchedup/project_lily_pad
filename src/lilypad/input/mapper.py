@@ -135,7 +135,10 @@ class KeyMapper:
             if event.name in self._holding:
                 self._holding.discard(event.name)
                 yield Action(kind="hold_end", key=event.name)
-            if self._in_mash and len(self._held) < MASH_RELEASE_BELOW:
+            if (self._in_mash and len(self._held) < MASH_RELEASE_BELOW
+                    and not self._rate_active(event.ts)):
+                # Rate check stops chaos from strobing on/off ~19x a second
+                # while a toddler taps fast without holding anything down.
                 self._in_mash = False
                 yield Action(kind="mash_end")
 
@@ -143,17 +146,28 @@ class KeyMapper:
         """Time-based check the main loop calls every frame: any key held past
         HOLD_SECONDS starts a rainbow comet (hold_start), ended by its release
         (hold_end, emitted from feed). Arrows are excluded — holding an arrow
-        already repeats frog shoves and a comet would muddy that mapping."""
-        for name, since in self._held.items():
+        already repeats frog shoves and a comet would muddy that mapping.
+
+        Also exits rate-triggered mash mode once tapping slows: that exit is
+        time-based (no release event arrives after the last tap), so it has
+        to live in the per-frame poll rather than in feed()."""
+        for name, since in list(self._held.items()):
             if (name not in self._holding
                     and name not in ARROWS
                     and len(self._holding) < MAX_COMETS
                     and now - since >= HOLD_SECONDS):
                 self._holding.add(name)
                 yield Action(kind="hold_start", key=name)
+        if (self._in_mash and len(self._held) < MASH_RELEASE_BELOW
+                and not self._rate_active(now)):
+            self._in_mash = False
+            yield Action(kind="mash_end")
+
+    def _rate_active(self, now: float) -> bool:
+        rapid = [t for t in self._recent_presses if now - t <= MASH_RATE_WINDOW]
+        return len(rapid) >= MASH_RATE_COUNT
 
     def _mash_triggered(self, now: float) -> bool:
         if len(self._held) >= MASH_HELD_THRESHOLD:
             return True
-        rapid = [t for t in self._recent_presses if now - t <= MASH_RATE_WINDOW]
-        return len(rapid) >= MASH_RATE_COUNT
+        return self._rate_active(now)

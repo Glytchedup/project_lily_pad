@@ -22,6 +22,10 @@ from .scenery import PondBackground
 BACKGROUND = (6, 8, 12)  # near-black; pure black feels "off", this glows
 
 TRAIL_ALPHA = 80         # veil strength; lower = longer comet tails
+GHOSTBUST_EVERY = 4      # frames between SUB/MAX anti-ghost passes (see draw)
+TRAILS_OFF_BELOW = 0.4   # degradation ladder sheds trails below this scale...
+TRAILS_ON_ABOVE = 0.6    # ...and restores them above this one (hysteresis)
+CELEBRATION_COOLDOWN = 10.0  # s between milestone parties (mash-proofing)
 RIPPLE_COLOR = (150, 200, 255)
 ALPHABET = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -53,6 +57,9 @@ class EffectEngine:
         self.last_action_time = time.monotonic()
         self._scene = pygame.Surface(size)
         self._celebration_pending = False
+        self._last_celebration = float("-inf")
+        self._trails_live = trails
+        self._frame_no = 0
         self._frame_ema = self.frame_budget
         self._chaos_spawn_accum = 0.0
 
@@ -65,7 +72,7 @@ class EffectEngine:
             self.attract = None
 
         if action.kind in _PRESS_KINDS:
-            self._note_press(action)
+            self._note_press(action, now)
 
         if action.kind == "arrow":
             self.frog.shove(action.direction)
@@ -101,7 +108,7 @@ class EffectEngine:
         if self.particle_count() < self.max_particles * 1.5:
             self.effects.extend(effects_for(self.ctx, action))
 
-    def _note_press(self, action: Action) -> None:
+    def _note_press(self, action: Action, now: float) -> None:
         """Milestone bookkeeping: every Nth press parties, and completing the
         alphabet parties harder (VISUAL_REVIEW.md #10)."""
         self.press_count += 1
@@ -109,14 +116,23 @@ class EffectEngine:
             self.letters_seen.add(action.letter)
             if self.letters_seen >= ALPHABET:
                 self.letters_seen.clear()
-                self._celebrate(big=True)
+                self._celebrate(big=True, now=now)
                 return
         if self.milestone_every and self.press_count % self.milestone_every == 0:
-            self._celebrate(big=False)
+            self._celebrate(big=False, now=now)
 
-    def _celebrate(self, big: bool) -> None:
-        self.effects.extend(celebration(self.ctx, big=big))
-        self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
+    def _celebrate(self, big: bool, now: float) -> None:
+        # Cooldown: under a mash storm the 50-press milestone recurs every
+        # couple of seconds, which would make the mega-party the steady state
+        # (and stack full-screen pulse overlays). One party at a time.
+        if now - self._last_celebration < CELEBRATION_COOLDOWN:
+            return
+        self._last_celebration = now
+        # Respect the same budget gate as every other spawn path; the frog
+        # and the fanfare still party even when the screen is saturated.
+        if self.particle_count() < self.max_particles * 1.5:
+            self.effects.extend(celebration(self.ctx, big=big))
+            self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
         self.frog.celebrate()
         self._celebration_pending = True
 
@@ -128,7 +144,10 @@ class EffectEngine:
     # ------------------------------------------------------------------ frame
 
     def particle_count(self) -> int:
-        return sum(len(e) for e in self.effects if hasattr(e, "__len__"))
+        n = sum(len(e) for e in self.effects if hasattr(e, "__len__"))
+        if self.chaos is not None:
+            n += len(self.chaos)   # engine-owned, but its wash isn't free
+        return n
 
     def update(self, dt: float, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -182,17 +201,30 @@ class EffectEngine:
         # The pond composites onto a scratch surface; blitting it translucent
         # instead of opaque is what leaves motion trails (VISUAL_REVIEW.md #4):
         # last frame's lights linger and fade INTO the scene over ~10 frames.
+        self._frame_no += 1
         self.pond.draw(self._scene)
+        # The veil is a fixed cost the particle ladder can't shrink, so the
+        # ladder sheds it directly: trails drop out when degradation is deep
+        # and come back once the frame budget recovers (with hysteresis).
         if self.trails:
+            if self._trails_live and self.ctx.scale <= TRAILS_OFF_BELOW:
+                self._trails_live = False
+            elif not self._trails_live and self.ctx.scale >= TRAILS_ON_ABOVE:
+                self._trails_live = True
+        if self.trails and self._trails_live:
             self._scene.set_alpha(TRAIL_ALPHA)
             surface.blit(self._scene, (0, 0))
             # Integer alpha-blending truncates, so the veil alone stalls a few
             # levels away from the scene and leaves permanent ghost silhouettes.
             # A small subtract breaks the floor for bright residue, and a MAX
             # blit of the scene snaps anything that fell below it back exactly.
-            surface.fill((3, 3, 3), special_flags=pygame.BLEND_RGB_SUB)
-            self._scene.set_alpha(None)
-            surface.blit(self._scene, (0, 0), special_flags=pygame.BLEND_RGB_MAX)
+            # Running this pass every few frames (instead of every frame) cuts
+            # its ~2 ms cost to ~0.5 ms; residue just fades a beat slower.
+            if self._frame_no % GHOSTBUST_EVERY == 0:
+                surface.fill((6, 6, 6), special_flags=pygame.BLEND_RGB_SUB)
+                self._scene.set_alpha(None)
+                surface.blit(self._scene, (0, 0),
+                             special_flags=pygame.BLEND_RGB_MAX)
         else:
             self._scene.set_alpha(None)
             surface.blit(self._scene, (0, 0))

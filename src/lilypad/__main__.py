@@ -142,19 +142,23 @@ def main(argv: list[str] | None = None) -> int:
             if kiosk:
                 pygame.event.clear()  # SDL's own queue is unused on the Pi
 
+            def handle(action):
+                engine.spawn(action, now)
+                audio.on_action(action)
+                if action.kind == "mash_start":
+                    lighting.set_mash(True)
+                elif action.kind == "mash_end":
+                    lighting.set_mash(False)
+
             for ev in events:
                 if ev.pressed:
                     lighting.key_pressed(ev.name, now)
                 for action in mapper.feed(ev):
-                    engine.spawn(action, now)
-                    audio.on_action(action)
-                    if action.kind == "mash_start":
-                        lighting.set_mash(True)
-                    elif action.kind == "mash_end":
-                        lighting.set_mash(False)
-            # Time-based: keys held past the threshold become rainbow comets.
+                    handle(action)
+            # Time-based: keys held past the threshold become rainbow comets,
+            # and rate-triggered mash mode exits once tapping slows.
             for action in mapper.poll_holds(now):
-                engine.spawn(action, now)
+                handle(action)
             if engine.consume_celebration():
                 audio.on_celebration()
 

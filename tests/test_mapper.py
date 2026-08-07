@@ -167,3 +167,35 @@ def test_hold_comet_cap():
         list(m.feed(press(name, i * 0.001)))
     holds = list(m.poll_holds(1.0))
     assert len(holds) == MAX_COMETS
+
+
+def test_rate_mash_does_not_oscillate_while_tapping():
+    """Fast tapping without holding must not strobe mash on/off per tap."""
+    m = KeyMapper()
+    starts = ends = 0
+    names = "ASDFQWERZXCV"
+    for i in range(60):  # 20 taps/s for 3 s
+        t = i * 0.05
+        for a in m.feed(press(names[i % len(names)], t)):
+            starts += a.kind == "mash_start"
+        for a in m.feed(release(names[i % len(names)], t + 0.02)):
+            ends += a.kind == "mash_end"
+    assert starts == 1
+    assert ends == 0          # still tapping fast — stays in mash
+    # Tapping stops; the per-frame poll exits mash once the window drains.
+    actions = list(m.poll_holds(60 * 0.05 + 2.0))
+    assert any(a.kind == "mash_end" for a in actions)
+    assert not m.in_mash
+
+
+def test_held_mash_still_exits_on_release():
+    m = KeyMapper()
+    for i, n in enumerate("ASDFG"):
+        list(m.feed(press(n, 10.0 + i * 0.3)))   # slow presses: rate path off
+    assert m.in_mash
+    ends = []
+    for i, n in enumerate("ASDFG"):
+        ends += [a for a in m.feed(release(n, 20.0 + i * 0.1))
+                 if a.kind == "mash_end"]
+    assert len(ends) == 1
+    assert not m.in_mash

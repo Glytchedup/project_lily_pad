@@ -171,3 +171,49 @@ def test_full_frame_with_everything_live():
     e.spawn(Action(kind="mash_end"), now=2.0)
     e.spawn(Action(kind="hold_end", key="Q"), now=2.0)
     run(e, 8.0)  # everything transient should drain without error
+
+
+# ------------------------------------------------------- review-round fixes
+
+def test_celebration_cooldown_limits_party_rate():
+    e = make_engine(milestone_every=2)
+    for i in range(20):
+        e.spawn(Action(kind="sparkle", key=f"K{i}"), now=1.0)
+    # 10 milestones hit, but only the first lands inside the cooldown window.
+    assert e.consume_celebration() is True
+    pulses = [x for x in e.effects if type(x).__name__ == "CelebrationPulse"]
+    assert len(pulses) == 1
+    # After the cooldown, the next milestone parties again.
+    e.spawn(Action(kind="sparkle", key="L1"), now=30.0)
+    e.spawn(Action(kind="sparkle", key="L2"), now=30.0)
+    assert e.consume_celebration() is True
+
+
+def test_comet_auto_releases_on_stuck_hold():
+    from lilypad.effects.comet import _MAX_HOLD_SECONDS
+    e = make_engine()
+    e.spawn(Action(kind="hold_start", key="A"), now=0.0)
+    comet = e.comets["A"]
+    for _ in range(int((_MAX_HOLD_SECONDS + 3) * 30)):
+        e.update(1 / 30, now=0.0)
+    assert comet.released
+    assert comet not in e.effects  # fully drained and pruned
+
+
+def test_comet_shed_rate_is_frame_rate_independent():
+    from lilypad.effects.comet import Comet
+    counts = {}
+    for fps in (30, 120):
+        ctx = EffectContext(size=SIZE, rng=random.Random(5))
+        c = Comet(ctx)
+        for _ in range(fps * 2):  # 2 simulated seconds
+            c.update(1 / fps)
+        counts[fps] = len(c.trail)
+    assert abs(counts[30] - counts[120]) / max(counts.values()) < 0.25
+
+
+def test_chaos_overlay_counts_toward_budget():
+    e = make_engine()
+    base = e.particle_count()
+    e.spawn(Action(kind="mash_start"), now=0.0)
+    assert e.particle_count() > base + 100

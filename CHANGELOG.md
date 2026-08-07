@@ -48,6 +48,39 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
   re-entry), which kept him permanently squashed and would have rained
   ripples; bounces now require a real impact.
 
+### Fixed (adversarial review round 1 — three independent reviewers)
+- `ChaosOverlay.draw` allocated and filled a full-screen surface every frame
+  (~12 MB/frame of churn, ~1.9 ms/overlay); the wash surface is now
+  persistent. Worst-case frame time dropped ~32% (17.4 → 11.8 ms mean on the
+  dev box), p95 ~37%.
+- Milestone celebrations now respect the particle-budget gate and a 10 s
+  cooldown — under a mash storm the mega-party recurred every ~1.7 s,
+  stacked up to 3 full-screen overlays, and made 3.5% of presses visually
+  dead by saturating the budget.
+- The degradation ladder can now shed the trail veil (off below scale 0.4,
+  back above 0.6): its cost is fixed per frame, so particle scaling alone
+  measurably could not recover the budget. The anti-ghost SUB/MAX pass also
+  runs every 4th frame instead of every frame (~2 ms → ~0.5 ms).
+- Comet trail shedding is now dt-based (was per-tick: doubled at 120 fps,
+  starved at 30), and a comet whose key-release never arrives (USB unplug
+  mid-hold) auto-releases after 30 s instead of living forever.
+- Rate-triggered mash mode no longer strobes on/off ~19x/s under fast
+  tapping (it now stays on while the press rate holds, and exits via the
+  per-frame poll once tapping slows — previously it could also wedge ON
+  forever, since exit only ran on a release event).
+- Chaos overlay now counts toward the particle budget (its wash measured
+  ~880 particle-equivalents but reported 30, blinding the spawn gates).
+- Count-along pop-in scale curve was discontinuous (26% single-frame size
+  snap at the overshoot boundary); digit glyph now uses the clamped count;
+  fade no longer rescales sprites to an identical size every frame.
+- Giant letters: a white fill could draw a white outline (~1% of letters
+  became a flat glyph); the fade phase copied a ~1 MB surface per frame
+  (now set_alpha in place).
+- New audio cues (animal sounds, count notes) now fall back to pre-upgrade
+  cues on a sounds dir generated before this change.
+- `poll_holds` iterates a snapshot of held keys (latent
+  dictionary-changed-during-iteration hazard for future callers).
+
 ### Added
 - `VISUAL_REVIEW.md`: visual-design review of the effects layer with 10 ranked
   recommendations (glossy bubbles, farm-animal cast, additive glow, motion
