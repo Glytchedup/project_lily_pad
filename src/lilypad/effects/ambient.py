@@ -91,6 +91,10 @@ class ChaosOverlay:
         flash = (math.sin(self.age * 7) + 1) / 2
         overlay_alpha = int(46 * self._alpha * flash)
         if overlay_alpha > 2:
+            if self._wash.get_size() != surface.get_size():
+                # ctx.size and the draw surface always match in the app, but
+                # a mismatch here would silently wash only part of the screen.
+                self._wash = pygame.Surface(surface.get_size())
             self._wash.fill(color)
             self._wash.set_alpha(overlay_alpha)
             surface.blit(self._wash, (0, 0))

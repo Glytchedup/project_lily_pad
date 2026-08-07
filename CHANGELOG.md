@@ -40,13 +40,55 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 - Frog splash-down ripples (water rings at his feet on real impacts).
 - Audio: new procedural cues (moo/quack/oink/baa, count_0..9 pentatonic
   ladder, celebration fanfare) and `AudioEngine.on_celebration()`.
-- Tests: 160 (was 52) — new coverage for animals, bubbles, comet, glow,
-  scenery, synth cues, hold detection, and engine integration.
+- Tests: 171 (was 52) — new coverage for animals, bubbles, comet, glow,
+  scenery, synth cues, hold detection, engine integration, and regression
+  tests from both adversarial review rounds.
 
 ### Fixed (visual WOW upgrade)
 - A resting frog re-triggered its floor bounce every frame (sub-pixel gravity
   re-entry), which kept him permanently squashed and would have rained
   ripples; bounces now require a real impact.
+
+### Fixed (adversarial review round 2 — three fresh independent reviewers:
+### whole-branch, fix-regression hunt, and rendered-frame visual QA)
+- Glow sprites pushed every core ~92% toward white, erasing the particle
+  palette (71% of burst pixels measured colorless) and flattening the fade
+  curve; the core now keeps ~half its saturation, so single particles read
+  as their color and true white only appears where glows overlap.
+- Googly eyes were placed glyph-blind and punched pupil-holes through
+  letter strokes (white ball invisible on the white outline); they now
+  perch on top of the glyph with a dark rim — every letter reads as a
+  creature and legibility is untouched.
+- The count-along digit lived a fixed 1.9 s and was gone before the 8th,
+  9th and 10th objects even appeared; it now holds until the count (and
+  fanfare) finish. Fanfare bursts are bigger and fire above each object.
+- Alphabet completion during the celebration cooldown silently destroyed
+  both the party and the 26-letter progress (97% of completions eaten at
+  mash speeds); the big party now bypasses cooldown and budget, and
+  progress is only consumed when it actually fires. A budget-blocked
+  ordinary milestone no longer arms the cooldown either.
+- Round-1's "honest" overlay budget weight starved mash mode of its own
+  bursts (72% fewer at default config; zero below max_particles=250) —
+  the engine-owned mash overlay no longer taxes the spawn gates
+  (CelebrationPulse, which lives in the effects list, still does).
+- Trails now pause while mash chaos is active: the veil re-blended the
+  full-screen hue wash every frame into a solid saturated screen.
+- Space bar's drawn Rings stacked into a full-screen bullseye moiré under
+  trails; replaced with expanding rings made of fading glow particles.
+- Pond variants each baked their own moon and starfield, so crossfades
+  showed two moons; all variants now share one sky layout. Lily pads sat
+  almost entirely below the bottom edge; raised into view.
+- Comet: inward steering strengthened and the clamp inset by the head
+  size (heads/bursts pinned half-clipped into edges); stuck-hold auto-
+  release raised 30 s → 120 s so a toddler leaning on a key keeps their
+  comet; wash surface re-created on size mismatch.
+- Audio: count-cue fallback removed (it double-fired "pop" at 2x amplitude
+  on pre-upgrade sound dirs — the voice line already falls back);
+  ANIMAL_LETTERS now imported from effects.animals instead of duplicated.
+- Rainbow letter gradient now spans the full glyph (violet end previously
+  fell past the ink); mini duck's stick-bill replaced with a rounded one;
+  registry docstring corrected; celebration pulse draws at the same depth
+  as the mash overlay it subclasses; dead `rising_balloons` removed.
 
 ### Fixed (adversarial review round 1 — three independent reviewers)
 - `ChaosOverlay.draw` allocated and filled a full-screen surface every frame

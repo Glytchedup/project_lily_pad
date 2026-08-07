@@ -28,8 +28,12 @@ _HUE_SPEED = 0.18            # full rainbow cycles per second (roughly)
 _EDGE_MARGIN = 0.10          # inward steering kicks in this close to an edge
 _BURST_COUNT = 40
 _SHED_PER_SECOND = 130.0     # trail particles/s (dt-based, frame-rate free)
-_MAX_HOLD_SECONDS = 30.0     # safety valve: auto-release if the key-up never
-                             # arrives (USB unplug mid-hold strands the hold)
+_MAX_HOLD_SECONDS = 120.0    # safety valve: auto-release if the key-up never
+                             # arrives (USB unplug mid-hold strands the hold).
+                             # Long enough that a toddler leaning on a key
+                             # keeps their comet; stuck holds from a device
+                             # drop are also cleaned up by the udev replug
+                             # rule restarting the app.
 
 
 class Comet:
@@ -98,17 +102,19 @@ class Comet:
         elif self.y > self.height - my:
             bias_y = -(self.y - (self.height - my)) / my
 
-        dx += bias_x * 2.0
-        dy += bias_y * 2.0
+        dx += bias_x * 3.5
+        dy += bias_y * 3.5
         norm = math.hypot(dx, dy) or 1.0
         dx, dy = dx / norm, dy / norm
 
         self.x += dx * self.speed * dt
         self.y += dy * self.speed * dt
-        # Hard safety clamp: the bias above keeps this a no-op in practice,
-        # but the comet must never leave the screen even in edge cases.
-        self.x = min(max(self.x, 0.0), float(self.width))
-        self.y = min(max(self.y, 0.0), float(self.height))
+        # Hard safety clamp, inset by the max head size so the head and its
+        # release burst stay fully on-screen instead of pinning half-clipped
+        # into an edge or corner.
+        inset = min(_CAP_RADIUS * 1.6, self.width / 4, self.height / 4)
+        self.x = min(max(self.x, inset), self.width - inset)
+        self.y = min(max(self.y, inset), self.height - inset)
 
     def _shed_trail(self, dt: float) -> None:
         # dt-based so the shed rate is frames-per-second independent (a

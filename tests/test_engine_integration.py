@@ -212,8 +212,60 @@ def test_comet_shed_rate_is_frame_rate_independent():
     assert abs(counts[30] - counts[120]) / max(counts.values()) < 0.25
 
 
-def test_chaos_overlay_counts_toward_budget():
+def test_mash_overlay_does_not_tax_the_budget():
+    """Deliberate: counting the mash overlay starved mash mode of its own
+    bursts (72% fewer at default config, zero below max_particles=250)."""
     e = make_engine()
     base = e.particle_count()
     e.spawn(Action(kind="mash_start"), now=0.0)
-    assert e.particle_count() > base + 100
+    assert e.particle_count() == base
+
+
+def test_celebration_pulse_does_count_toward_budget():
+    e = make_engine(milestone_every=1)
+    e.spawn(Action(kind="sparkle", key="K"), now=50.0)
+    assert e.particle_count() > 250  # pulse (250) + party effects
+
+
+def test_alphabet_reward_survives_cooldown():
+    """A cooldown-suppressed milestone must not eat the alphabet party or
+    the 26-letter progress."""
+    e = make_engine(milestone_every=5)
+    for i in range(5):
+        e.spawn(Action(kind="sparkle", key=f"K{i}"), now=100.0)  # arms cooldown
+    assert e.consume_celebration() is True
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":                       # 2 s later
+        e.spawn(Action(kind="letter", key=ch, letter=ch), now=102.0)
+    assert e.consume_celebration() is True    # big party fired anyway
+    assert e.letters_seen == set()            # and progress was consumed by it
+
+
+def test_blocked_party_does_not_arm_cooldown():
+    e = make_engine(milestone_every=5)
+    for _ in range(12):                        # saturate the budget
+        e.effects.extend(celebration(e.ctx, big=False))
+    assert e.particle_count() >= e.max_particles * 1.5
+    for i in range(5):
+        e.spawn(Action(kind="sparkle", key=f"B{i}"), now=100.0)
+    assert e.consume_celebration() is False   # blocked by budget
+    e.effects.clear()                          # screen drains
+    for i in range(5):
+        e.spawn(Action(kind="sparkle", key=f"C{i}"), now=101.0)
+    assert e.consume_celebration() is True    # no stale cooldown in the way
+
+
+def test_trails_pause_during_mash_chaos():
+    e = make_engine(trails=True)
+    e.spawn(Action(kind="mash_start"), now=0.0)
+    s = surf()
+    e.update(1 / 60, now=0.0)
+    e.draw(s)
+    # Veil suspended: internal scene blit ran opaque (alpha None restored).
+    assert e._scene.get_alpha() in (None, 255)
+
+
+def test_count_digit_outlives_the_count():
+    from lilypad.effects.numbers import CountAlong
+    ctx = EffectContext(size=SIZE, rng=random.Random(2))
+    c = CountAlong(ctx, 10)
+    assert c.digit.total >= c.total - 1e-6

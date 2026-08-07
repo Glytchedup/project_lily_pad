@@ -71,9 +71,14 @@ def _build_sprite(color: tuple[int, int, int], radius: int) -> pygame.Surface:
         outer_t = i / steps            # 1.0 at the outer edge, shrinking inward
         core_t = (1.0 - outer_t) ** 1.6  # eased: ~0 at edge, ~1 near the core
         r = max(1, round(max_r * outer_t))
+        # Core pushes only ~45% toward white: enough for a hot center, while
+        # a single particle still clearly reads as its palette color. (An
+        # earlier 92% push made every core near-white — review measured 71%
+        # of burst pixels colorless and the fade curve flattened to nothing;
+        # true white now only appears where glows OVERLAP and BLEND_ADD sums.)
         blended = tuple(
             max(0, min(255, round(
-                (ch * 0.12) + (min(255, ch + (255 - ch) * 0.92) - ch * 0.12) * core_t
+                (ch * 0.12) + (min(255, ch + (255 - ch) * 0.45) - ch * 0.12) * core_t
             )))
             for ch in color
         )

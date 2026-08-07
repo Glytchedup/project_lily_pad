@@ -68,11 +68,27 @@ def _gen_stars(rng, w: int, h: int, count: int) -> list[dict]:
     return stars
 
 
-def _draw_moon(surf: pygame.Surface, w: int, h: int, rng,
+def _gen_sky_layout(rng, w: int, h: int) -> dict:
+    """Moon position, starfield, and twinkle selection — generated ONCE and
+    shared by all three variants, so the crossfade blends one sky into
+    different light rather than showing two moons and two starfields."""
+    stars = _gen_stars(rng, w, h, _STAR_COUNT)
+    order = list(range(len(stars)))
+    rng.shuffle(order)
+    return {
+        "moon": (int(w * rng.uniform(0.70, 0.86)),
+                 int(h * rng.uniform(0.10, 0.22)),
+                 max(14, int(h * 0.045))),
+        "stars": stars,
+        "twinkle_idx": order[:min(_TWINKLE_COUNT, len(stars))],
+        "twinkle_phases": [rng.uniform(0, math.tau) for _ in range(
+            min(_TWINKLE_COUNT, len(stars)))],
+    }
+
+
+def _draw_moon(surf: pygame.Surface, moon: tuple[int, int, int], h: int,
                 top: tuple[int, int, int], bottom: tuple[int, int, int]) -> None:
-    cx = int(w * rng.uniform(0.70, 0.86))
-    cy = int(h * rng.uniform(0.10, 0.22))
-    r = max(14, int(h * 0.045))
+    cx, cy, r = moon
     pygame.draw.circle(surf, _MOON_COLOR, (cx, cy), r)
     # Crescent trick: overlay a second circle painted in the local gradient
     # color to bite a chunk out of the disc.
@@ -90,7 +106,7 @@ class _Variant:
     twinkle_phases: list[float]
 
 
-def _build_variant(size: tuple[int, int], name: str, rng) -> _Variant:
+def _build_variant(size: tuple[int, int], name: str, layout: dict) -> _Variant:
     w, h = size
     top, bottom = _GRADIENTS[name]
     surf = pygame.Surface(size).convert()
@@ -114,19 +130,15 @@ def _build_variant(size: tuple[int, int], name: str, rng) -> _Variant:
         pygame.draw.rect(surf, color, (0, y, w, strip))
         y += strip
 
-    _draw_moon(surf, w, h, rng, top, bottom)
+    _draw_moon(surf, layout["moon"], h, top, bottom)
 
-    stars = _gen_stars(rng, w, h, _STAR_COUNT)
+    stars = layout["stars"]
     for s in stars:
         pygame.draw.circle(surf, _STAR_COLOR, (int(s["x"]), int(s["y"])), s["r"])
 
-    order = list(range(len(stars)))
-    rng.shuffle(order)
-    twinkle_idx = order[:min(_TWINKLE_COUNT, len(stars))]
-    twinkle_phases = [rng.uniform(0, math.tau) for _ in twinkle_idx]
-
     return _Variant(name=name, surface=surf, stars=stars,
-                     twinkle_idx=twinkle_idx, twinkle_phases=twinkle_phases)
+                     twinkle_idx=layout["twinkle_idx"],
+                     twinkle_phases=layout["twinkle_phases"])
 
 
 def _build_lily_sprite(r: float, lotus: bool) -> pygame.Surface:
@@ -163,7 +175,9 @@ def _gen_lily_pads(rng, w: int, h: int, count: int) -> list[dict]:
         frac = 0.18 + 0.64 * (i / max(1, count - 1))
         x = frac * w + rng.uniform(-0.04, 0.04) * w
         r = rng.uniform(0.035, 0.055) * h
-        y = h - rng.uniform(0.015, 0.045) * h
+        # Center sits roughly one pad-half-height above the edge so most of
+        # the pad (and the lotus) is actually visible, not a bottom sliver.
+        y = h - r * 0.6 - rng.uniform(0.0, 0.015) * h
         pads.append({
             "x": x, "y": y, "r": r,
             "phase": rng.uniform(0, math.tau),
@@ -181,8 +195,9 @@ class PondBackground:
         w, h = ctx.size
         self._w, self._h = w, h
 
+        layout = _gen_sky_layout(ctx.rng, w, h)   # one sky, three lights
         self._variants: list[_Variant] = [
-            _build_variant((w, h), name, ctx.rng) for name in VARIANTS
+            _build_variant((w, h), name, layout) for name in VARIANTS
         ]
 
         self._lily_pads = _gen_lily_pads(ctx.rng, w, h, _LILY_COUNT)

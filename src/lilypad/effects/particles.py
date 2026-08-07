@@ -184,8 +184,27 @@ def confetti_rain(ctx: EffectContext, count: int = 140) -> ParticleSystem:
     return sys_
 
 
-def rising_balloons(ctx: EffectContext, count: int = 10) -> "Balloons":
-    return Balloons(ctx, count)
+def ring_burst(ctx: EffectContext, pos: tuple[float, float],
+               color: tuple[int, int, int] | None = None,
+               count: int = 36, speed: float = 480.0,
+               life: float = 0.8) -> ParticleSystem:
+    """An expanding circle of glow particles — reads like a shockwave ring,
+    but because it's made of fading particles it plays nicely with motion
+    trails (a redrawn pygame circle stacks into a bullseye moiré under the
+    trail veil; this doesn't)."""
+    sys_ = ParticleSystem()
+    n = max(10, int(count * ctx.scale))
+    c = color or random_bright(ctx.rng)
+    for i in range(n):
+        ang = (i / n) * math.tau
+        sys_.particles.append(Particle(
+            x=pos[0], y=pos[1],
+            vx=math.cos(ang) * speed, vy=math.sin(ang) * speed,
+            life=life * ctx.rng.uniform(0.85, 1.0),
+            color=c if i % 4 else (255, 255, 255),
+            size=5.5, drag=0.4,
+        ))
+    return sys_
 
 
 class Balloons:

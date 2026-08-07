@@ -47,13 +47,17 @@ class CountAlong:
             x = ctx.width * (0.12 + 0.76 * frac)
             y = ctx.height * (0.55 - 0.18 * math.sin(frac * math.pi))
             self.spots.append({"pos": (x, y), "born": i * self.POP_INTERVAL})
+        self.last_born = (self.count - 1) * self.POP_INTERVAL
+        self.total = self.last_born + self.HOLD_AFTER_LAST + self.FADE_TIME
+        # Stretch the digit's hold so symbol and quantity stay up TOGETHER:
+        # with the default 1 s hold the digit was gone before the 8th, 9th
+        # and 10th objects had even appeared.
         self.digit = GiantLetter(
             ctx, str(self.count),
             pos=(ctx.width * 0.5, ctx.height * 0.2), height_frac=0.28,
             eyes=False,
+            hold_time=self.total - GiantLetter.POP_TIME - GiantLetter.FADE_TIME,
         )
-        self.last_born = (self.count - 1) * self.POP_INTERVAL
-        self.total = self.last_born + self.HOLD_AFTER_LAST + self.FADE_TIME
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -63,9 +67,11 @@ class CountAlong:
         fanfare_start = self.last_born + 0.35
         while (self._fanfared < self.count
                and self.age >= fanfare_start + self._fanfared * self.FANFARE_INTERVAL):
-            pos = self.spots[self._fanfared]["pos"]
-            small = burst(self.ctx, pos, count=10, speed=180, size=4, life=0.5,
-                          gravity=120)
+            x, y = self.spots[self._fanfared]["pos"]
+            # Burst above the object (not on its face) and big enough to read
+            # as a per-object "one! two! three!" beat.
+            small = burst(self.ctx, (x, y - self.ctx.height * 0.06),
+                          count=18, speed=280, size=6, life=0.7, gravity=160)
             self.fanfare.particles.extend(small.particles)
             self._fanfared += 1
         self.fanfare.update(dt)
@@ -86,20 +92,22 @@ class CountAlong:
             pop = min(1.0, t / 0.2)
             pop = 1.15 * (pop / 0.8) if pop < 0.8 else 1.15 - 0.15 * ((pop - 0.8) / 0.2)
             img = self.sprite
-            scaled = pop < 0.999 or pop > 1.001
-            if scaled:
+            if pop < 0.999 or pop > 1.001:
                 w = max(1, int(img.get_width() * pop))
                 h = max(1, int(img.get_height() * pop))
                 img = pygame.transform.scale(img, (w, h))
             if alpha < 1.0:
-                # The cached sprite is shared, so set alpha only around the
-                # blit — cheaper than rescaling to an identical size for a
-                # private copy every fade frame.
+                # Fade only ever runs long after every pop has settled, so
+                # img is always the SHARED cached sprite here: set alpha just
+                # around the blit and restore it (cheaper than a private copy
+                # per fade frame).
                 img.set_alpha(int(255 * alpha))
-            x, y = spot["pos"]
-            surface.blit(img, img.get_rect(center=(int(x), int(y))))
-            if alpha < 1.0 and not scaled:
+                x, y = spot["pos"]
+                surface.blit(img, img.get_rect(center=(int(x), int(y))))
                 img.set_alpha(None)
+            else:
+                x, y = spot["pos"]
+                surface.blit(img, img.get_rect(center=(int(x), int(y))))
         self.fanfare.draw(surface)
         if alpha > 0:
             self.digit.draw(surface)

@@ -34,12 +34,16 @@ def _rainbowize(glyph: pygame.Surface) -> None:
     (~28 horizontal bands; spawn-time only)."""
     w, h = glyph.get_size()
     bands = 28
-    band_h = max(1, h // bands + 1)
     strip = pygame.Surface((w, h))
-    for i in range(bands + 1):
-        r, g, b = colorsys.hsv_to_rgb((i / bands) * 0.92, 0.85, 1.0)
+    # Bands sized to span the glyph surface exactly — a fixed band height
+    # overshot the surface, so the violet end of the ramp fell past the ink
+    # and letters only ever showed red-to-cyan.
+    for i in range(bands):
+        y0 = round(i * h / bands)
+        y1 = round((i + 1) * h / bands)
+        r, g, b = colorsys.hsv_to_rgb((i / (bands - 1)) * 0.92, 0.85, 1.0)
         pygame.draw.rect(strip, (int(r * 255), int(g * 255), int(b * 255)),
-                         (0, i * band_h, w, band_h))
+                         (0, y0, w, max(1, y1 - y0)))
     glyph.blit(strip, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
 
 
@@ -87,7 +91,8 @@ class GiantLetter:
                  pos: tuple[float, float] | None = None,
                  color: tuple[int, int, int] | None = None,
                  height_frac: float = 0.6,
-                 eyes: bool = True) -> None:
+                 eyes: bool = True,
+                 hold_time: float | None = None) -> None:
         self.color = color or random_bright(ctx.rng)
         size = int(ctx.height * height_frac)
         rainbow = ctx.rng.random() < self.RAINBOW_CHANCE
@@ -99,7 +104,10 @@ class GiantLetter:
         self.eyes = eyes
         self.eye_phase = ctx.rng.uniform(0, math.tau)
         self.age = 0.0
-        self.total = self.POP_TIME + self.HOLD_TIME + self.FADE_TIME
+        # hold_time lets a caller stretch the display (count-along keeps its
+        # digit up until the last object has been counted).
+        self.hold_time = self.HOLD_TIME if hold_time is None else hold_time
+        self.total = self.POP_TIME + self.hold_time + self.FADE_TIME
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -114,14 +122,22 @@ class GiantLetter:
                 int(math.sin(t * 3.4) * h * 0.02))
 
     def _draw_eyes(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
-        """Googly eyes during the hold: white ball, wandering pupil."""
+        """Googly eyes during the hold, perched on top of the glyph.
+
+        Placing them INSIDE the glyph was glyph-blind: on most letters the
+        white ball vanished into the white outline (leaving pupil-holes in
+        the stroke) or floated in a counter. On top, every letter becomes a
+        creature peeking at you, and legibility is untouched. A dark rim
+        keeps the ball readable over the white outline it overlaps.
+        """
         r = max(6, rect.height // 14)
-        cy = rect.top + int(rect.height * 0.34)
+        cy = rect.top + int(rect.height * 0.10)
         wander = self.age * 2.6 + self.eye_phase
         px = int(math.cos(wander) * r * 0.35)
         py = int(math.sin(wander * 0.7) * r * 0.35)
         for side in (-1, 1):
-            ex = rect.centerx + side * int(rect.width * 0.18)
+            ex = rect.centerx + side * int(rect.width * 0.16)
+            pygame.draw.circle(surface, (25, 25, 30), (ex, cy), r + 2)
             pygame.draw.circle(surface, (255, 255, 255), (ex, cy), r)
             pygame.draw.circle(surface, (25, 25, 30), (ex + px, cy + py),
                                max(3, r // 2))
@@ -138,8 +154,8 @@ class GiantLetter:
             w = max(1, int(img.get_width() * scale))
             h = max(1, int(img.get_height() * scale))
             img = pygame.transform.scale(img, (w, h))
-        elif self.age > self.POP_TIME + self.HOLD_TIME:
-            fade = 1.0 - (self.age - self.POP_TIME - self.HOLD_TIME) / self.FADE_TIME
+        elif self.age > self.POP_TIME + self.hold_time:
+            fade = 1.0 - (self.age - self.POP_TIME - self.hold_time) / self.FADE_TIME
             # The glyph is instance-owned and the phases are monotonic, so
             # set_alpha in place is safe — copying a ~1 MB surface every fade
             # frame was measured at 3.7x the cost of the plain blit.
@@ -147,7 +163,7 @@ class GiantLetter:
         ox, oy = self._wobble()
         rect = img.get_rect(center=(int(self.pos[0]) + ox, int(self.pos[1]) + oy))
         surface.blit(img, rect)
-        if self.eyes and self.POP_TIME <= self.age <= self.POP_TIME + self.HOLD_TIME:
+        if self.eyes and self.POP_TIME <= self.age <= self.POP_TIME + self.hold_time:
             self._draw_eyes(surface, rect)
 
     def __len__(self) -> int:  # counts toward particle budget as a flat cost

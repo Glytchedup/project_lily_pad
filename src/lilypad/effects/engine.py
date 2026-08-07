@@ -115,26 +115,37 @@ class EffectEngine:
         if action.kind == "letter" and action.letter in ALPHABET:
             self.letters_seen.add(action.letter)
             if self.letters_seen >= ALPHABET:
-                self.letters_seen.clear()
-                self._celebrate(big=True, now=now)
+                # Clear ONLY if the party actually fires — an earlier version
+                # cleared unconditionally, and a cooldown-suppressed party
+                # silently destroyed the child's 26-letter progress (97% of
+                # completions were eaten at mash speeds).
+                if self._celebrate(big=True, now=now):
+                    self.letters_seen.clear()
                 return
         if self.milestone_every and self.press_count % self.milestone_every == 0:
             self._celebrate(big=False, now=now)
 
-    def _celebrate(self, big: bool, now: float) -> None:
-        # Cooldown: under a mash storm the 50-press milestone recurs every
-        # couple of seconds, which would make the mega-party the steady state
-        # (and stack full-screen pulse overlays). One party at a time.
-        if now - self._last_celebration < CELEBRATION_COOLDOWN:
-            return
+    def _celebrate(self, big: bool, now: float) -> bool:
+        """Fire a party; returns whether it actually fired.
+
+        Ordinary milestones respect a cooldown (under a mash storm the
+        50-press milestone recurs every ~2 s, which made the mega-party the
+        steady state) and the particle-budget gate. The alphabet party is a
+        once-per-alphabet earned reward, so it bypasses both.
+        """
+        if not big:
+            if now - self._last_celebration < CELEBRATION_COOLDOWN:
+                return False
+            if self.particle_count() >= self.max_particles * 1.5:
+                # Screen saturated: skip, and do NOT arm the cooldown — the
+                # next affordable milestone should party at full strength.
+                return False
         self._last_celebration = now
-        # Respect the same budget gate as every other spawn path; the frog
-        # and the fanfare still party even when the screen is saturated.
-        if self.particle_count() < self.max_particles * 1.5:
-            self.effects.extend(celebration(self.ctx, big=big))
-            self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
+        self.effects.extend(celebration(self.ctx, big=big))
+        self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
         self.frog.celebrate()
         self._celebration_pending = True
+        return True
 
     def consume_celebration(self) -> bool:
         """Main loop polls this to fire the celebration audio cue."""
@@ -144,10 +155,14 @@ class EffectEngine:
     # ------------------------------------------------------------------ frame
 
     def particle_count(self) -> int:
-        n = sum(len(e) for e in self.effects if hasattr(e, "__len__"))
-        if self.chaos is not None:
-            n += len(self.chaos)   # engine-owned, but its wash isn't free
-        return n
+        # The engine-owned mash overlay deliberately does NOT count here:
+        # taxing the budget with its (real) draw cost starved mash mode of
+        # the very bursts that make it fun — measured 72% fewer at default
+        # config, and zero below max_particles=250. Its cost is handled by
+        # the degradation ladder instead (particle scale + trail shedding).
+        # CelebrationPulse instances live in self.effects and do count.
+        return (sum(len(e) for e in self.effects if hasattr(e, "__len__"))
+                + len(self.pond))
 
     def update(self, dt: float, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -211,7 +226,10 @@ class EffectEngine:
                 self._trails_live = False
             elif not self._trails_live and self.ctx.scale >= TRAILS_ON_ABOVE:
                 self._trails_live = True
-        if self.trails and self._trails_live:
+        # Trails also pause while the mash chaos overlay is live: the veil
+        # re-blends the full-screen hue wash every frame, compounding it into
+        # a solid saturated screen that swallows the pond and every effect.
+        if self.trails and self._trails_live and self.chaos is None:
             self._scene.set_alpha(TRAIL_ALPHA)
             surface.blit(self._scene, (0, 0))
             # Integer alpha-blending truncates, so the veil alone stalls a few
@@ -230,9 +248,18 @@ class EffectEngine:
             surface.blit(self._scene, (0, 0))
         if self.attract is not None:
             self.attract.draw(surface)
+        # Full-screen pulses draw above the frog, same depth as the mash
+        # overlay they subclass — a border that vanishes behind the frog at
+        # one call site and covers him at the other reads as a glitch.
+        pulses = []
         for effect in self.effects:
-            effect.draw(surface)
+            if isinstance(effect, CelebrationPulse):
+                pulses.append(effect)
+            else:
+                effect.draw(surface)
         self.frog.draw(surface)
+        for pulse in pulses:
+            pulse.draw(surface)
         if self.chaos is not None:
             self.chaos.draw(surface)
 

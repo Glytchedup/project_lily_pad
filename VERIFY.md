@@ -33,7 +33,14 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       mash chaos + a milestone celebration + held keys at once), not single
       presses. The engine sheds trails automatically when deeply degraded;
       `effects.trails = false` in `/etc/lilypad/config.toml` forces the
-      cheap opaque clear permanently.
+      cheap opaque clear permanently. (On a Pi installed before the visual
+      upgrade the `trails` key won't be in that file — add it under
+      `[effects]`; the installer keeps existing configs.)
+- [ ] Trails on real KMSDRM: confirm streaks fade smoothly with NO
+      flicker/strobe. The trail technique reads the previous frame back
+      from the display surface, which is verified on the dev SDL path but
+      not on the Pi's KMSDRM driver; if it strobes there, set
+      `effects.trails = false` and report.
 - [ ] Two keys at once → chord supernova; palm-mash 5+ keys → rainbow chaos
       mode, calming down when released.
 - Note: the left-edge M1–M5 macro keys may do nothing at all — the lighting

@@ -334,12 +334,10 @@ def _mini_duck(surf: pygame.Surface, s: int) -> None:
     _ellipse(surf, DUCK_YELLOW_DARK, s * 0.52, s * 0.66, s * 0.34, s * 0.24)
     _ellipse(surf, DUCK_YELLOW, s * 0.40, s * 0.28, s * 0.40, s * 0.38)
     _ellipse(surf, OUTLINE, s * 0.40, s * 0.28, s * 0.40, s * 0.38, edge)
-    bill = [
-        (int(s * 0.54), int(s * 0.25)), (int(s * 0.92), int(s * 0.27)),
-        (int(s * 0.92), int(s * 0.35)), (int(s * 0.53), int(s * 0.36)),
-    ]
-    pygame.draw.polygon(surf, DUCK_ORANGE, bill)
-    pygame.draw.polygon(surf, OUTLINE, bill, max(1, edge // 2))
+    # Rounded ellipse bill (a long thin quad read as a stick, not a beak).
+    _ellipse(surf, DUCK_ORANGE, s * 0.66, s * 0.30, s * 0.28, s * 0.14)
+    _ellipse(surf, OUTLINE, s * 0.66, s * 0.30, s * 0.28, s * 0.14,
+             max(1, edge // 2))
     _eyes(surf, [(s * 0.42, s * 0.24)], s * 0.07, "idle")
 
 

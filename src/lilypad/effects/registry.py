@@ -1,8 +1,10 @@
 """Action → effect factories. One place to see what every key does.
 
 Each factory takes (ctx, action) and returns a list of Effect instances.
-Unknown special names and unknown action kinds both fall back to sparkle —
-the registry, like the mapper, is total: every action produces something.
+Unknown special NAMES fall back to sparkle, so every keypress produces
+something. Action KINDS the engine handles itself (arrow, mash_*, hold_*)
+have no factory here and effects_for returns [] for them — the engine
+never routes them this far.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from .particles import (
     Vacuum,
     burst,
     confetti_rain,
+    ring_burst,
     shaped_burst,
 )
 
@@ -34,9 +37,12 @@ def _letter(ctx: EffectContext, action: Action) -> list[Effect]:
     out: list[Effect] = [burst(ctx, letter.pos, count=45, speed=340), letter]
     # Animal letters bring their animal along ("C is for cow — moo!"),
     # and B blows bubbles. The letter still shows; the friend joins it.
-    if action.letter in ANIMAL_LETTERS:
-        out.append(PeekabooAnimal(ctx, ANIMAL_LETTERS[action.letter]))
-    elif action.letter == "B":
+    # (.upper() matches the audio engine's normalization — evdev names are
+    # uppercase, but don't rely on every backend agreeing.)
+    upper = action.letter.upper()
+    if upper in ANIMAL_LETTERS:
+        out.append(PeekabooAnimal(ctx, ANIMAL_LETTERS[upper]))
+    elif upper == "B":
         out.append(BubbleField(ctx, count=8))
     return out
 
@@ -60,8 +66,12 @@ def _number(ctx: EffectContext, action: Action) -> list[Effect]:
 
 
 def _space(ctx: EffectContext, action: Action) -> list[Effect]:
+    # Particle rings rather than drawn Rings: hard-edged circles redrawn
+    # every frame stack into a full-screen bullseye under the trail veil.
     center = (ctx.width / 2, ctx.height / 2)
-    return [confetti_rain(ctx), Rings(ctx, center, count=4, life=1.1)]
+    return [confetti_rain(ctx),
+            ring_burst(ctx, center, speed=520),
+            ring_burst(ctx, center, speed=340)]
 
 
 def _enter(ctx: EffectContext, action: Action) -> list[Effect]:

@@ -14,10 +14,10 @@ from ..input.mapper import Action
 
 log = logging.getLogger(__name__)
 
-# Letters that summon a farm animal. MUST stay in sync with effects/animals.py
-# (added in a parallel change) — the visual cast and these cues are keyed off
-# the same letters, so adding an animal there means adding it here too.
-ANIMAL_LETTERS = {"C": "cow", "D": "duck", "P": "pig", "S": "sheep"}
+# Letters that summon a farm animal — imported from the visual cast so the
+# two layers can never drift apart (adding an animal there adds it here).
+from ..effects.animals import ANIMAL_LETTERS  # noqa: E402
+
 _ANIMAL_CUES = {"cow": "moo", "duck": "quack", "pig": "oink", "sheep": "baa"}
 
 
@@ -88,7 +88,10 @@ class AudioEngine:
             # One cue per press: the top note of the count, so the pitch rises
             # with the number. (The effect layer paces the visual pops at 0.28 s.)
             count = max(1, min(action.count, 10))
-            self._play(f"count_{count - 1}", "pop")
+            # No fallback here: the voice line above already falls back to
+            # "pop" on a pre-upgrade sounds dir, and a second fallback made
+            # the same cue fire twice at double amplitude.
+            self._play(f"count_{count - 1}")
         elif kind == "space":
             self._play("whoosh")
         elif kind == "enter":
