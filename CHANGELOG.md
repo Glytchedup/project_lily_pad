@@ -49,6 +49,26 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
   re-entry), which kept him permanently squashed and would have rained
   ripples; bounces now require a real impact.
 
+### Fixed (adversarial review round 3 — Fable deep semantic + product/edge
+### reviewers, briefed to find what the previous six missed)
+- Rate-triggered rainbow-chaos latched ON permanently when 3-4 keys were
+  merely resting (a toy on the keyboard): both mash exits required fewer
+  than 3 held keys, a floor designed for the 5-keys-held entry path the
+  rate trigger never took. Mash now tracks WHY it engaged — the held-count
+  hysteresis only applies when the held path justified it, so rate-mash
+  exits on rate decay regardless of resting keys.
+- Sustained fast play violated the "every key does something visible"
+  invariant with no chaos involved: ordinary spawns self-saturated the
+  particle budget and 28-39% of presses were silently dropped by the spawn
+  gate (measured at 6 space presses/s, default config). A gated press now
+  always spawns a small guaranteed-affordable burst instead of nothing.
+- Idle attract mode ("nobody's here" bubbles) activated while a child was
+  actively holding a key with a live comet — a held key emits exactly one
+  action, so the idle clock ran; live comets now count as activity.
+- Engine scene and chaos-wash surfaces are convert()ed to the display
+  format when possible (avoids potential per-frame pixel-format conversion
+  on the Pi's software blit path).
+
 ### Fixed (adversarial review round 2 — three fresh independent reviewers:
 ### whole-branch, fix-regression hunt, and rendered-frame visual QA)
 - Glow sprites pushed every core ~92% toward white, erasing the particle

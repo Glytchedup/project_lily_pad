@@ -199,3 +199,44 @@ def test_held_mash_still_exits_on_release():
                  if a.kind == "mash_end"]
     assert len(ends) == 1
     assert not m.in_mash
+
+
+def test_rate_mash_exits_with_keys_merely_resting():
+    """A toy resting on 3 keys + a second of fast tapping must not latch
+    chaos forever: rate-triggered mash exits on rate decay regardless of
+    how many keys are merely resting (the held-count hysteresis only
+    applies when the 5-held path actually triggered it)."""
+    m = KeyMapper()
+    for i, n in enumerate("ZXV"):                 # toy rests on 3 keys
+        list(m.feed(press(n, i * 0.3)))
+    names = "ASDFQWER"
+    for i in range(9):                            # a second of fast taps
+        t = 2.0 + i * 0.11
+        list(m.feed(press(names[i % 8], t)))
+        list(m.feed(release(names[i % 8], t + 0.04)))
+    assert m.in_mash
+    actions = list(m.poll_holds(10.0))            # taps long over, 3 still held
+    assert any(a.kind == "mash_end" for a in actions)
+    assert not m.in_mash
+
+
+def test_rate_mash_upgraded_by_held_keys_keeps_hysteresis():
+    """Rate entry followed by piling 5 keys on: the held-path hysteresis
+    then applies — mash must NOT exit until held drops below the floor."""
+    m = KeyMapper()
+    names = "ASDFQWER"
+    for i in range(9):                            # rate entry, nothing held
+        t = i * 0.11
+        list(m.feed(press(names[i % 8], t)))
+        list(m.feed(release(names[i % 8], t + 0.04)))
+    assert m.in_mash
+    for i, n in enumerate("ZXCVB"):               # now 5 keys pile on
+        list(m.feed(press(n, 2.0 + i * 0.3)))
+    polled = list(m.poll_holds(10.0))             # yields hold_starts, fine
+    assert not any(a.kind == "mash_end" for a in polled)  # 5 held: stays in mash
+    assert m.in_mash
+    ends = []
+    for i, n in enumerate("ZXC"):                 # drop to 2 held
+        ends += [a for a in m.feed(release(n, 20.0 + i))
+                 if a.kind == "mash_end"]
+    assert len(ends) == 1 and not m.in_mash

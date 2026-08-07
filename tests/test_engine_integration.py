@@ -269,3 +269,27 @@ def test_count_digit_outlives_the_count():
     ctx = EffectContext(size=SIZE, rng=random.Random(2))
     c = CountAlong(ctx, 10)
     assert c.digit.total >= c.total - 1e-6
+
+
+def test_gated_press_still_spawns_something_visible():
+    """Product invariant: every key does something visible, even with the
+    particle budget saturated (28% of fast space presses went dead)."""
+    e = make_engine()
+    for _ in range(15):
+        e.effects.extend(celebration(e.ctx, big=False))
+    assert e.particle_count() >= e.max_particles * 1.5
+    before = len(e.effects)
+    e.spawn(Action(kind="letter", key="Q", letter="Q"), now=0.0)
+    assert len(e.effects) > before
+
+
+def test_no_attract_mode_while_comet_held():
+    e = make_engine()
+    e.idle_timeout = 1.0
+    e.spawn(Action(kind="hold_start", key="A"), now=0.0)
+    e.update(1 / 60, now=100.0)     # far past idle timeout, comet live
+    assert e.attract is None
+    e.spawn(Action(kind="hold_end", key="A"), now=100.0)
+    for _ in range(240):
+        e.update(1 / 60, now=200.0)  # comet drains, then truly idle
+    assert e.attract is not None

@@ -11,6 +11,14 @@ from .base import EffectContext, random_bright
 from .bubbles import bubble_sprite
 
 
+def _make_wash(size: tuple[int, int]) -> pygame.Surface:
+    surf = pygame.Surface(size)
+    try:
+        return surf.convert()   # match display pixel format (blit speed)
+    except pygame.error:
+        return surf             # no display (bare unit tests)
+
+
 class AttractMode:
     """Gentle drifting glossy bubbles after 60 s idle — an invitation, not a
     show. Killed instantly by any keypress (engine removes it)."""
@@ -65,7 +73,7 @@ class ChaosOverlay:
         self._alpha = 0.0
         # Persistent wash surface — allocating + filling a full-screen surface
         # every frame measured ~1.9 ms/frame and ~12 MB/frame of churn.
-        self._wash = pygame.Surface(ctx.size)
+        self._wash = _make_wash(ctx.size)
 
     def stop(self) -> None:
         self.ending = True
@@ -94,7 +102,7 @@ class ChaosOverlay:
             if self._wash.get_size() != surface.get_size():
                 # ctx.size and the draw surface always match in the app, but
                 # a mismatch here would silently wash only part of the screen.
-                self._wash = pygame.Surface(surface.get_size())
+                self._wash = _make_wash(surface.get_size())
             self._wash.fill(color)
             self._wash.set_alpha(overlay_alpha)
             surface.blit(self._wash, (0, 0))
