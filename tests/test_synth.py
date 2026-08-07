@@ -23,6 +23,18 @@ def test_build_cues_writes_valid_wavs(tmp_path):
             assert wf.getnframes() > 500  # not empty
 
 
+def test_build_cues_stamps_version_and_staleness_detects_it(tmp_path):
+    from lilypad.audio.synth import CUE_VERSION, cues_stale
+    assert cues_stale(tmp_path)                       # empty dir → stale
+    build_cues(tmp_path)
+    assert (tmp_path / "cues.version").read_text() == str(CUE_VERSION)
+    assert not cues_stale(tmp_path)                   # freshly built → current
+    (tmp_path / "cues.version").write_text("0")
+    assert cues_stale(tmp_path)                       # old version → stale
+    (tmp_path / "cues.version").unlink()
+    assert cues_stale(tmp_path)                       # pre-versioning dir → stale
+
+
 def test_build_cues_deterministic(tmp_path):
     a = tmp_path / "a"
     b = tmp_path / "b"

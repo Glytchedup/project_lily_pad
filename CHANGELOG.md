@@ -6,6 +6,19 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Changed (gentler audio — cues were hard on the ears)
+- Every synth cue softened: slower attacks (no more clicky onsets), tamer
+  harmonic stacks (duck/pig/chime buzz reduced), quieter noise layers
+  (whoosh/boom/drum), lower sparkle/pop pitch ranges, and overall level
+  dropped (~2.5 dB mix headroom, gains trimmed per cue).
+- New `_soften()` finishing pass on every generated cue: gentle one-pole
+  ~3 kHz lowpass plus downward-only peak normalisation.
+- `CUE_VERSION` stamp (`cues.version` file) written by `build_cues()`; the
+  audio engine now regenerates any sounds dir with a missing or stale stamp,
+  so re-tuned cues actually reach devices with previously generated WAVs.
+  Regeneration failure (read-only dir) degrades to the old cues with a
+  warning instead of crashing.
+
 ### Added (visual WOW upgrade — implements all 10 VISUAL_REVIEW.md recommendations)
 - Pond scene (`effects/scenery.py`): pre-rendered night/dusk/aurora gradient
   skies with baked moon, stars, and drifting lily pads; slow crossfade between

@@ -19,6 +19,10 @@ from pathlib import Path
 SAMPLE_RATE = 22050
 _TAU = math.tau
 
+# Bump whenever the sound of any cue changes: the audio engine regenerates
+# a sounds dir whose recorded version doesn't match (see cues_stale()).
+CUE_VERSION = 2
+
 # Pentatonic-ish happy scale for chimes (C major pentatonic, one octave up)
 _SCALE_HZ = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]
 
@@ -52,8 +56,8 @@ def _env(i: int, n: int, attack: float = 0.01, release: float = 0.3) -> float:
 
 
 def _tone(freq: float, dur: float, *, vibrato: float = 0.0,
-          harmonics: tuple[float, ...] = (1.0, 0.35, 0.12),
-          attack: float = 0.01, release: float = 0.4) -> list[float]:
+          harmonics: tuple[float, ...] = (1.0, 0.18, 0.05),
+          attack: float = 0.04, release: float = 0.45) -> list[float]:
     n = int(SAMPLE_RATE * dur)
     out = []
     for i in range(n):
@@ -92,11 +96,38 @@ def _mix(*layers: list[float]) -> list[float]:
         for i, s in enumerate(layer):
             out[i] += s
     peak = max(1.0, max(abs(s) for s in out))
-    return [s / peak * 0.9 for s in out]
+    return [s / peak * 0.72 for s in out]
 
 
 def _shift(samples: list[float], seconds: float) -> list[float]:
     return [0.0] * int(SAMPLE_RATE * seconds) + samples
+
+
+def _soften(samples: list[float]) -> list[float]:
+    """Final polish for every cue: a gentle one-pole lowpass (~3 kHz) rounds
+    off buzzy upper partials and any residual attack click, then peaks above
+    0.8 are normalised *down* (never up — quiet cues stay quiet)."""
+    alpha = 0.46  # one-pole coefficient ≈ 3 kHz cutoff at 22.05 kHz
+    out, prev = [], 0.0
+    for s in samples:
+        prev = prev + alpha * (s - prev)
+        out.append(prev)
+    peak = max((abs(s) for s in out), default=0.0)
+    if peak > 0.8:
+        out = [s / peak * 0.8 for s in out]
+    return out
+
+
+def cues_stale(dest: Path) -> bool:
+    """True when ``dest`` lacks generated cues of the current CUE_VERSION —
+    i.e. the audio engine should (re)run build_cues()."""
+    version_file = dest / "cues.version"
+    if not (dest / "pop.wav").is_file() or not version_file.is_file():
+        return True
+    try:
+        return version_file.read_text(encoding="ascii").strip() != str(CUE_VERSION)
+    except OSError:
+        return True
 
 
 def chime(rng: random.Random) -> list[float]:
@@ -108,7 +139,7 @@ def pop() -> list[float]:
     """Short pitch-drop blip."""
     n = int(SAMPLE_RATE * 0.12)
     return [
-        math.sin(_TAU * (900 - 600 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.02, 0.5) * 0.6
+        math.sin(_TAU * (750 - 450 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.08, 0.5) * 0.45
         for i in range(n)
     ]
 
@@ -120,9 +151,9 @@ def whoosh() -> list[float]:
     out, prev = [], 0.0
     for i in range(n):
         # One-pole lowpass over white noise, cutoff swept by envelope position
-        alpha = 0.05 + 0.4 * (i / n)
+        alpha = 0.04 + 0.22 * (i / n)
         prev = prev + alpha * (rng.uniform(-1, 1) - prev)
-        out.append(prev * _env(i, n, 0.15, 0.4) * 0.9)
+        out.append(prev * _env(i, n, 0.2, 0.45) * 0.55)
     return out
 
 
@@ -134,9 +165,9 @@ def boom() -> list[float]:
     for i in range(n):
         t = i / SAMPLE_RATE
         f = 140 - 90 * (i / n)
-        prev = prev + 0.12 * (rng.uniform(-1, 1) - prev)
-        body = math.sin(_TAU * f * t) * 0.8 + prev * 0.5
-        out.append(body * _env(i, n, 0.005, 0.6))
+        prev = prev + 0.10 * (rng.uniform(-1, 1) - prev)
+        body = math.sin(_TAU * f * t) * 0.8 + prev * 0.3
+        out.append(body * _env(i, n, 0.03, 0.6))
     return out
 
 
@@ -144,7 +175,7 @@ def sparkle() -> list[float]:
     """Tiny glissando up."""
     n = int(SAMPLE_RATE * 0.25)
     return [
-        math.sin(_TAU * (700 + 900 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.05, 0.4) * 0.4
+        math.sin(_TAU * (600 + 550 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.10, 0.45) * 0.30
         for i in range(n)
     ]
 
@@ -163,8 +194,8 @@ def drum() -> list[float]:
     out, prev = [], 0.0
     for i in range(n):
         t = i / SAMPLE_RATE
-        prev = prev + 0.3 * (rng.uniform(-1, 1) - prev)
-        out.append((math.sin(_TAU * 90 * t) * 0.9 + prev * 0.4) * _env(i, n, 0.003, 0.7))
+        prev = prev + 0.25 * (rng.uniform(-1, 1) - prev)
+        out.append((math.sin(_TAU * 90 * t) * 0.9 + prev * 0.22) * _env(i, n, 0.02, 0.7))
     return out
 
 
@@ -173,7 +204,7 @@ def boing() -> list[float]:
     n = int(SAMPLE_RATE * 0.35)
     return [
         math.sin(_TAU * (300 + 260 * math.sin(_TAU * 3.2 * (i / n))) * (i / SAMPLE_RATE))
-        * _env(i, n, 0.02, 0.4) * 0.5
+        * _env(i, n, 0.06, 0.4) * 0.42
         for i in range(n)
     ]
 
@@ -186,8 +217,8 @@ def boing() -> list[float]:
 # Nasal/reedy partial stacks — lots of upper harmonics at near-equal weight is
 # what makes a tone read as "buzzy voice" instead of "flute".
 _MOO_HARMONICS = (1.0, 0.50, 0.28, 0.14, 0.07)
-_QUACK_HARMONICS = (1.0, 0.80, 0.65, 0.50, 0.40, 0.30, 0.22)
-_OINK_HARMONICS = (1.0, 0.60, 0.40, 0.25, 0.15)
+_QUACK_HARMONICS = (1.0, 0.55, 0.32, 0.18, 0.10)
+_OINK_HARMONICS = (1.0, 0.50, 0.28, 0.15, 0.08)
 
 
 def moo() -> list[float]:
@@ -202,26 +233,26 @@ def moo() -> list[float]:
 def quack() -> list[float]:
     """Duck: two short buzzy nasal bursts with a fast decay (~0.5 s)."""
     first = _glide(320, 280, 0.16, harmonics=_QUACK_HARMONICS,
-                   attack=0.01, release=0.6, gain=0.45)
+                   attack=0.05, release=0.6, gain=0.42)
     second = _glide(300, 250, 0.20, harmonics=_QUACK_HARMONICS,
-                    attack=0.01, release=0.65, gain=0.45)
+                    attack=0.05, release=0.65, gain=0.42)
     return _mix(first, _shift(second, 0.28))
 
 
 def oink() -> list[float]:
     """Pig: two quick low grunts, hard attack, pitch dipping away (~0.5 s)."""
     first = _glide(165, 120, 0.18, harmonics=_OINK_HARMONICS, curve=0.6,
-                   attack=0.004, release=0.55, gain=0.5)
+                   attack=0.03, release=0.55, gain=0.5)
     second = _glide(150, 110, 0.20, harmonics=_OINK_HARMONICS, curve=0.6,
-                    attack=0.004, release=0.60, gain=0.5)
+                    attack=0.03, release=0.60, gain=0.5)
     return _mix(first, _shift(second, 0.28))
 
 
 def baa() -> list[float]:
     """Sheep: mid tone wobbled by a strong fast vibrato — the bleat (~0.8 s)."""
-    return _mix(_glide(228, 205, 0.8, vibrato=0.075, vib_rate=13.0,
-                       harmonics=(1.0, 0.55, 0.35, 0.20, 0.10),
-                       attack=0.05, release=0.35, gain=0.5))
+    return _mix(_glide(228, 205, 0.8, vibrato=0.06, vib_rate=11.0,
+                       harmonics=(1.0, 0.45, 0.22, 0.10, 0.05),
+                       attack=0.08, release=0.35, gain=0.5))
 
 
 def count_note(i: int) -> list[float]:
@@ -230,21 +261,21 @@ def count_note(i: int) -> list[float]:
     clamped, so out-of-range callers get the top note rather than an error."""
     f = _COUNT_HZ[max(0, min(i, len(_COUNT_HZ) - 1))]
     return _mix(
-        _tone(f, 0.25, harmonics=(1.0, 0.25, 0.12), attack=0.005, release=0.55),
-        _tone(f * 2.0, 0.22, harmonics=(0.30,), attack=0.005, release=0.60),
+        _tone(f, 0.25, harmonics=(1.0, 0.18, 0.06), attack=0.03, release=0.55),
+        _tone(f * 2.0, 0.22, harmonics=(0.18,), attack=0.03, release=0.60),
     )
 
 
 def celebration() -> list[float]:
     """Milestone fanfare (~2 s): rising arpeggio into a sparkling chord."""
     arpeggio = [
-        _shift(_tone(f, 0.35, harmonics=(1.0, 0.40, 0.18),
-                     attack=0.005, release=0.5), step * 0.13)
+        _shift(_tone(f, 0.35, harmonics=(1.0, 0.28, 0.10),
+                     attack=0.03, release=0.5), step * 0.13)
         for step, f in enumerate(_SCALE_HZ[:4])
     ]
     chord = [
-        _shift(_tone(f, 1.35, harmonics=(1.0, 0.35, 0.15, 0.07),
-                     attack=0.01, release=0.55), 0.55)
+        _shift(_tone(f, 1.35, harmonics=(1.0, 0.25, 0.09, 0.03),
+                     attack=0.04, release=0.55), 0.55)
         for f in (_SCALE_HZ[0], _SCALE_HZ[2], _SCALE_HZ[4], _SCALE_HZ[5])
     ]
     sparkles = [_shift(sparkle(), t) for t in (0.60, 1.00, 1.45)]
@@ -275,8 +306,10 @@ def build_cues(dest: Path) -> list[Path]:
         cues[f"count_{i}"] = count_note(i)
     for name, samples in cues.items():
         path = dest / f"{name}.wav"
-        _write_wav(path, samples)
+        _write_wav(path, _soften(samples))
         written.append(path)
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "cues.version").write_text(str(CUE_VERSION), encoding="ascii")
     return written
 
 
