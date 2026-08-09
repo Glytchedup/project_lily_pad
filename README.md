@@ -85,6 +85,20 @@ To update the app later: disable the overlay (`... do_overlayfs 1`), reboot,
 
 ---
 
+## The sound
+
+The keyboard is a musical instrument. Every key plays a note of the C major
+pentatonic scale, laid out like a piano — lower rows are lower notes, left to
+right climbs. That scale has no clashing intervals, so *any* combination of
+keys pressed at once is a chord: a toddler lying on the keyboard still makes
+music. Two keys inside the chord window add the diatonic triad their lower note
+roots; a mash storm brings a wide open swell.
+
+When nobody has touched a key for `display.idle_timeout`, one of four original
+instrumental tunes fades in behind the attract animation and fades straight out
+on the next keypress. They are in the same key as the keys, so playing over
+them lands in tune.
+
 ## Configuration
 
 Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
@@ -93,7 +107,10 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | Setting | Default | Notes |
 |---|---|---|
 | `audio.mute` | `false` | `true` = fully silent |
-| `audio.volume` | `0.8` | 0–1 |
+| `audio.volume` | `0.8` | keypress cue level, 0–1 |
+| `music.key_notes` | `true` | every key plays a musical note |
+| `music.tunes` | `"idle"` | background tunes: `idle` \| `always` \| `off` |
+| `music.tune_volume` | `0.45` | background music level, 0–1 |
 | `lighting.backend` | `"auto"` | `razer_hid` → `openrazer` → `mock` fallback chain |
 | `lighting.brightness` | `0.9` | keyboard LEDs, 0–1 |
 | `escape.combo` | both Shifts + Backspace | evdev key names |
@@ -109,7 +126,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 52 unit tests
+pytest                         # 237 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 
@@ -130,7 +147,8 @@ Python 3.11+, pygame-ce on SDL KMSDRM (no desktop), python-evdev with an
 exclusive `EVIOCGRAB` grab, and direct-USB Razer lighting with OpenRazer and
 mock fallbacks. See [PLAN.md](PLAN.md) for the module map and
 [RESEARCH.md](RESEARCH.md) for why each piece was chosen. All sounds are
-procedurally generated (synth + espeak-ng) — no copyrighted assets.
+procedurally generated (synth + espeak-ng) — no copyrighted assets. The
+background tunes are original compositions written for this project.
 
 ## License
 

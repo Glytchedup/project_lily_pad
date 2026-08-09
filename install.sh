@@ -45,7 +45,9 @@ fi
 "$APP_DIR/venv/bin/pip" install --upgrade pip >/dev/null
 "$APP_DIR/venv/bin/pip" install "$REPO_DIR[pi]"
 
-say "3/6 Generating sounds (synth cues + espeak-ng voice)"
+# Notes, chords, character cues and four ~20 s instrumental tunes, all
+# synthesized in pure Python — a minute or so on a Pi, then never again.
+say "3/6 Generating sounds (notes, chords, tunes + espeak-ng voice) — takes a minute"
 "$APP_DIR/venv/bin/python" -m lilypad.audio.synth "$APP_DIR/sounds"
 
 say "4/6 Config"

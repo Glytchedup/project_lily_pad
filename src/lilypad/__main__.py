@@ -113,7 +113,10 @@ def main(argv: list[str] | None = None) -> int:
 
     audio = AudioEngine(Path("assets/sounds/generated") if not kiosk
                         else Path("/opt/lilypad/sounds"),
-                        mute=cfg.audio.mute, volume=cfg.audio.volume)
+                        mute=cfg.audio.mute, volume=cfg.audio.volume,
+                        key_notes=cfg.music.key_notes,
+                        tunes=cfg.music.tunes,
+                        tune_volume=cfg.music.tune_volume)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,
@@ -167,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
                 running = False
 
             engine.update(dt, now)
+            # Background tunes are the soundtrack to an empty room: attract
+            # mode fades them in, the next keypress fades them straight out.
+            audio.set_idle(engine.attract is not None)
             engine.draw(screen)
             _draw_escape_cue(screen, escape.hold_progress(now))
             pygame.display.flip()

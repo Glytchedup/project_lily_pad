@@ -35,10 +35,20 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
-- `audio/` — pygame.mixer cues; all sounds procedurally generated (synth chimes + espeak-ng
-  letter names) — zero copyrighted assets.
+- `audio/` — pygame.mixer cues, all procedurally generated (zero copyrighted assets).
+  `music.py` is the theory core: every key maps to a **C major pentatonic** note,
+  derived from `lighting/keymap.py`'s matrix (lower rows = lower notes, left→right
+  climbs). That scale has no minor 2nd / tritone / major 7th in any inversion, so any
+  simultaneous keypress combination is consonant *by construction* — don't "fix" a
+  clash by filtering, keep the mapping pentatonic. `synth.py` renders `Voice`
+  instruments (per-harmonic decay, chorus, brightness rolloff, reverb) plus the
+  character cues (animals, whoosh, boom — deliberately not musical). `tunes.py` holds
+  four original anthemic-pop instrumental loops, rendered to seamless WAVs and played
+  as idle background music via `pygame.mixer.music`. Letter/number names come from
+  espeak-ng.
 - `escape.py` — parent escape hatch state machine.
-- `config.py` — TOML config (volume/mute, brightness, escape combo, effect toggles).
+- `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
+  escape combo, effect toggles).
 
 Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry Pi OS Lite
 64-bit (Bookworm), rendering via SDL `kmsdrm` — no desktop environment.
@@ -59,7 +69,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 171 unit tests (mapper, registry, config, escape, lighting, synth, threading, effects)
+pytest                        # 237 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects)
 ```
 
 ## Status / gotchas

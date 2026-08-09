@@ -40,8 +40,10 @@ Bookworm — is a straight version bump with no architectural impact.
                          ┌──────────────┴─┐   ┌───────────────┐
                          │ audio/         │   │ escape.py      │
                          │  engine.py     │   │  ⇧+⇧+⌫ held 5s │
-                         │  synth.py      │   │  → clean exit  │
-                         └────────────────┘   └───────────────┘
+                         │  music.py      │   │  → clean exit  │
+                         │  synth.py      │   └───────────────┘
+                         │  tunes.py      │
+                         └────────────────┘
 ```
 
 **Event flow:** input backend produces normalized `KeyEvent`s (keycode, pressed/released,
@@ -71,8 +73,10 @@ mask it.
 | `lilypad/lighting/openrazer_backend.py` | same iface via openrazer daemon | Pi only |
 | `lilypad/lighting/mock.py` | logs/records frames | ✔ used by tests |
 | `lilypad/lighting/keymap.py` | evdev keycode → (row, col) on BW Chroma 6×22 | ✔ unit tests |
-| `lilypad/audio/engine.py` | pygame.mixer, mute flag, cue per action | ✔ (mixer optional) |
-| `lilypad/audio/synth.py` | generate WAVs: chimes, pops, booms (pure stdlib math/wave) | ✔ unit-tested generator |
+| `lilypad/audio/engine.py` | pygame.mixer, mute flag, cue per action, idle background music | ✔ (mixer optional) |
+| `lilypad/audio/music.py` | key → C-pentatonic note (from the LED matrix), diatonic triads | ✔ consonance property test |
+| `lilypad/audio/synth.py` | generate WAVs: `Voice` instruments, notes, chords, character cues (pure stdlib math/wave) | ✔ unit-tested generator |
+| `lilypad/audio/tunes.py` | four original instrumental loops, arranged + rendered to seamless WAVs | ✔ unit tests |
 | `lilypad/escape.py` | hold-to-exit state machine (default: both Shifts + Backspace, 5 s) | ✔ unit tests |
 
 ## Key design points
@@ -93,9 +97,21 @@ mask it.
   escape exit uses code 0 + `SuccessExitStatus` and `Restart=on-failure`… simpler: escape
   exit runs `systemctl stop lilypad` when running under systemd (detected via
   `INVOCATION_ID`), plain `sys.exit(0)` in dev.
-- **Audio:** all cues generated at install time by `synth.py` (sine/noise envelopes — chime,
-  pop, whoosh, boom) plus letter/number names via `espeak-ng -w`. Mixer failure (no HDMI
-  audio) degrades to silent, never crashes. `mute = true` config short-circuits everything.
+- **Audio:** all cues generated at install time by `synth.py` (`Voice` instruments for the
+  musical layer, sine/noise envelopes for the character cues — pop, whoosh, boom, animals)
+  plus letter/number names via `espeak-ng -w`. Mixer failure (no HDMI audio) degrades to
+  silent, never crashes. `mute = true` config short-circuits everything.
+- **The keyboard is an instrument.** Every key maps to a note of the C major pentatonic
+  scale, derived from the same 6×22 matrix the lighting uses (lower rows = lower notes,
+  left→right climbs, folded into MIDI 48–88). That scale has no minor 2nd, tritone or major
+  7th in any inversion, so *any* set of keys pressed together is consonant by construction —
+  a two-year-old leaning on the keyboard plays a chord, not a cluster. Keep the mapping
+  pentatonic; never "fix" a clash downstream. Two-key chords add the diatonic triad their
+  lower note roots; mash storms get an open add9 swell.
+- **Background tunes:** four original anthemic-pop instrumental loops (`tunes.py`), rendered
+  offline into seamless ~20 s WAVs and played through `pygame.mixer.music` during attract
+  mode only, fading out on the next keypress. Same key as the key notes, so a child playing
+  over a tune is playing in it. `music.tunes = "always" | "off"` overrides.
 - **60 fps budget:** engine tracks EMA frame time; over budget → halves particle caps and
   disables trail effects first, then reduces to single-effect mode. Never drops input.
 - **Config** (`/etc/lilypad/config.toml`, dev: `./config.toml`): volume, mute, brightness,
@@ -116,3 +132,7 @@ mask it.
 | D8 | Overlayfs opt-in after verification | Read-only root survives power pulls but blocks updates (§4) |
 | D9 | Sounds synthesized + espeak-ng at install | Zero copyright exposure in a public repo (§6) |
 | D10 | Lighting math host-side, backends dumb | One implementation of ripple/breathe/strobe, fully unit-testable |
+| D11 | Key notes are C major pentatonic | The scale has no minor 2nd / tritone / major 7th in any inversion, so a toddler mashing keys is consonant *by construction* — no runtime filtering, no taste calls |
+| D12 | Note layout derived from `lighting/keymap.py` | One layout table, not two: adding a key for the LEDs places it musically at the same time |
+| D13 | Tunes are original, in the requested style, not transcriptions | Chord progressions/tempo/production style aren't protectable, specific melodies are; keeps D9's zero-copyright-exposure property intact |
+| D14 | Background tunes only during attract mode (default) | Music behind active play competes with the child's own notes; behind an empty room it invites them back |

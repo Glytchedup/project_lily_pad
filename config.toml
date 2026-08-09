@@ -8,6 +8,22 @@ mute = false
 # 0.0 .. 1.0
 volume = 0.8
 
+[music]
+# Every key plays a note of the C major pentatonic scale, laid out like a piano
+# across the keyboard: lower rows are lower notes, left to right climbs. That
+# scale has no clashing intervals, so any handful of keys pressed together is a
+# chord. false = no key notes (character cues and chimes only).
+key_notes = true
+# Background instrumental tunes:
+#   "idle"   — play only during the attract animation, fading out on the next
+#              keypress, so playing is never competing with backing music
+#   "always" — loop continuously
+#   "off"    — never
+tunes = "idle"
+# Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
+# the level of the keypress cues.
+tune_volume = 0.45
+
 [display]
 # Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.
 dev_window = [1280, 720]

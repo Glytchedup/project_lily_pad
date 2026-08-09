@@ -6,6 +6,53 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added (musical audio — keys are notes, chords, and background tunes)
+- `audio/music.py`: the theory core. Every key maps to a note of the **C major
+  pentatonic** scale, derived from `lighting/keymap.py`'s LED matrix so the
+  musical and lighting layouts cannot drift apart — lower physical rows are
+  lower notes, left to right climbs the scale, everything folded into MIDI
+  48–88 (C3–E6). That scale contains no minor 2nd, tritone or major 7th in any
+  inversion, so **any** combination of keys pressed together is consonant by
+  construction; `tests/test_music.py::test_no_two_keys_can_clash` asserts it
+  directly. Also: diatonic triad tables and `chord_for_keys()`.
+- `audio/tunes.py`: four original instrumental loops (`sunrise`, `counting`,
+  `boats`, `party`) in an anthemic pop-piano style — four-chord loops, an
+  eighth-note piano ostinato, soft stomp-clap backbeat and a singable melody.
+  Rendered at build time into seamless ~20 s WAVs (the reverb tail is wrapped
+  back over the loop start, so repeats have no click). All in C major, the same
+  key as the keys, so playing over a tune lands in tune.
+- Background music: `AudioEngine.set_idle()`, driven from the frame loop by
+  `engine.attract is not None`. Tunes fade in with the attract animation and
+  fade straight out on the next keypress, round-robining through the four.
+  Played via `pygame.mixer.music` so cues never steal the music's channel.
+- `[music]` config section: `key_notes` (default `true`), `tunes`
+  (`idle` | `always` | `off`, default `idle`), `tune_volume` (default `0.45`,
+  independent of `audio.volume`). An invalid `tunes` value raises at load.
+
+### Changed (audio)
+- `audio/synth.py` grew a real instrument model: a `Voice` dataclass with
+  **per-harmonic exponential decay** (upper partials die faster — the ear's main
+  cue for "struck/plucked" rather than "beep"), a gentle attack ramp, a detuned
+  chorus layer, pitch-dependent brightness rolloff so the top of the keyboard
+  sparkles instead of piercing, and a short lowpassed reverb tail. Voices:
+  `BELL` (letters), `MARIMBA` (counting), `PAD` (chords), `PIANO`/`PLUCK`/`BASS`
+  (tunes).
+- Keypresses now sound their note: letters play the note **and** the spoken
+  letter name (previously name-*or*-chime), with a per-family gain table
+  keeping the note under the voice. Space/enter/arrows/specials/sparkles layer
+  a note under their character cue. Numbers keep the counting ladder, now a
+  marimba.
+- Two-key chords play the diatonic triad their lower note roots (was a single
+  static three-note stab); mash storms get a wide open add9 swell.
+  `celebration` is recomposed as a I–V–vi–IV cadence.
+- Synth plumbing rewritten for the ~100× more samples the tunes need: a `Mixer`
+  class (slice + `zip` listcomp) replaces the O(n·layers) indexed loop, WAV
+  writing goes through `array('h').tobytes()`, and oscillators use a fixed-point
+  wavetable. A full cue build (56 files, 6 MB, including four tunes) takes ~6 s.
+- `build_cues(dest, tunes=False)` skips the slow tune render for tests.
+- Character cues (whoosh, boom, drum, boing, animal calls) are unchanged —
+  they are caricatures, not music.
+
 ### Added (visual WOW upgrade — implements all 10 VISUAL_REVIEW.md recommendations)
 - Pond scene (`effects/scenery.py`): pre-rendered night/dusk/aurora gradient
   skies with baked moon, stars, and drifting lily pads; slow crossfade between

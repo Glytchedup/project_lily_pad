@@ -1,15 +1,22 @@
 import wave
 
+import pytest
+
 from lilypad.audio.engine import ANIMAL_LETTERS, AudioEngine
+from lilypad.audio.music import CHORD_NAMES, NOTE_MIDIS
 from lilypad.audio.synth import (
-    SAMPLE_RATE, baa, build_cues, celebration, count_note, moo, oink, quack,
+    BELL, SAMPLE_RATE, baa, build_cues, celebration, chord_cue, count_note,
+    mash_chord_cue, moo, note_cue, oink, quack, render_note,
 )
+from lilypad.audio.tunes import TUNE_NAMES
 from lilypad.input.mapper import classify
 from lilypad.lighting.razer_hid import build_report
 
 
 def test_build_cues_writes_valid_wavs(tmp_path):
-    paths = build_cues(tmp_path)
+    # Tunes are ~20 s each and by far the slowest part of a build; they get
+    # their own test below.
+    paths = build_cues(tmp_path, tunes=False)
     names = {p.stem for p in paths}
     assert {"pop", "whoosh", "boom", "sparkle", "chord", "drum", "boing"} <= names
     assert {"moo", "quack", "oink", "baa", "celebration"} <= names
@@ -23,12 +30,68 @@ def test_build_cues_writes_valid_wavs(tmp_path):
             assert wf.getnframes() > 500  # not empty
 
 
+def test_build_cues_writes_a_note_for_every_pitch_and_every_chord(tmp_path):
+    names = {p.stem for p in build_cues(tmp_path, tunes=False)}
+    assert {f"note_{m}" for m in NOTE_MIDIS} <= names
+    assert {f"chord_{c}" for c in CHORD_NAMES} <= names
+    assert "chord_mash" in names
+
+
 def test_build_cues_deterministic(tmp_path):
     a = tmp_path / "a"
     b = tmp_path / "b"
-    build_cues(a)
-    build_cues(b)
+    build_cues(a, tunes=False)
+    build_cues(b, tunes=False)
     assert (a / "chime0.wav").read_bytes() == (b / "chime0.wav").read_bytes()
+
+
+def test_build_cues_writes_the_tunes(tmp_path):
+    names = {p.stem for p in build_cues(tmp_path)}
+    assert {f"tune_{n}" for n in TUNE_NAMES} <= names
+    # Four distinct tunes, not the same render four times.
+    blobs = {(tmp_path / f"tune_{n}.wav").read_bytes() for n in TUNE_NAMES}
+    assert len(blobs) == len(TUNE_NAMES)
+
+
+# --------------------------------------------------------------- note voices
+
+def _rms(samples):
+    return (sum(s * s for s in samples) / max(1, len(samples))) ** 0.5
+
+
+def test_note_cues_exist_for_every_mapped_pitch_and_stay_in_range():
+    for midi in NOTE_MIDIS:
+        samples = note_cue(midi)
+        assert samples
+        assert all(-1.0 <= s <= 1.0 for s in samples)
+        assert max(abs(s) for s in samples) > 0.5      # audible
+
+
+def test_a_note_decays_like_a_struck_instrument():
+    # The single biggest thing separating "note" from "beep": it has to die
+    # away, not hold flat until it is cut off.
+    samples = render_note(64, 1.1, BELL)
+    quarter = len(samples) // 4
+    assert _rms(samples[-quarter:]) < 0.2 * _rms(samples[:quarter])
+
+
+def test_note_pitch_rises_with_midi_number():
+    def crossings(s):
+        return sum(1 for a, b in zip(s, s[1:]) if (a < 0) != (b < 0))
+
+    counts = [crossings(render_note(m, 0.4, BELL)) for m in (48, 60, 72, 84)]
+    assert counts == sorted(counts)
+    assert all(b > a for a, b in zip(counts, counts[1:]))
+
+
+def test_chord_cues_are_audible_and_do_not_clip():
+    for name in CHORD_NAMES:
+        samples = chord_cue(name)
+        assert all(-1.0 <= s <= 1.0 for s in samples)
+        assert max(abs(s) for s in samples) > 0.5
+    mash = mash_chord_cue()
+    assert all(-1.0 <= s <= 1.0 for s in mash)
+    assert len(mash) / SAMPLE_RATE > 2.0           # a swell, not a stab
 
 
 # --------------------------------------------------- animal + counting cues
@@ -59,7 +122,10 @@ def test_count_notes_are_in_range():
         samples = count_note(i)
         assert samples
         assert all(-1.0 <= s <= 1.0 for s in samples)
-        assert abs(len(samples) / SAMPLE_RATE - 0.25) < 0.05
+        # 0.75 s of marimba plus the reverb tail; all ten are the same length,
+        # which is what makes the zero-crossing pitch test below valid.
+        assert abs(len(samples) / SAMPLE_RATE - 0.95) < 0.1
+    assert len({len(count_note(i)) for i in range(10)}) == 1
 
 
 def test_count_note_pitch_rises_with_index():
@@ -91,7 +157,7 @@ def test_engine_survives_missing_sounds_dir(tmp_path):
 def test_engine_plays_animal_and_count_cues(tmp_path):
     """With real cues present, animal letters and digits still can't crash —
     the mixer itself may be unavailable headless, which is a silent path too."""
-    build_cues(tmp_path)
+    build_cues(tmp_path, tunes=False)
     engine = AudioEngine(tmp_path, mute=False, autogen=False)
     try:
         for letter in ANIMAL_LETTERS:
@@ -101,6 +167,122 @@ def test_engine_plays_animal_and_count_cues(tmp_path):
         engine.on_celebration()
     finally:
         engine.close()
+
+
+# ------------------------------------------------ audio engine (cue choice)
+
+def _recorder(tmp_path, **kwargs):
+    """An engine whose ``_play`` records requests instead of making sound, so
+    the *choice* of cue can be asserted without a working mixer."""
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, **kwargs)
+    played: list[tuple[str, ...]] = []
+    engine._play = lambda *names: played.append(names)
+    return engine, played
+
+
+def _first_choices(played):
+    return [names[0] for names in played]
+
+
+def test_a_letter_plays_its_note_and_still_says_its_name(tmp_path):
+    engine, played = _recorder(tmp_path)
+    engine.on_action(classify("A"))
+    # A sits on E4 (see test_music); the note leads, the letter name follows.
+    assert _first_choices(played) == ["note_64", "voice/A"]
+
+
+def test_letter_note_follows_the_keyboard_layout(tmp_path):
+    engine, played = _recorder(tmp_path)
+    for key in "ZAQ":
+        engine.on_action(classify(key))
+    notes = [int(n.removeprefix("note_")) for n in _first_choices(played)
+             if n.startswith("note_")]
+    assert notes == sorted(notes) and len(set(notes)) == 3
+
+
+def test_two_keys_at_once_play_a_diatonic_triad(tmp_path):
+    from lilypad.input.mapper import Action
+    engine, played = _recorder(tmp_path)
+    engine.on_action(Action(kind="chord", key="S", keys=("A", "S")))
+    assert _first_choices(played) == ["chord_Em"]
+    # The plain legacy stab remains as the fallback for an old cue set.
+    assert played[0][-1] == "chord"
+
+
+def test_mash_storm_gets_the_open_swell(tmp_path):
+    from lilypad.input.mapper import Action
+    engine, played = _recorder(tmp_path)
+    engine.on_action(Action(kind="mash_start"))
+    assert _first_choices(played) == ["chord_mash"]
+
+
+def test_numbers_use_the_count_ladder_not_the_key_note(tmp_path):
+    engine, played = _recorder(tmp_path)
+    engine.on_action(classify("3"))
+    chosen = _first_choices(played)
+    assert chosen == ["voice/3", "count_2"]
+    assert not any(n.startswith("note_") for n in chosen)
+
+
+def test_key_notes_can_be_switched_off(tmp_path):
+    engine, played = _recorder(tmp_path, key_notes=False)
+    for name in ("A", "SPACE", "ESC", "F1"):
+        engine.on_action(classify(name))
+    assert not any(n.startswith("note_") for names in played for n in names)
+    # ...and nothing that used to make a sound falls silent.
+    assert all(names for names in played)
+
+
+def test_every_key_makes_some_sound(tmp_path):
+    engine, played = _recorder(tmp_path)
+    for name in ("A", "5", "SPACE", "ENTER", "LEFT", "ESC", "F7", "PRINTSCREEN"):
+        before = len(played)
+        engine.on_action(classify(name))
+        assert len(played) > before, name
+
+
+# ------------------------------------------------- audio engine (background)
+
+def test_set_idle_starts_and_stops_the_tune_once_per_transition(tmp_path):
+    engine = AudioEngine(tmp_path, mute=False, autogen=False)
+    calls: list[str] = []
+    engine._start_tune = lambda: calls.append("start")
+    engine._stop_tune = lambda: calls.append("stop")
+    engine.set_idle(True)
+    engine.set_idle(True)       # still idle — must not restart the tune
+    engine.set_idle(False)
+    engine.set_idle(False)
+    assert calls == ["start", "stop"]
+    engine.close()
+
+
+@pytest.mark.parametrize("mode", ["off", "always"])
+def test_non_idle_tune_modes_ignore_idle_transitions(tmp_path, mode):
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes=mode)
+    calls: list[str] = []
+    engine._start_tune = lambda: calls.append("start")
+    engine._stop_tune = lambda: calls.append("stop")
+    engine.set_idle(True)
+    engine.set_idle(False)
+    assert calls == []
+    engine.close()
+
+
+def test_missing_tunes_on_disk_are_silent_not_fatal(tmp_path):
+    engine = AudioEngine(tmp_path, mute=False, autogen=False)
+    try:
+        engine.set_idle(True)
+        assert engine._tune_playing is False
+        engine.set_idle(False)
+    finally:
+        engine.close()
+
+
+def test_muted_engine_never_starts_a_tune(tmp_path):
+    engine = AudioEngine(tmp_path, mute=True, tunes="always")
+    engine.set_idle(True)
+    assert engine._tune_playing is False
+    engine.close()
 
 
 def test_engine_muted_is_silent_and_harmless(tmp_path):

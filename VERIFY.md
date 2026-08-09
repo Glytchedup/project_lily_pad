@@ -87,6 +87,21 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 ## 7. Audio
 
 - [ ] Letters are spoken, numbers counted, effects have cues, volume sane.
+- [ ] Notes: walk the home row `A`→`L`; the pitch climbs step by step. `Z`,
+      `A`, `Q` (same column, three rows) climb too.
+- [ ] Lay a whole hand across the keyboard — it is a chord, never a clash.
+      (If any combination sounds *wrong*, that is a real bug, not taste:
+      the mapping is meant to make it impossible.)
+- [ ] Two keys together add a warm triad underneath; a five-key mash brings the
+      wide open swell.
+- [ ] Notes sit **under** the spoken letter name, not over it. If the voice is
+      masked, lower the `note_` gain in `audio/engine.py::_GAINS`.
+- [ ] Background tunes: leave the keyboard alone for `display.idle_timeout`
+      (60 s) — a tune fades in with the attract animation. Touch any key: it
+      fades out within ~1 s and the next idle plays the *next* tune.
+- [ ] Tunes loop without an audible click at the seam (listen through two full
+      loops, ~40 s).
+- [ ] `music.tunes = "off"` + restart = no background music, keys unaffected.
 - [ ] `audio.mute = true` + restart = fully silent. (Set it back.)
 
 ## 8. Escape hatch + service behavior

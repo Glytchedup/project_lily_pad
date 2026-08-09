@@ -68,3 +68,40 @@ def test_effects_new_toggles_from_toml(tmp_path):
     cfg = load(p)
     assert cfg.effects.trails is False
     assert cfg.effects.milestone_every == 0   # negative clamps to disabled
+
+
+# ------------------------------------------------------------ music section
+
+def test_music_defaults():
+    cfg = load(None)
+    assert cfg.music.key_notes is True
+    assert cfg.music.tunes == "idle"
+    assert cfg.music.tune_volume == 0.45
+
+
+def test_music_from_toml(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[music]\nkey_notes = false\ntunes = "always"\ntune_volume = 0.2\n')
+    cfg = load(p)
+    assert cfg.music.key_notes is False
+    assert cfg.music.tunes == "always"
+    assert cfg.music.tune_volume == 0.2
+
+
+def test_music_tune_volume_is_clamped(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[music]\ntune_volume = 4.0\n")
+    assert load(p).music.tune_volume == 1.0
+
+
+def test_invalid_tune_mode_rejected(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[music]\ntunes = "sometimes"\n')
+    with pytest.raises(ValueError, match="music.tunes"):
+        load(p)
+
+
+def test_repo_config_declares_the_music_section():
+    cfg = load("config.toml")
+    assert cfg.music.tunes in ("idle", "always", "off")
+    assert cfg.music.key_notes is True

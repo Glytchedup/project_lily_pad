@@ -4,17 +4,31 @@ Generates every non-voice cue as a 22.05 kHz mono 16-bit WAV. Voice files
 (letter/number names) are produced separately by espeak-ng in install.sh /
 build_voice(); if they're absent the audio engine falls back to these cues.
 
+Two families live here:
+
+* **musical** — key notes, chords and the celebration cadence, built from
+  :mod:`lilypad.audio.music` pitches through the ``Voice`` renderer below;
+* **character** — whoosh, boom, drum, animal calls. These are caricatures, not
+  music, and are deliberately left as raw shaped tones.
+
 Run directly to (re)build:  python -m lilypad.audio.synth [dest_dir]
 """
 
 from __future__ import annotations
 
+import array
 import math
 import random
 import shutil
 import subprocess
 import wave
+from dataclasses import dataclass
 from pathlib import Path
+
+from .music import (
+    CHORD_NAMES, COUNT_MIDIS, MASH_CHORD, NOTE_MIDIS,
+    midi_to_hz, triad_midis,
+)
 
 SAMPLE_RATE = 22050
 _TAU = math.tau
@@ -24,22 +38,220 @@ _SCALE_HZ = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]
 
 # Count-along ladder: C major pentatonic from C4, wrapping an octave up at the
 # sixth step so ten objects climb a full "one ... ten" staircase.
-_COUNT_HZ = [261.63, 293.66, 329.63, 392.00, 440.00,
-             523.25, 587.33, 659.25, 783.99, 880.00]
+_COUNT_HZ = [midi_to_hz(m) for m in COUNT_MIDIS]
+
+
+# --------------------------------------------------------------- fast plumbing
+# The musical layer renders ~20 s tunes, two orders of magnitude more samples
+# than the old cue set. Per-sample Python loops for mixing and file writing
+# were fine for a 0.3 s blip and are not fine here, so both are done with
+# C-level bulk operations (slice + zip listcomp, array.tobytes).
+
+# Quarter-precision sine wavetable. Indexing a list is roughly 3x faster than
+# calling math.sin, and at 4096 points the quantisation sits near -70 dB —
+# inaudible under a note's own harmonics.
+_TABLE_BITS = 12
+_TABLE_SIZE = 1 << _TABLE_BITS
+_FRAC_BITS = 16
+_PHASE_MASK = (_TABLE_SIZE << _FRAC_BITS) - 1
+_SINE = [math.sin(_TAU * i / _TABLE_SIZE) for i in range(_TABLE_SIZE)]
 
 
 def _write_wav(path: Path, samples: list[float]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    frames = bytearray()
-    for s in samples:
-        v = max(-1.0, min(1.0, s))
-        frames += int(v * 32767).to_bytes(2, "little", signed=True)
+    pcm = array.array("h", (
+        int(max(-1.0, min(1.0, s)) * 32767) for s in samples
+    ))
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(SAMPLE_RATE)
-        wf.writeframes(bytes(frames))
+        wf.writeframes(pcm.tobytes())
 
+
+class Mixer:
+    """Accumulating buffer: drop layers in at arbitrary time offsets.
+
+    Grows on demand, so callers never have to know the final length up front —
+    which is what makes arranging a tune bar-by-bar practical.
+    """
+
+    def __init__(self) -> None:
+        self.buf: list[float] = []
+
+    def add(self, samples: list[float], at: float = 0.0, gain: float = 1.0) -> None:
+        if not samples or gain == 0.0:
+            return
+        off = max(0, int(at * SAMPLE_RATE))
+        end = off + len(samples)
+        if end > len(self.buf):
+            self.buf.extend([0.0] * (end - len(self.buf)))
+        window = self.buf[off:end]
+        if gain == 1.0:
+            self.buf[off:end] = [a + b for a, b in zip(window, samples)]
+        else:
+            self.buf[off:end] = [a + b * gain for a, b in zip(window, samples)]
+
+    def samples(self) -> list[float]:
+        return list(self.buf)
+
+    def render(self, peak: float = 0.9) -> list[float]:
+        """Normalise to ``peak``. Silence stays silence."""
+        if not self.buf:
+            return []
+        loudest = max(abs(s) for s in self.buf)
+        if loudest <= 1e-9:
+            return list(self.buf)
+        scale = peak / loudest
+        return [s * scale for s in self.buf]
+
+
+def _lowpass(samples: list[float], alpha: float) -> list[float]:
+    out, prev = [], 0.0
+    for s in samples:
+        prev += alpha * (s - prev)
+        out.append(prev)
+    return out
+
+
+#: Early-reflection taps: (delay seconds, gain). Prime-ish spacing avoids the
+#: metallic ring that evenly spaced taps produce.
+_REVERB_TAPS = ((0.043, 0.30), (0.077, 0.21), (0.131, 0.14), (0.197, 0.08))
+
+
+def reverb(samples: list[float], amount: float = 1.0) -> list[float]:
+    """Put a note in a small room. Wet taps are lowpassed so the tail darkens
+    as it decays, the way a real room absorbs treble first."""
+    if amount <= 0.0:
+        return samples
+    wet = _lowpass(samples, 0.35)
+    mix = Mixer()
+    mix.add(samples)
+    for delay, gain in _REVERB_TAPS:
+        mix.add(wet, delay, gain * amount)
+    return mix.samples()
+
+
+# ------------------------------------------------------------------- voices
+
+@dataclass(frozen=True)
+class Voice:
+    """An instrument.
+
+    What separates an instrument from a beep is mostly ``harmonic_decay``:
+    upper partials dying faster than the fundamental is the ear's main cue for
+    "something was struck or plucked". A static harmonic stack with a linear
+    fade — which is what this module used to do — always reads as electronic.
+    """
+
+    harmonics: tuple[float, ...] = (1.0, 0.40, 0.18, 0.08)
+    decay: float = 3.0            # fundamental's decay rate, 1/s
+    harmonic_decay: float = 0.9   # partial k decays at decay * (1 + k * this)
+    attack: float = 0.008         # seconds; > 0 kills the click
+    detune_cents: float = 4.0     # chorus layer; 0 disables
+    detune_gain: float = 0.30
+    rolloff_hz: float = 2600.0    # partials above this are progressively cut
+    gain: float = 0.55
+    reverb: float = 1.0
+
+
+#: Music box / celesta — the letter keys. Bright, short, unmistakably "a note".
+BELL = Voice(harmonics=(1.0, 0.50, 0.28, 0.14, 0.06), decay=3.6,
+             harmonic_decay=1.1, attack=0.004, detune_cents=5.0,
+             rolloff_hz=3000.0, gain=0.55)
+
+#: Marimba — the counting ladder. Woodier and rounder than the bell so
+#: "one, two, three" reads as a different instrument from the letters.
+MARIMBA = Voice(harmonics=(1.0, 0.22, 0.34, 0.08), decay=6.0,
+                harmonic_decay=1.4, attack=0.003, detune_cents=3.0,
+                rolloff_hz=2200.0, gain=0.6)
+
+#: Warm sustained pad — two-key chords and the mash swell. Slow attack turns a
+#: keypress into a swell rather than a stab.
+PAD = Voice(harmonics=(1.0, 0.45, 0.22, 0.12, 0.06), decay=1.1,
+            harmonic_decay=0.55, attack=0.055, detune_cents=7.0,
+            detune_gain=0.45, rolloff_hz=2000.0, gain=0.42)
+
+#: Felt piano — the tune ostinato.
+PIANO = Voice(harmonics=(1.0, 0.42, 0.20, 0.11, 0.05), decay=2.4,
+              harmonic_decay=1.0, attack=0.005, detune_cents=3.5,
+              rolloff_hz=2400.0, gain=0.5)
+
+#: Plucked lead — the tune melody. Sings above the ostinato without piercing.
+PLUCK = Voice(harmonics=(1.0, 0.55, 0.26, 0.13, 0.06), decay=2.2,
+              harmonic_decay=0.85, attack=0.006, detune_cents=6.0,
+              rolloff_hz=2800.0, gain=0.5)
+
+#: Soft round bass. Almost pure sine — anything richer turns to mud on the
+#: little speaker a Pi is likely wired to.
+BASS = Voice(harmonics=(1.0, 0.18, 0.06), decay=1.8, harmonic_decay=1.2,
+             attack=0.010, detune_cents=0.0, rolloff_hz=1200.0, gain=0.55,
+             reverb=0.4)
+
+
+def render_note(midi: float, dur: float, voice: Voice = BELL) -> list[float]:
+    """One note of ``voice`` at ``midi``, ``dur`` seconds long (tail included).
+
+    Partials are summed with an incremental phase accumulator and a
+    multiplicative decay, so the inner loop is integer adds and a table lookup
+    rather than a sin() and an exp() per sample per harmonic.
+    """
+    n = max(1, int(SAMPLE_RATE * dur))
+    out = [0.0] * n
+    f0 = midi_to_hz(midi)
+
+    layers = [(f0, 1.0)]
+    if voice.detune_cents:
+        layers.append((f0 * 2.0 ** (voice.detune_cents / 1200.0), voice.detune_gain))
+
+    nyquist_guard = SAMPLE_RATE * 0.45
+    sine = _SINE
+    for f_base, layer_gain in layers:
+        for k, amp in enumerate(voice.harmonics):
+            if amp <= 0.0:
+                continue
+            f = f_base * (k + 1)
+            if f > nyquist_guard:
+                break
+            # High partials get progressively cut, so top-of-keyboard notes
+            # sparkle instead of piercing.
+            a = amp * layer_gain * voice.gain / (1.0 + (f / voice.rolloff_hz) ** 2)
+            step = math.exp(-voice.decay * (1.0 + k * voice.harmonic_decay) / SAMPLE_RATE)
+            dphase = int(f / SAMPLE_RATE * _TABLE_SIZE * (1 << _FRAC_BITS))
+            phase = 0
+            env = a
+            for i in range(n):
+                out[i] += env * sine[phase >> _FRAC_BITS]
+                phase = (phase + dphase) & _PHASE_MASK
+                env *= step
+
+    attack_n = min(n, max(1, int(SAMPLE_RATE * voice.attack)))
+    for i in range(attack_n):
+        out[i] *= i / attack_n
+    # Fade the truncation point so a shortened note doesn't click.
+    fade_n = min(n, int(SAMPLE_RATE * 0.03))
+    for j in range(fade_n):
+        out[n - fade_n + j] *= 1.0 - j / fade_n
+
+    return reverb(out, voice.reverb)
+
+
+def render_chord(midis: tuple[int, ...], dur: float, voice: Voice = PAD,
+                 spread: float = 0.018, peak: float = 0.82) -> list[float]:
+    """A chord, strummed rather than stamped.
+
+    ``spread`` staggers the notes by a few milliseconds each. Perfectly
+    simultaneous onsets sound synthetic; a human hand never manages it.
+    """
+    mix = Mixer()
+    for i, midi in enumerate(midis):
+        mix.add(render_note(midi, dur, voice), i * spread)
+    return mix.render(peak)
+
+
+# ------------------------------------------------- legacy shaped-tone helpers
+# Used by the character cues (animals, whoosh, boom ...). Left untouched: those
+# are caricatures, and modelling them as instruments would spoil the joke.
 
 def _env(i: int, n: int, attack: float = 0.01, release: float = 0.3) -> float:
     """Simple attack/release envelope, times as fractions of total length."""
@@ -86,23 +298,73 @@ def _glide(f0: float, f1: float, dur: float, *,
 
 
 def _mix(*layers: list[float]) -> list[float]:
-    n = max(len(x) for x in layers)
-    out = [0.0] * n
+    """Sum layers, attenuating only if they would clip. Character cues are
+    tuned against this exact curve, so it stays as it was."""
+    mix = Mixer()
     for layer in layers:
-        for i, s in enumerate(layer):
-            out[i] += s
-    peak = max(1.0, max(abs(s) for s in out))
-    return [s / peak * 0.9 for s in out]
+        mix.add(layer)
+    peak = max(1.0, max((abs(s) for s in mix.buf), default=0.0))
+    return [s / peak * 0.9 for s in mix.buf]
 
 
 def _shift(samples: list[float], seconds: float) -> list[float]:
     return [0.0] * int(SAMPLE_RATE * seconds) + samples
 
 
-def chime(rng: random.Random) -> list[float]:
-    f = rng.choice(_SCALE_HZ)
-    return _mix(_tone(f, 0.5), _shift(_tone(f * 1.5, 0.4), 0.08))
+# ------------------------------------------------------------ musical cues
 
+def note_cue(midi: int) -> list[float]:
+    """The cue fired by a single keypress: one bell note, ~1.1 s with tail."""
+    mix = Mixer()
+    mix.add(render_note(midi, 1.1, BELL))
+    return mix.render(0.85)
+
+
+def chord_cue(name: str) -> list[float]:
+    """Two keys at once: a warm diatonic triad swelling underneath."""
+    return render_chord(triad_midis(name), 1.6, PAD, spread=0.022, peak=0.78)
+
+
+def mash_chord_cue() -> list[float]:
+    """Chaos mode: a wide open add9 swell, six notes over two octaves."""
+    return render_chord(MASH_CHORD, 2.2, PAD, spread=0.030, peak=0.80)
+
+
+def count_note(i: int) -> list[float]:
+    """Marimba note for the i-th counted object (0-based), climbing the
+    pentatonic ladder so "one, two, three ..." rises in pitch. Index is
+    clamped, so out-of-range callers get the top note rather than an error."""
+    midi = COUNT_MIDIS[max(0, min(i, len(COUNT_MIDIS) - 1))]
+    mix = Mixer()
+    mix.add(render_note(midi, 0.75, MARIMBA))
+    return mix.render(0.85)
+
+
+def celebration() -> list[float]:
+    """Milestone fanfare (~2 s): the I–V–vi–IV cadence under a rising bell run."""
+    beat = 0.42
+    mix = Mixer()
+    for step, name in enumerate(("C", "G", "Am", "F")):
+        for i, midi in enumerate(triad_midis(name, base=60)):
+            mix.add(render_note(midi, beat * 1.9, PAD), step * beat + i * 0.02, 0.75)
+    for step, midi in enumerate((72, 76, 79, 84, 88)):
+        mix.add(render_note(midi, 0.6, BELL), 0.18 + step * 0.16, 0.9)
+    mix.add(sparkle(), 1.05)
+    return mix.render(0.9)
+
+
+def chord_fanfare() -> list[float]:
+    """Legacy three-note stab, kept as the fallback for a pre-upgrade cue set."""
+    return chord_cue("C")
+
+
+def chime(rng: random.Random) -> list[float]:
+    """Legacy random chime, kept as the fallback when a note cue is missing."""
+    midi = rng.choice([60, 62, 64, 67, 69, 72])
+    return note_cue(midi)
+
+
+# ------------------------------------------------------------ character cues
 
 def pop() -> list[float]:
     """Short pitch-drop blip."""
@@ -147,14 +409,6 @@ def sparkle() -> list[float]:
         math.sin(_TAU * (700 + 900 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.05, 0.4) * 0.4
         for i in range(n)
     ]
-
-
-def chord_fanfare() -> list[float]:
-    return _mix(
-        _tone(_SCALE_HZ[0], 0.6),
-        _shift(_tone(_SCALE_HZ[2], 0.5), 0.05),
-        _shift(_tone(_SCALE_HZ[4], 0.5), 0.10),
-    )
 
 
 def drum() -> list[float]:
@@ -224,35 +478,14 @@ def baa() -> list[float]:
                        attack=0.05, release=0.35, gain=0.5))
 
 
-def count_note(i: int) -> list[float]:
-    """Bright chime for the i-th counted object (0-based), climbing the
-    pentatonic ladder so "one, two, three ..." rises in pitch. Index is
-    clamped, so out-of-range callers get the top note rather than an error."""
-    f = _COUNT_HZ[max(0, min(i, len(_COUNT_HZ) - 1))]
-    return _mix(
-        _tone(f, 0.25, harmonics=(1.0, 0.25, 0.12), attack=0.005, release=0.55),
-        _tone(f * 2.0, 0.22, harmonics=(0.30,), attack=0.005, release=0.60),
-    )
+# ----------------------------------------------------------------- building
 
+def build_cues(dest: Path, *, tunes: bool = True) -> list[Path]:
+    """Generate all non-voice cues into ``dest``. Deterministic seed.
 
-def celebration() -> list[float]:
-    """Milestone fanfare (~2 s): rising arpeggio into a sparkling chord."""
-    arpeggio = [
-        _shift(_tone(f, 0.35, harmonics=(1.0, 0.40, 0.18),
-                     attack=0.005, release=0.5), step * 0.13)
-        for step, f in enumerate(_SCALE_HZ[:4])
-    ]
-    chord = [
-        _shift(_tone(f, 1.35, harmonics=(1.0, 0.35, 0.15, 0.07),
-                     attack=0.01, release=0.55), 0.55)
-        for f in (_SCALE_HZ[0], _SCALE_HZ[2], _SCALE_HZ[4], _SCALE_HZ[5])
-    ]
-    sparkles = [_shift(sparkle(), t) for t in (0.60, 1.00, 1.45)]
-    return _mix(*arpeggio, *chord, *sparkles)
-
-
-def build_cues(dest: Path) -> list[Path]:
-    """Generate all non-voice cues into ``dest``. Deterministic seed."""
+    ``tunes=False`` skips the four background tunes — they are by far the
+    slowest part of a build, and tests that only care about cues can skip them.
+    """
     rng = random.Random(42)
     written = []
     cues: dict[str, list[float]] = {
@@ -268,15 +501,30 @@ def build_cues(dest: Path) -> list[Path]:
         "oink": oink(),
         "baa": baa(),
         "celebration": celebration(),
+        "chord_mash": mash_chord_cue(),
     }
     for i in range(6):
         cues[f"chime{i}"] = chime(rng)
-    for i in range(len(_COUNT_HZ)):
+    for i in range(len(COUNT_MIDIS)):
         cues[f"count_{i}"] = count_note(i)
+    for midi in NOTE_MIDIS:
+        cues[f"note_{midi}"] = note_cue(midi)
+    for name in CHORD_NAMES:
+        cues[f"chord_{name}"] = chord_cue(name)
     for name, samples in cues.items():
         path = dest / f"{name}.wav"
         _write_wav(path, samples)
         written.append(path)
+
+    if tunes:
+        from .tunes import TUNES, clear_cache, render_tune
+        for tune in TUNES:
+            path = dest / f"tune_{tune.name}.wav"
+            _write_wav(path, render_tune(tune))
+            written.append(path)
+        # The app itself may have run this on first launch; don't hold the
+        # renderer's scratch space for the rest of the session.
+        clear_cache()
     return written
 
 
