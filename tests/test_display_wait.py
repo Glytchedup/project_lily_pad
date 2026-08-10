@@ -76,3 +76,35 @@ def test_unit_file_disables_the_systemd_start_limit():
     unit = Path("deploy/lilypad.service").read_text(encoding="utf-8")
     assert "StartLimitIntervalSec=0" in unit
     assert "Restart=on-failure" in unit, "clean escape-hatch exit must stay stopped"
+
+
+# --------------------------------------------------- clean shutdown on SIGTERM
+
+def test_unit_file_bounds_the_stop_timeout():
+    """systemd's 90 s default turned every stop/restart/reboot into a 90 s
+    stall when the app ignored SIGTERM. Measured on-device."""
+    from pathlib import Path
+    unit = Path("deploy/lilypad.service").read_text(encoding="utf-8")
+    line = [l for l in unit.splitlines() if l.startswith("TimeoutStopSec=")]
+    assert line, "no TimeoutStopSec — a wedged frame could stall shutdown"
+    assert int(line[0].split("=")[1]) <= 15
+
+
+def test_kiosk_loop_honours_quit_instead_of_discarding_it():
+    """The kiosk branch must drain SDL's queue *and* act on QUIT.
+
+    ``pygame.event.clear()`` there was the original bug: SDL translates SIGTERM
+    into a QUIT event, and clearing the queue threw it away every frame, so the
+    app never noticed systemd asking it to stop.
+    """
+    import inspect
+    src = inspect.getsource(entry.main)
+    assert "pygame.event.clear()" not in src, "clear() silently drops QUIT"
+    assert "pygame.QUIT" in src
+
+
+def test_sigterm_handler_is_installed():
+    import inspect
+    src = inspect.getsource(entry.main)
+    assert "signal.signal(signal.SIGTERM" in src
+    assert "signal.signal(signal.SIGINT" in src

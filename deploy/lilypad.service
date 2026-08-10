@@ -25,6 +25,11 @@ Environment=PYTHONUNBUFFERED=1
 # Clean exit (parent escape combo) stays stopped; crashes restart in 2s.
 Restart=on-failure
 RestartSec=2
+# The app handles SIGTERM and exits in well under a second. This is the
+# backstop: systemd's 90 s default meant that when the app *didn't* handle it,
+# every stop, restart and reboot of the appliance stalled for a minute and a
+# half before SIGKILL. Never let a wedged frame hold up a shutdown that long.
+TimeoutStopSec=10
 StandardOutput=journal
 StandardError=journal
 

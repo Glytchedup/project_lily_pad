@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -161,6 +162,21 @@ def main(argv: list[str] | None = None) -> int:
     clock = pygame.time.Clock()
     running = True
     exit_code = 0
+
+    # systemd sends SIGTERM on stop, restart and shutdown. SDL turns SIGTERM
+    # into a pygame QUIT event — but the kiosk loop below clears SDL's queue
+    # every frame (evdev is the real input path there), so the app never saw it
+    # and systemd waited out the full 90 s TimeoutStopSec before resorting to
+    # SIGKILL. Measured on-device: every stop, restart and reboot stalled for
+    # exactly 90 seconds. Handling the signal directly is independent of
+    # whatever SDL does with it.
+    def _request_stop(_signum, _frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGTERM, _request_stop)
+    signal.signal(signal.SIGINT, _request_stop)
+
     try:
         while running:
             dt = clock.tick(cfg.display.fps) / 1000.0
@@ -173,7 +189,13 @@ def main(argv: list[str] | None = None) -> int:
             if getattr(input_backend, "quit_requested", False):
                 running = False
             if kiosk:
-                pygame.event.clear()  # SDL's own queue is unused on the Pi
+                # SDL's own queue is unused on the Pi (evdev is the input
+                # path), but it must be *drained*, not blindly discarded —
+                # QUIT arrives here and dropping it is how the app used to
+                # ignore shutdown requests.
+                for ev in pygame.event.get():
+                    if ev.type == pygame.QUIT:
+                        running = False
 
             def handle(action):
                 engine.spawn(action, now)
