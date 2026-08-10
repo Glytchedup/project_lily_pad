@@ -91,6 +91,7 @@ class KeyMapper:
     _recent_presses: deque = field(default_factory=lambda: deque(maxlen=32))
     _last_press: tuple[str, float] | None = None
     _in_mash: bool = False
+    _mash_by_held: bool = False   # mash is (also) justified by the held-count path
     _holding: set[str] = field(default_factory=set)   # keys with an active hold-comet
 
     @property
@@ -127,19 +128,20 @@ class KeyMapper:
                 )
             self._last_press = (event.name, event.ts)
 
+            if len(self._held) >= MASH_HELD_THRESHOLD:
+                self._mash_by_held = True
             if not self._in_mash and self._mash_triggered(event.ts):
                 self._in_mash = True
+                self._mash_by_held = len(self._held) >= MASH_HELD_THRESHOLD
                 yield Action(kind="mash_start")
         else:
             self._held.pop(event.name, None)
             if event.name in self._holding:
                 self._holding.discard(event.name)
                 yield Action(kind="hold_end", key=event.name)
-            if (self._in_mash and len(self._held) < MASH_RELEASE_BELOW
-                    and not self._rate_active(event.ts)):
-                # Rate check stops chaos from strobing on/off ~19x a second
-                # while a toddler taps fast without holding anything down.
+            if self._mash_should_end(event.ts):
                 self._in_mash = False
+                self._mash_by_held = False
                 yield Action(kind="mash_end")
 
     def poll_holds(self, now: float) -> Iterator[Action]:
@@ -158,10 +160,21 @@ class KeyMapper:
                     and now - since >= HOLD_SECONDS):
                 self._holding.add(name)
                 yield Action(kind="hold_start", key=name)
-        if (self._in_mash and len(self._held) < MASH_RELEASE_BELOW
-                and not self._rate_active(now)):
+        if self._mash_should_end(now):
             self._in_mash = False
+            self._mash_by_held = False
             yield Action(kind="mash_end")
+
+    def _mash_should_end(self, now: float) -> bool:
+        """Mash ends when nothing justifies it anymore. The held-count
+        hysteresis (stay until < MASH_RELEASE_BELOW) only applies when the
+        held path actually triggered it — otherwise 3-4 keys merely RESTING
+        under a toy latched rate-triggered chaos on forever, because the
+        exit floor was designed for the 5-keys-held entry it never took.
+        The rate check itself stops chaos strobing ~19x/s under fast taps."""
+        if not self._in_mash or self._rate_active(now):
+            return False
+        return not self._mash_by_held or len(self._held) < MASH_RELEASE_BELOW
 
     def _rate_active(self, now: float) -> bool:
         rapid = [t for t in self._recent_presses if now - t <= MASH_RATE_WINDOW]

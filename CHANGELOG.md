@@ -96,6 +96,40 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
   re-entry), which kept him permanently squashed and would have rained
   ripples; bounces now require a real impact.
 
+### Fixed (adversarial review round 3 — Fable deep semantic + product/edge
+### reviewers, briefed to find what the previous six missed)
+- Rate-triggered rainbow-chaos latched ON permanently when 3-4 keys were
+  merely resting (a toy on the keyboard): both mash exits required fewer
+  than 3 held keys, a floor designed for the 5-keys-held entry path the
+  rate trigger never took. Mash now tracks WHY it engaged — the held-count
+  hysteresis only applies when the held path justified it, so rate-mash
+  exits on rate decay regardless of resting keys.
+- Sustained fast play violated the "every key does something visible"
+  invariant with no chaos involved: ordinary spawns self-saturated the
+  particle budget and 28-39% of presses were silently dropped by the spawn
+  gate (measured at 6 space presses/s, default config). A gated press now
+  always spawns a small guaranteed-affordable burst instead of nothing.
+- Idle attract mode ("nobody's here" bubbles) activated while a child was
+  actively holding a key with a live comet — a held key emits exactly one
+  action, so the idle clock ran; live comets now count as activity.
+- Engine scene and chaos-wash surfaces are convert()ed to the display
+  format when possible (avoids potential per-frame pixel-format conversion
+  on the Pi's software blit path).
+- SHIP-BLOCKER: the count-along fade restored the shared cached object
+  sprite with `set_alpha(None)`, which in pygame disables per-pixel alpha
+  entirely — after the very first number press faded, every later count
+  rendered opaque black squares instead of objects for the rest of the
+  session. Restore is now `set_alpha(255)`.
+- Comet was resolution-blind (fixed 10-26 px head, fixed px/s speed): a
+  marquee effect at 720p, a crawling speck on a 4K TV. Head, speed, trail
+  and edge-clamp now scale with screen height.
+- Anti-ghost pass strengthened (SUB 6→9/step) to clear the grey "ghost
+  ladder" large peekaboo sprites left when rising through the trail veil.
+- Known cosmetic (documented, not fixed): the aurora pond variant reads
+  as a flat band rather than a curtain; balloons spawn just below the
+  bottom edge so the F-key reaction takes ~0.3 s to become obvious at
+  800x480.
+
 ### Fixed (adversarial review round 2 — three fresh independent reviewers:
 ### whole-branch, fix-regression hunt, and rendered-frame visual QA)
 - Glow sprites pushed every core ~92% toward white, erasing the particle

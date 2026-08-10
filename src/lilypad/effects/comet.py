@@ -19,6 +19,10 @@ import pygame
 from .base import EffectContext
 from .particles import Particle, ParticleSystem, burst
 
+# Baseline pixel values, defined at 720p and scaled by ctx.height/720 in
+# __init__ — a fixed-pixel comet is a marquee effect at 720p and an
+# invisible speck crawling across a 4K TV.
+_REF_HEIGHT = 720.0
 _BIRTH_RADIUS = 10.0
 _CAP_RADIUS = 26.0
 _GROWTH_SECONDS = 6.0
@@ -58,7 +62,8 @@ class Comet:
         self._phases = tuple(ctx.rng.uniform(0.0, math.tau) for _ in range(3))
         self._amps = (1.4, 0.8, 0.45)
 
-        self.speed = ctx.rng.uniform(_SPEED_MIN, _SPEED_MAX)
+        self._k = max(0.35, ctx.height / _REF_HEIGHT)   # resolution scale
+        self.speed = ctx.rng.uniform(_SPEED_MIN, _SPEED_MAX) * self._k
         self._hue_phase = ctx.rng.random()
 
         self.age = 0.0
@@ -72,7 +77,7 @@ class Comet:
     @property
     def radius(self) -> float:
         growth = min(self.age, _GROWTH_SECONDS) / _GROWTH_SECONDS
-        return _BIRTH_RADIUS + growth * (_CAP_RADIUS - _BIRTH_RADIUS)
+        return (_BIRTH_RADIUS + growth * (_CAP_RADIUS - _BIRTH_RADIUS)) * self._k
 
     def _head_color(self) -> tuple[int, int, int]:
         hue = (self._hue_phase + self.age * _HUE_SPEED) % 1.0
@@ -112,7 +117,7 @@ class Comet:
         # Hard safety clamp, inset by the max head size so the head and its
         # release burst stay fully on-screen instead of pinning half-clipped
         # into an edge or corner.
-        inset = min(_CAP_RADIUS * 1.6, self.width / 4, self.height / 4)
+        inset = min(_CAP_RADIUS * self._k * 1.6, self.width / 4, self.height / 4)
         self.x = min(max(self.x, inset), self.width - inset)
         self.y = min(max(self.y, inset), self.height - inset)
 
@@ -133,7 +138,7 @@ class Comet:
                 vx=math.cos(ang) * spd, vy=math.sin(ang) * spd,
                 life=self.ctx.rng.uniform(0.6, 0.9),
                 color=color,
-                size=self.ctx.rng.uniform(3.0, 6.0),
+                size=self.ctx.rng.uniform(3.0, 6.0) * self._k,
                 drag=0.8,
             ))
 

@@ -56,6 +56,10 @@ class EffectEngine:
         self.letters_seen: set[str] = set()
         self.last_action_time = time.monotonic()
         self._scene = pygame.Surface(size)
+        try:
+            self._scene = self._scene.convert()  # match display pixel format
+        except pygame.error:
+            pass  # no display (bare unit tests); purely a blit-speed nicety
         self._celebration_pending = False
         self._last_celebration = float("-inf")
         self._trails_live = trails
@@ -107,6 +111,14 @@ class EffectEngine:
 
         if self.particle_count() < self.max_particles * 1.5:
             self.effects.extend(effects_for(self.ctx, action))
+        else:
+            # The product invariant is that EVERY key visibly does something.
+            # Sustained fast play can saturate the budget with ordinary
+            # spawns (measured 28% silently-dead space presses at 6/s), so
+            # when the full effect is too expensive, spawn a small burst
+            # that always fits instead of nothing.
+            self.effects.append(burst(self.ctx, self.ctx.random_pos(),
+                                      count=14, speed=280, size=5, life=0.6))
 
     def _note_press(self, action: Action, now: float) -> None:
         """Milestone bookkeeping: every Nth press parties, and completing the
@@ -206,7 +218,10 @@ class EffectEngine:
                             count=35, speed=380,
                         ))
 
-        if (self.attract is None and self.chaos is None
+        # A held key emits exactly one action (hold_start), so a live comet
+        # means the child is actively pressing — that's not "idle" even
+        # though no new actions arrive.
+        if (self.attract is None and self.chaos is None and not self.comets
                 and now - self.last_action_time >= self.idle_timeout):
             self.attract = AttractMode(self.ctx)
         if self.attract is not None:
@@ -239,7 +254,9 @@ class EffectEngine:
             # Running this pass every few frames (instead of every frame) cuts
             # its ~2 ms cost to ~0.5 ms; residue just fades a beat slower.
             if self._frame_no % GHOSTBUST_EVERY == 0:
-                surface.fill((6, 6, 6), special_flags=pygame.BLEND_RGB_SUB)
+                # 9/step clears the "ghost ladder" large opaque sprites
+                # (peekaboo animals) leave when rising through the veil.
+                surface.fill((9, 9, 9), special_flags=pygame.BLEND_RGB_SUB)
                 self._scene.set_alpha(None)
                 surface.blit(self._scene, (0, 0),
                              special_flags=pygame.BLEND_RGB_MAX)
