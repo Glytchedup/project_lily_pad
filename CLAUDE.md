@@ -41,7 +41,8 @@ Python 3.11+ package `lilypad/`, src-layout:
   farm animals keep their peekaboo. Sprite construction is arbitrarily expensive
   because everything is cached by (name, height, pose) — only the per-frame blit
   budget is sacred, which is also why concurrent animals are capped at
-  `MAX_ANIMALS`.
+  `MAX_ANIMALS`. **Three creatures (giraffe, triceratops, whale) get their
+  *shape* from a traced public-domain outline instead** — see below.
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
@@ -59,6 +60,25 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `escape.py` — parent escape hatch state machine.
 - `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
   escape combo, effect toggles, idle/sleep timeouts).
+
+**Traced outlines (a trial, `effects/animal_stencil.py`)**: the drawn cast
+fails on *proportion*, not detail — a giraffe reads as a giraffe because of its
+neck-to-leg ratio, which stacked ellipses are structurally bad at. So giraffe,
+triceratops and whale take their silhouette from a CC0 [PhyloPic](https://www.phylopic.org/)
+outline vendored in `assets/silhouettes/` (see `CREDITS.md` there — check the
+licence per *image*, PhyloPic also hosts CC-BY-NC-SA). Everything else about
+them is still generated: colour, belly shading, coat markings, an oversized
+cartoon eye, the dark keyline, and all motion. The outline is a **stencil, not
+a picture** — `fill(colour, BLEND_RGB_MAX)` swaps the colour through it and
+leaves the anti-aliased alpha edge intact, so it stays crisp at any size.
+Both routes come out of `animal_sprite`, so mirroring, squash, the cache and
+the gaits are untouched; the cache key carries the mode so the two can't mix.
+`effects.silhouettes = false` reverts those three, which is how you compare
+them. If SDL_image can't rasterise SVG the whole feature disables itself and
+logs why. Sprites are prebuilt at startup because assembling one costs tens of
+ms against ~2 for a drawn one, and that hitch would otherwise land on the first
+keypress. **Expanding this to the rest of the cast is a per-animal job**: pick a
+CC0 outline, add a `StencilSpec` row, and find `eye_at` by eye.
 
 **Screen sleep**: after `display.sleep_timeout` (default 300 s) with no keypresses
 the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
@@ -88,7 +108,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 538 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep)
+pytest                        # 588 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil)
 ```
 
 ## Status / gotchas

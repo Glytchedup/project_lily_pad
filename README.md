@@ -161,6 +161,7 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | `escape.hold_seconds` | `5.0` | |
 | `display.idle_timeout` | `60` | seconds until the attract animation |
 | `display.sleep_timeout` | `300` | seconds until the screen goes black; `0` = never |
+| `effects.silhouettes` | `true` | traced-outline art for giraffe, triceratops and whale; `false` = the drawn versions |
 
 ## Dev mode (no Pi needed)
 
@@ -171,7 +172,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 538 unit tests
+pytest                         # 588 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 

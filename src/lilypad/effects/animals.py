@@ -18,10 +18,12 @@ surface allocation, no rotation, no scaling.
 
 from __future__ import annotations
 
+import logging
 import math
 
 import pygame
 
+from . import animal_stencil
 from .animal_art import (  # noqa: F401 — re-exported for existing importers
     MINI_KINDS,
     POSES,
@@ -33,6 +35,8 @@ from .animal_art import (  # noqa: F401 — re-exported for existing importers
     mini_sprite,
 )
 from .base import EffectContext
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # The cast
@@ -437,3 +441,38 @@ def animal_effect(ctx: EffectContext, name: str):
 
 def random_dinosaur(ctx: EffectContext) -> str:
     return ctx.rng.choice(DINOSAURS)
+
+
+def prewarm(screen_height: int) -> int:
+    """Build the traced-outline sprites now, before anyone presses a key.
+
+    A traced sprite costs tens of milliseconds to assemble — rasterising,
+    cropping, stamping a keyline eight times — against about two for a drawn
+    one. That is a once-per-size cost either way, but paid lazily it lands as
+    a few dropped frames the first time a child presses that letter, which is
+    exactly the moment the app should look instant. Paid here it is part of a
+    boot nobody is watching.
+
+    Only the sizes ``AnimalCrossing`` actually asks for, and both facings,
+    since which way an animal walks is a coin flip. Returns how many sprites
+    were built; failures are logged and ignored, because a slow first giraffe
+    is a far better outcome than a crash on startup.
+    """
+    from . import animal_art
+
+    if not animal_art.silhouettes_enabled():
+        return 0
+    built = 0
+    for name in animal_stencil.names():
+        gait = GAITS.get(name, "walk")
+        height = max(48, int(screen_height * AnimalCrossing._SIZE.get(gait, 0.34)))
+        for pose in POSES:
+            for going_left in (False, True):
+                try:
+                    animal_sprite_facing(name, height, pose, going_left)
+                except Exception:                    # noqa: BLE001
+                    log.exception("could not prebuild %s/%s", name, pose)
+                else:
+                    built += 1
+    log.info("prebuilt %d traced-outline sprites", built)
+    return built

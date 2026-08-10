@@ -45,6 +45,50 @@ PATTERNS = ("none", "spots", "stripes", "patch", "shaggy", "speckle")
 
 
 @dataclass(frozen=True)
+class StencilSpec:
+    """The extra data a traced outline needs on top of its ``AnimalSpec``.
+
+    Deliberately a separate table rather than more fields on ``AnimalSpec``:
+    this is a trial covering three creatures, and keeping it separate means
+    both "convert the rest of the cast" and "delete the whole idea" are small,
+    obvious changes.
+
+    ``eye_at``      where the eye goes, as a fraction of the sprite box. The
+                    one number per animal that has to be found by looking.
+    ``faces_left``  true if the source art points left; the loader flips it, so
+                    every animal in the app still faces right.
+    ``eye``         eye radius as a fraction of sprite height — much larger
+                    than life, on purpose (see ``animal_stencil._eye``).
+    ``belly``       height fraction given a lighter underside, 0 for none.
+    """
+
+    file: str
+    eye_at: tuple[float, float]
+    faces_left: bool = True
+    eye: float = 0.055
+    belly: float = 0.0
+
+
+#: Creatures drawn from a traced outline instead of primitives. Anything not
+#: listed here is built the original way; both routes come out of
+#: ``animal_art.animal_sprite`` looking the same to everything downstream.
+STENCILS: dict[str, StencilSpec] = {
+    "giraffe": StencilSpec(
+        file="giraffe.svg", eye_at=(0.815, 0.080), eye=0.042,
+    ),
+    "triceratops": StencilSpec(
+        # Behind the brow horns, not on the frill — the frill is the big flat
+        # area that reads as "head" at a glance and is the easy place to get
+        # this wrong.
+        file="triceratops.svg", eye_at=(0.845, 0.400), eye=0.048,
+    ),
+    "whale": StencilSpec(
+        file="whale.svg", eye_at=(0.900, 0.470), eye=0.050, belly=0.38,
+    ),
+}
+
+
+@dataclass(frozen=True)
 class AnimalSpec:
     build: str
     body: RGB

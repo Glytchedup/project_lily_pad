@@ -28,5 +28,10 @@ lilypad = "lilypad.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# The traced animal outlines. Without this they are left out of a non-editable
+# install and every silhouette animal silently falls back to the drawn one.
+lilypad = ["assets/silhouettes/*.svg", "assets/silhouettes/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

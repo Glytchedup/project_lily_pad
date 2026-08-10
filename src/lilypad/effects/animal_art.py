@@ -25,11 +25,15 @@ scaling.
 
 from __future__ import annotations
 
+import logging
 import math
 
 import pygame
 
+from . import animal_stencil
 from .animal_specs import SPECS, AnimalSpec
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Palette — flat, saturated, and readable from across a living room.
@@ -91,8 +95,17 @@ _BESPOKE_ASPECT: dict[str, float] = {
 # screen-derived values, so the dicts top out at a few hundred small surfaces
 # for the life of the process. No eviction policy is needed — an LRU here
 # would cost more than it saves.
-_animal_cache: dict[tuple[str, int, str], pygame.Surface] = {}
-_flip_cache: dict[tuple[str, int, str], pygame.Surface] = {}
+#
+# The mode is part of the key because the two art routes produce different
+# sprites — and different *widths* — for the same name and height. Without it,
+# flipping the setting mid-process would serve stale art forever.
+_animal_cache: dict[tuple[str, int, str, bool], pygame.Surface] = {}
+_flip_cache: dict[tuple[str, int, str, bool], pygame.Surface] = {}
+
+#: Whether traced-outline sprites are in use for the creatures that have one.
+#: Set once at startup by ``set_silhouettes``; off until then so that importing
+#: this module never touches the filesystem or needs a display.
+_silhouettes = False
 _mini_cache: dict[tuple[str, int], pygame.Surface] = {}
 
 
@@ -1176,7 +1189,36 @@ def faces_right(name: str) -> bool:
     return name not in _BESPOKE_DRAWERS
 
 
+def set_silhouettes(on: bool) -> bool:
+    """Turn traced-outline sprites on or off, and report what actually happened.
+
+    Returns False if they were asked for but this machine can't rasterise SVG
+    — an SDL_image build option, so it has to be probed rather than assumed.
+    A Pi without it falls back to the drawn animals and logs why, instead of
+    dying on the first giraffe.
+    """
+    global _silhouettes
+    wanted = bool(on)
+    if wanted and not animal_stencil.available():
+        log.warning("silhouette animals requested but unavailable — using drawn animals")
+        wanted = False
+    if wanted != _silhouettes:
+        _silhouettes = wanted
+        log.info("animal art: %s", "traced outlines" if wanted else "drawn")
+    return wanted
+
+
+def silhouettes_enabled() -> bool:
+    return _silhouettes
+
+
+def _use_stencil(name: str) -> bool:
+    return _silhouettes and animal_stencil.has(name)
+
+
 def aspect(name: str) -> float:
+    if _use_stencil(name):
+        return animal_stencil.aspect(name)
     if name in _BESPOKE_DRAWERS:
         return _BESPOKE_ASPECT[name]
     return SPECS[name].aspect
@@ -1209,13 +1251,15 @@ def animal_sprite(name: str, height: int, pose: str = "idle") -> pygame.Surface:
     if pose not in POSES:
         pose = "idle"
     height = max(24, int(height))
-    key = (name, height, pose)
+    key = (name, height, pose, _silhouettes)
     cached = _animal_cache.get(key)
     if cached is not None:
         return cached
 
     if pose == "squash":
         surf = _squash(animal_sprite(name, height, "idle"))
+    elif _use_stencil(name):
+        surf = animal_stencil.build(name, height, pose)
     else:
         width = int(height * aspect(name))
         surf = _new_surface(width, height)
@@ -1239,7 +1283,8 @@ def animal_sprite_facing(name: str, height: int, pose: str,
     sprite = animal_sprite(name, height, pose)
     if not going_left or not faces_right(name):
         return sprite
-    key = (name, max(24, int(height)), pose if pose in POSES else "idle")
+    key = (name, max(24, int(height)), pose if pose in POSES else "idle",
+           _silhouettes)
     flipped = _flip_cache.get(key)
     if flipped is None:
         flipped = _finish(pygame.transform.flip(sprite, True, False))

@@ -57,6 +57,14 @@ trails = true
 # A mega-celebration (fireworks + confetti + balloons + frog party) fires every
 # this many keypresses. 0 disables milestones.
 milestone_every = 50
+# Traced-outline animals. A few creatures (currently giraffe, triceratops and
+# whale) are drawn from a real anatomical outline instead of being assembled
+# from ellipses — the shape comes from a public-domain silhouette, everything
+# else about them is still generated. false puts those three back to the drawn
+# version, which is the point: it is a trial, and this is how you compare.
+# Ignored if this machine's SDL_image cannot rasterise SVG; it falls back to
+# the drawn animals and says so in the log.
+silhouettes = true
 
 [lighting]
 # Backend: "auto" tries razer_hid, then openrazer, then mock.

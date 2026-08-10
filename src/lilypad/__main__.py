@@ -169,6 +169,13 @@ def main(argv: list[str] | None = None) -> int:
     size = screen.get_size()
     log.info("mode=%s display=%sx%s", "kiosk" if kiosk else "dev", *size)
 
+    # Must happen before the first sprite is cached, and after the display
+    # exists so the probe can build a real surface.
+    from .effects.animal_art import set_silhouettes
+    from .effects.animals import prewarm
+    set_silhouettes(cfg.effects.silhouettes)
+    prewarm(size[1])
+
     # Input backend
     if args.smoke:
         from .input.synthetic import SyntheticInputBackend

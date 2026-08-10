@@ -34,6 +34,7 @@ class EffectsConfig:
     chord_window: float = 0.15
     trails: bool = True          # translucent frame clear → motion trails
     milestone_every: int = 50    # keypresses per mega-celebration (0 disables)
+    silhouettes: bool = True     # traced-outline art for the creatures that have it
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,7 @@ def load(path: str | Path | None = None) -> Config:
             chord_window=float(effects.get("chord_window", 0.15)),
             trails=bool(effects.get("trails", True)),
             milestone_every=max(0, int(effects.get("milestone_every", 50))),
+            silhouettes=bool(effects.get("silhouettes", True)),
         ),
         lighting=LightingConfig(
             backend=backend,

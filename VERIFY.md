@@ -46,6 +46,26 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       once, and **every key still shows its giant letter** even when the
       animal is skipped. Watch for stutter here specifically — this is the
       heaviest new load on the Pi's blit path.
+- [ ] **The traced-outline trial.** `G` (giraffe), `W` (whale) and the
+      triceratops (press F7–F12 until it turns up) are drawn from a real
+      anatomical outline; the other 27 are unchanged. Judge them against their
+      neighbours — a lion or elephant right after a giraffe is the comparison
+      that matters, not the giraffe alone.
+      - [ ] Each is instantly recognisable and faces the way it is travelling.
+      - [ ] The eye is on the head. Specifically: on the triceratops it should
+            sit behind the brow horn, **not** out on the frill.
+      - [ ] The whale is *long* — about 60% of the screen width, roughly twice
+            the old one. Intended, but say so if it overwhelms the pond.
+      - [ ] `journalctl -u lilypad | grep "animal art"` says `traced outlines`.
+            `drawn` means SDL_image here can't rasterise SVG and it fell back —
+            harmless, but the trial isn't actually running, so don't judge it.
+      - [ ] No stutter on the *first* press of G or W. They are prebuilt at
+            boot (`grep "prebuilt"` shows 18 sprites); if that ever regresses
+            it shows up exactly here and nowhere else.
+      - [ ] **The real question: does Pip like them more?** They are
+            anatomically right but less toy-like — smaller head, smaller eye.
+            `effects.silhouettes = false` + restart puts all three back to the
+            drawn version for an A/B.
 - [ ] Hold any letter ~half a second → a rainbow comet wanders and streaks;
       release → it bursts.
 - [ ] ~50 presses → mega-celebration (fireworks + confetti + balloons + frog
