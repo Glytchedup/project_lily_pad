@@ -11,10 +11,20 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 - [ ] Power on → within ~30 s the screen shows the near-black playground
       (no login prompt, no desktop, no cursor, minimal boot text).
 - [ ] `systemctl status lilypad` over SSH shows `active (running)`.
+- [ ] Turn the monitor **off**, wait a minute, turn it back on: the playground
+      comes back by itself, with no restart of anything.
 - If not: `journalctl -u lilypad -e`. `EGL not initialized` → re-run
   `sudo ./install.sh`; display on the second connector → try
   `Environment=SDL_KMSDRM_DEVICE_INDEX=1` in
   `/etc/systemd/system/lilypad.service`, `daemon-reload`, restart.
+- `no display yet — waiting; is the monitor on?` in the log means exactly what
+  it says: the connector reads `disconnected`. A sleeping monitor often drops
+  hot-plug detect, and then nothing can wake it because there's no signal to
+  wake it with. Fix that permanently by appending
+  `video=HDMI-A-1:1920x1080@60D` to the single line in
+  `/boot/firmware/cmdline.txt` and rebooting — the Pi then drives HDMI0
+  unconditionally. Verified on a Pi 5: connector flips to `connected`, the app
+  acquires the screen on boot with zero waiting. **Do this before overlayfs.**
 
 ## 2. Every key does something (visuals)
 
