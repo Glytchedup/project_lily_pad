@@ -103,8 +103,46 @@ def test_kiosk_loop_honours_quit_instead_of_discarding_it():
     assert "pygame.QUIT" in src
 
 
-def test_sigterm_handler_is_installed():
+def test_sigterm_handler_is_installed_before_the_display_wait():
+    """Order matters, and getting it wrong was a real (measured) bug.
+
+    The first version of this fix installed the handler just above the main
+    loop — after ``_wait_for_display``. With the monitor off the app never got
+    that far, SDL's handler stayed in effect, and a reboot still stalled until
+    systemd's kill timeout. Verified on-device: 10.2 s, result `timeout`.
+    """
     import inspect
     src = inspect.getsource(entry.main)
-    assert "signal.signal(signal.SIGTERM" in src
-    assert "signal.signal(signal.SIGINT" in src
+    install = src.index("_install_signal_handlers()")
+    wait = src.index("_wait_for_display()")
+    assert install < wait, "handlers must be armed before the app can block"
+    assert src.index("pygame.init()") < install, "pygame.init() overwrites them"
+
+
+def test_shutdown_while_waiting_for_a_display_exits_promptly(monkeypatch):
+    """A reboot with the monitor off must not wait out the kill timeout."""
+    monkeypatch.setattr(pygame.display, "set_mode",
+                        lambda *a, **k: (_ for _ in ()).throw(pygame.error("nope")))
+    slept = []
+
+    def fake_sleep(s):
+        slept.append(s)
+        if len(slept) == 3:          # SIGTERM lands mid-wait
+            entry._request_stop()
+
+    monkeypatch.setattr(entry.time, "sleep", fake_sleep)
+    entry._stop_requested = False
+    try:
+        assert entry._wait_for_display(retry=1.0) is None
+        assert len(slept) < 10, "should bail out, not keep waiting"
+    finally:
+        entry._stop_requested = False
+
+
+def test_stop_flag_is_reset_when_handlers_are_installed(monkeypatch):
+    # Otherwise a flag left set by a previous run would make the next start
+    # exit immediately.
+    entry._stop_requested = True
+    monkeypatch.setattr(entry.signal, "signal", lambda *a: None)
+    entry._install_signal_handlers()
+    assert entry._stop_requested is False
