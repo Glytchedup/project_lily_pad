@@ -59,6 +59,43 @@ def test_effects_animate_and_die():
             assert alive_frames < 60 * 30, "effect never finished"
 
 
+def test_every_letter_brings_a_creature_along():
+    """The whole point of the upgrade: no letter is animal-less."""
+    import string
+
+    from lilypad.effects.animals import AnimalCrossing, PeekabooAnimal
+    for letter in string.ascii_uppercase:
+        effects = effects_for(ctx(), classify(letter))
+        assert any(isinstance(e, (PeekabooAnimal, AnimalCrossing)) for e in effects), \
+            f"{letter} summoned no animal"
+
+
+def test_b_still_blows_bubbles_as_well_as_its_animal():
+    from lilypad.effects.animals import AnimalCrossing, PeekabooAnimal
+    from lilypad.effects.bubbles import BubbleField
+    effects = effects_for(ctx(), classify("B"))
+    assert any(isinstance(e, BubbleField) for e in effects)
+    assert any(isinstance(e, (PeekabooAnimal, AnimalCrossing)) for e in effects)
+
+
+def test_the_dinosaur_key_produces_a_dinosaur():
+    from lilypad.effects.animals import DINOSAURS, AnimalCrossing
+    seen = set()
+    for seed in range(30):
+        c = EffectContext(size=(640, 480), rng=random.Random(seed))
+        effects = effects_for(c, Action(kind="special", letter="dino"))
+        crossings = [e for e in effects if isinstance(e, AnimalCrossing)]
+        assert len(crossings) == 1
+        assert crossings[0].name in DINOSAURS
+        seen.add(crossings[0].name)
+    assert len(seen) > 1, "the dinosaur key should not always send the same one"
+
+
+def test_the_f_keys_are_split_between_balloons_and_dinosaurs():
+    assert {_SPECIALS[f"F{i}"] for i in range(1, 7)} == {"balloon"}
+    assert {_SPECIALS[f"F{i}"] for i in range(7, 13)} == {"dino"}
+
+
 def test_degradation_scale_reduces_particles():
     full = EffectContext(size=(640, 480), rng=random.Random(1), scale=1.0)
     tiny = EffectContext(size=(640, 480), rng=random.Random(1), scale=0.25)

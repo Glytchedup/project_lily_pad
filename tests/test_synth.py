@@ -225,8 +225,28 @@ def _first_choices(played):
 def test_a_letter_plays_its_note_and_still_says_its_name(tmp_path):
     engine, played = _recorder(tmp_path)
     engine.on_action(classify("A"))
-    # A sits on E4 (see test_music); the note leads, the letter name follows.
-    assert _first_choices(played) == ["note_64", "voice/A"]
+    # A sits on E4 (see test_music); the note leads, the letter name follows,
+    # and A's animal (the alligator) growls on top of both.
+    assert _first_choices(played) == ["note_64", "voice/A", "growl"]
+
+
+def test_a_quiet_animal_adds_no_cue(tmp_path):
+    """Every letter has a creature, but a creature need not have a voice."""
+    from lilypad.effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES
+    silent = [k for k, v in ANIMAL_LETTERS.items() if v not in ANIMAL_VOICES]
+    if not silent:
+        pytest.skip("every animal currently has a call")
+    engine, played = _recorder(tmp_path)
+    engine.on_action(classify(silent[0]))
+    assert len(_first_choices(played)) == 2      # note + spoken name only
+
+
+def test_the_dinosaur_key_roars(tmp_path):
+    engine, played = _recorder(tmp_path)
+    engine.on_action(classify("F9"))
+    # One roar for every dinosaur: the effects layer picks which one appears,
+    # so a second random pick here could play the wrong animal's call.
+    assert "roar" in _first_choices(played)
 
 
 def test_letter_note_follows_the_keyboard_layout(tmp_path):
@@ -332,7 +352,22 @@ def test_engine_muted_is_silent_and_harmless(tmp_path):
 
 
 def test_animal_letters_cover_the_expected_cast():
-    assert ANIMAL_LETTERS == {"C": "cow", "D": "duck", "P": "pig", "S": "sheep"}
+    """Every letter summons a creature — that is the product promise."""
+    import inspect
+    import string
+
+    from lilypad.audio.synth import build_cues
+    from lilypad.effects.animals import ANIMAL_VOICES
+
+    assert set(ANIMAL_LETTERS) == set(string.ascii_uppercase)
+    # The four originals must survive any recasting.
+    for letter, name in (("C", "cow"), ("D", "duck"), ("P", "pig"), ("S", "sheep")):
+        assert ANIMAL_LETTERS[letter] == name
+    # Every call a creature claims has to be one this module actually builds,
+    # or that animal is silent on the device and nowhere else.
+    src = inspect.getsource(build_cues)
+    for cue in set(ANIMAL_VOICES.values()):
+        assert '"%s": %s()' % (cue, cue) in src, f"no generator wired for {cue}"
 
 
 # --------------------------------------------------- razer report (no USB)

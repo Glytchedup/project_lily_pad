@@ -6,12 +6,14 @@ letters, count-along shapes, confetti, fireworks, a bouncing frog — and the
 keyboard's own RGB lights react with ripples and rainbows. The toddler cannot
 exit the app, reach the OS, or trigger anything unexpected.
 
-- **Letters** → giant colored letter + burst (+ spoken letter)
+- **Letters** → giant colored letter + burst + **an animal for every letter** (+ spoken letter)
 - **Numbers** → that many shapes pop in, count-along (+ spoken number)
 - **Space** → confetti storm · **Enter** → fireworks · **Arrows** → shove Pip the frog
-- **Esc / Windows / F-keys / media keys** → fun effects, never OS actions
+- **F7–F12** → 🦖 a dinosaur thunders across the screen
+- **Esc / Windows / other F-keys / media keys** → fun effects, never OS actions
 - **Two keys at once** → chord supernova · **Mashing 5+ keys** → rainbow chaos mode
 - **Keyboard RGB**: pressed keys flash, ripples spread, idle breathing, mash strobe
+- **After 10 quiet minutes** the screen goes black and the keys go dark; any key wakes it
 
 **Parent escape hatch: hold BOTH Shifts + Backspace for 5 seconds.** A small
 progress bar appears bottom-right while you hold. The app exits cleanly and
@@ -99,6 +101,48 @@ instrumental tunes fades in behind the attract animation and fades straight out
 on the next keypress. They are in the same key as the keys, so playing over
 them lands in tune.
 
+## The animals
+
+Every letter of the alphabet brings a creature with it, each with its own
+call:
+
+| | | | |
+|---|---|---|---|
+| **A** alligator | **H** horse | **O** owl | **V** velociraptor 🦖 |
+| **B** bear | **I** iguana | **P** pig | **W** whale |
+| **C** cow | **J** jellyfish | **Q** quail | **X** x-ray fish |
+| **D** duck | **K** koala | **R** rabbit | **Y** yak |
+| **E** elephant | **L** lion | **S** sheep | **Z** zebra |
+| **F** fox | **M** monkey | **T** T. rex 🦖 | |
+| **G** giraffe | **N** narwhal | **U** unicorn | |
+
+They don't just appear — they travel. Quadrupeds walk across with a two-beat
+bob; rabbits, monkeys and the two dinosaurs hop in arcs, squashing and kicking
+up dust on every landing; owls, quail, jellyfish and the pterodactyl fly;
+whales, narwhals and the x-ray fish swim. Each one faces the way it's going.
+The four original farm animals still pop up from the bottom edge and now take
+a couple of little jumps while they're there.
+
+**F7 to F12 summon a dinosaur** — stegosaurus, triceratops, brachiosaurus and
+pterodactyl join the T. rex and velociraptor there. (F1–F6 still do balloons.)
+
+To swap a letter's animal, edit one row of
+`src/lilypad/effects/animal_specs.py` and the matching entry in
+`ANIMAL_LETTERS` / `ANIMAL_VOICES` in `src/lilypad/effects/animals.py`.
+
+## Bedtime
+
+After `display.sleep_timeout` — 10 minutes by default — with nobody touching
+the keyboard, the screen goes fully black, the keyboard lights go out and the
+background music stops. Pressing any key brings it all straight back.
+
+This is a black picture on a live HDMI output, not a powered-down one. A Pi 5
+has no software route to switching the output off (`vcgencmd display_power` is
+gone from the firmware and the DRM `dpms` node is read-only — both checked on
+the actual device), and cutting the signal would risk the monitor dropping
+hot-plug detect, which is the deadlock the forced `video=` mode exists to
+prevent. If you want the backlight off too, use the monitor's own power saving.
+
 ## Configuration
 
 Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
@@ -116,6 +160,7 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | `escape.combo` | both Shifts + Backspace | evdev key names |
 | `escape.hold_seconds` | `5.0` | |
 | `display.idle_timeout` | `60` | seconds until the attract animation |
+| `display.sleep_timeout` | `600` | seconds until the screen goes black; `0` = never |
 
 ## Dev mode (no Pi needed)
 
@@ -126,7 +171,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 247 unit tests
+pytest                         # 538 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 

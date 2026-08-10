@@ -32,8 +32,20 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 - [ ] Space → confetti; Enter → fireworks; arrows shove the frog.
 - [ ] Esc, Windows key, F-keys, PrtSc, media keys → each fires an effect
       and **nothing OS-ish happens** (no console, no VT switch, no blanking).
-- [ ] Letters C/D/P/S → cow/duck/pig/sheep peeks up and moos/quacks/oinks/baas;
-      B → bubbles that Pip can pop.
+- [ ] **Every letter A–Z brings an animal.** Walk the whole alphabet once and
+      confirm each one appears, is recognisable, and isn't cut off at a screen
+      edge. C/D/P/S still peek up from the bottom (cow/duck/pig/sheep); the
+      other 22 walk, hop, fly or swim right across, facing the way they go.
+- [ ] B → its bear **and** bubbles that Pip can pop.
+- [ ] **F7–F12 → a dinosaur** thunders across with a roar (six of them:
+      T. rex, velociraptor, stegosaurus, triceratops, brachiosaurus,
+      pterodactyl — press repeatedly to see different ones). F1–F6 → balloons.
+- [ ] Hopping animals (rabbit, monkey, T. rex, velociraptor) squash on landing
+      and kick up dust. If they slide instead of hopping, report it.
+- [ ] Run a hand along a whole row of letters: at most ~5 animals on screen at
+      once, and **every key still shows its giant letter** even when the
+      animal is skipped. Watch for stutter here specifically — this is the
+      heaviest new load on the Pi's blit path.
 - [ ] Hold any letter ~half a second → a rainbow comet wanders and streaks;
       release → it bursts.
 - [ ] ~50 presses → mega-celebration (fireworks + confetti + balloons + frog
@@ -97,6 +109,12 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 ## 7. Audio
 
 - [ ] Letters are spoken, numbers counted, effects have cues, volume sane.
+- [ ] Every letter's animal makes a sound, and it matches the animal on screen
+      (elephant trumpets, owl hoots, whale sings, T. rex roars). The call sits
+      **on top of** the spoken letter name, never instead of it.
+- [ ] None of the big animal calls are frightening. They are deliberately low,
+      short and softly attacked — a convincing T. rex roar is one a 2-year-old
+      cries at. If any of them startles her, say so; it's a bug, not taste.
 - [ ] Notes: walk the home row `A`→`L`; the pitch climbs step by step. `Z`,
       `A`, `Q` (same column, three rows) climb too.
 - [ ] Lay a whole hand across the keyboard — it is a chord, never a clash.
@@ -113,6 +131,32 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       loops, ~40 s).
 - [ ] `music.tunes = "off"` + restart = no background music, keys unaffected.
 - [ ] `audio.mute = true` + restart = fully silent. (Set it back.)
+
+## 7b. Screen sleep
+
+Set `display.sleep_timeout = 20` in `/etc/lilypad/config.toml` and restart, so
+you aren't waiting ten minutes; put it back to `600.0` afterwards.
+
+- [ ] Leave the keyboard alone. Both timeouts are measured from the **last
+      keypress**, so with `idle_timeout = 60` and `sleep_timeout = 20` sleep
+      wins and the attract animation never gets a chance — set
+      `idle_timeout = 5` too if you want to watch the handover. At
+      `sleep_timeout` the screen goes **fully black**, the keyboard LEDs go
+      **out**, and the music **stops**. (At the shipped 600 s / 60 s, attract
+      runs for nine minutes and then sleep takes over.)
+- [ ] Press any letter: screen, lights and effects all come back within a
+      fraction of a second, and that keypress still does its own thing.
+- [ ] Press only **a Shift** (which normally produces no effect): the screen
+      still wakes. This matters — the escape combo starts with Shift, and a
+      hatch that looks dead in front of a black screen is worse than none.
+- [ ] While asleep, `top` over SSH shows the app near-idle (it drops to 10 fps).
+- [ ] `sleep_timeout = 0` + restart → never sleeps. (Set it back.)
+- Note: the HDMI **output stays on** — the picture is black, the signal isn't
+  cut. There is no software way to power the output down on a Pi 5
+  (`vcgencmd display_power` → `Command not registered`; the DRM `dpms` node is
+  read-only), and cutting it would risk exactly the hot-plug-detect deadlock
+  §1 fixes. If you want the monitor's backlight off, use the monitor's own
+  power-save setting.
 
 ## 8. Escape hatch + service behavior
 

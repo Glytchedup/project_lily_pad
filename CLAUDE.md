@@ -28,10 +28,20 @@ Python 3.11+ package `lilypad/`, src-layout:
   `sdl_backend` (dev: normal pygame events); `mapper.py` turns keycodes into semantic
   actions and detects 2-key chords + mash storms (5+ keys → chaos mode).
 - `effects/` — pygame renderer: engine (60 fps budget, graceful degradation, motion
-  trails, milestones), registry (action → effect factory), particles (+ additive glow,
-  shaped fireworks), letters (outline/rainbow/googly eyes), numbers (countable
-  objects), scenery (pond background), bubbles, animals (peekaboo cast), comet
-  (key-hold rainbows), ambient/idle attract.
+  trails, milestones, **screen sleep**), registry (action → effect factory), particles
+  (+ additive glow, shaped fireworks), letters (outline/rainbow/googly eyes), numbers
+  (countable objects), scenery (pond background), bubbles, comet (key-hold rainbows),
+  ambient/idle attract. The animal cast is three files: `animal_specs.py` is the cast
+  list (one data row per creature — edit this to recast a letter), `animal_art.py`
+  turns a row into a cached sprite, and `animals.py` owns who appears for which key,
+  what they sound like (`ANIMAL_VOICES`, imported by the audio engine so the two
+  can't drift), and how they move. Every letter A–Z has a creature; six are
+  dinosaurs, four of which live on F7–F12. Side-on animals **cross the screen**
+  (walk/hop/fly/swim, mirrored to face their direction); the four original front-on
+  farm animals keep their peekaboo. Sprite construction is arbitrarily expensive
+  because everything is cached by (name, height, pose) — only the per-frame blit
+  budget is sacred, which is also why concurrent animals are capped at
+  `MAX_ANIMALS`.
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
@@ -48,7 +58,16 @@ Python 3.11+ package `lilypad/`, src-layout:
   espeak-ng.
 - `escape.py` — parent escape hatch state machine.
 - `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
-  escape combo, effect toggles).
+  escape combo, effect toggles, idle/sleep timeouts).
+
+**Screen sleep**: after `display.sleep_timeout` (default 600 s) with no keypresses
+the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
+throttled to `SLEEP_FPS`. Any *raw* keypress wakes it (`engine.wake()` is called
+from the event loop, not from `spawn`, so a lone Shift counts — the escape combo
+must never look dead). This is a black picture on a live HDMI output: a Pi 5 has no
+software DPMS (`vcgencmd display_power` is gone, the DRM `dpms` node is read-only —
+both verified on-device), and dropping the output would risk the hot-plug-detect
+deadlock that `video=HDMI-A-1:...D` exists to prevent.
 
 Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry Pi OS Lite
 64-bit (Bookworm), rendering via SDL `kmsdrm` — no desktop environment.
@@ -69,7 +88,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 247 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects)
+pytest                        # 538 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep)
 ```
 
 ## Status / gotchas

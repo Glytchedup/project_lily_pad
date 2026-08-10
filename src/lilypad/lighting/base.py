@@ -120,6 +120,7 @@ class LightingEngine:
         self._ripples: list[Ripple] = []
         self._lit: dict[str, tuple[float, float]] = {}
         self._mash = False
+        self._sleep = False
         self._last_frame = float("-inf")  # first tick always renders
         self._hue_cursor = 0.13
         backend.set_brightness(brightness)
@@ -134,7 +135,27 @@ class LightingEngine:
     def set_mash(self, on: bool) -> None:
         self._mash = on
 
+    def set_sleep(self, on: bool) -> None:
+        """Go dark with the screen, and come back the instant it does.
+
+        A keyboard breathing rainbows all night in a toddler's room defeats
+        the point of blanking the display, so sleep blanks the LEDs once and
+        then stops sending frames entirely.
+        """
+        if on == self._sleep:
+            return
+        self._sleep = on
+        if on:
+            self._ripples.clear()
+            self._lit.clear()
+            self.backend.apply(blank_grid())
+        # Render immediately on the next tick either way rather than waiting
+        # out the frame interval.
+        self._last_frame = float("-inf")
+
     def tick(self, now: float) -> None:
+        if self._sleep:
+            return
         if now - self._last_frame < self.frame_interval:
             return
         self._last_frame = now

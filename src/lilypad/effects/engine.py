@@ -11,6 +11,7 @@ import pygame
 
 from ..input.mapper import Action
 from .ambient import AttractMode, CelebrationPulse, ChaosOverlay
+from .animals import AnimalCrossing, PeekabooAnimal
 from .base import Effect, EffectContext
 from .bubbles import BubbleField
 from .comet import Comet
@@ -26,6 +27,8 @@ GHOSTBUST_EVERY = 4      # frames between SUB/MAX anti-ghost passes (see draw)
 TRAILS_OFF_BELOW = 0.4   # degradation ladder sheds trails below this scale...
 TRAILS_ON_ABOVE = 0.6    # ...and restores them above this one (hysteresis)
 CELEBRATION_COOLDOWN = 10.0  # s between milestone parties (mash-proofing)
+MAX_ANIMALS = 5          # concurrent creatures; see the note in spawn()
+ANIMAL_TYPES = (PeekabooAnimal, AnimalCrossing)
 RIPPLE_COLOR = (150, 200, 255)
 ALPHABET = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -38,10 +41,13 @@ class EffectEngine:
     def __init__(self, size: tuple[int, int], max_particles: int = 900,
                  idle_timeout: float = 60.0, fps: int = 60,
                  rng: random.Random | None = None,
-                 trails: bool = True, milestone_every: int = 50) -> None:
+                 trails: bool = True, milestone_every: int = 50,
+                 sleep_timeout: float = 600.0) -> None:
         self.size = size
         self.max_particles = max_particles
         self.idle_timeout = idle_timeout
+        self.sleep_timeout = sleep_timeout
+        self.asleep = False
         self.frame_budget = 1.0 / max(1, fps)
         self.ctx = EffectContext(size=size, rng=rng or random.Random())
         self.effects: list[Effect] = []
@@ -69,9 +75,24 @@ class EffectEngine:
 
     # ------------------------------------------------------------------ input
 
+    def wake(self, now: float | None = None) -> bool:
+        """Any key touches this: reset the idle clock and end sleep.
+
+        Called from the raw event loop rather than from ``spawn`` alone,
+        because keys that produce no Action still mean somebody is there —
+        holding the parent escape combo in front of a black screen should
+        light it back up, not look broken.
+
+        Returns whether the screen had actually been asleep.
+        """
+        self.last_action_time = time.monotonic() if now is None else now
+        was_asleep, self.asleep = self.asleep, False
+        return was_asleep
+
     def spawn(self, action: Action, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
         self.last_action_time = now
+        self.asleep = False
         if self.attract is not None:      # any key kills attract mode instantly
             self.attract = None
 
@@ -110,7 +131,17 @@ class EffectEngine:
             return
 
         if self.particle_count() < self.max_particles * 1.5:
-            self.effects.extend(effects_for(self.ctx, action))
+            spawned = effects_for(self.ctx, action)
+            if self.animal_count() >= MAX_ANIMALS:
+                # Every letter has its own creature now, so a two-handed run
+                # along the keyboard used to put a dozen big sprites on screen
+                # at once. Each one is a full-height alpha blit every frame —
+                # cheap here, several times dearer on the Pi's software path —
+                # and a dozen animals is visual noise to a 2-year-old anyway.
+                # The letter and its burst still fire: only the surplus animal
+                # is dropped, so the key still visibly does something.
+                spawned = [e for e in spawned if not isinstance(e, ANIMAL_TYPES)]
+            self.effects.extend(spawned)
         else:
             # The product invariant is that EVERY key visibly does something.
             # Sustained fast play can saturate the budget with ordinary
@@ -166,6 +197,9 @@ class EffectEngine:
 
     # ------------------------------------------------------------------ frame
 
+    def animal_count(self) -> int:
+        return sum(1 for e in self.effects if isinstance(e, ANIMAL_TYPES))
+
     def particle_count(self) -> int:
         # The engine-owned mash overlay deliberately does NOT count here:
         # taxing the budget with its (real) draw cost starved mash mode of
@@ -176,8 +210,28 @@ class EffectEngine:
         return (sum(len(e) for e in self.effects if hasattr(e, "__len__"))
                 + len(self.pond))
 
+    def _fall_asleep(self) -> None:
+        """Drop everything and go dark.
+
+        Attract mode is lovely for a minute and wrong at bedtime: after
+        ``sleep_timeout`` with nobody in the room the screen should be black,
+        the music should stop (which follows from clearing ``attract``) and the
+        keyboard lights should go out. Live effects are dropped rather than
+        left to finish so a sleeping app costs almost nothing.
+        """
+        if self.asleep:
+            return
+        self.asleep = True
+        self.attract = None
+        self.chaos = None
+        self.effects.clear()
+        self.comets.clear()
+
     def update(self, dt: float, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
+        if self.sleep_timeout > 0 and                 now - self.last_action_time >= self.sleep_timeout:
+            self._fall_asleep()
+            return
         self.pond.update(dt)
         self.frog.update(dt)
         # Frog splash-down → water ripples at his feet.
@@ -228,6 +282,10 @@ class EffectEngine:
             self.attract.update(dt)
 
     def draw(self, surface: pygame.Surface) -> None:
+        if self.asleep:
+            # Pure black, not the pond's near-black: the point is a dark room.
+            surface.fill((0, 0, 0))
+            return
         # The pond composites onto a scratch surface; blitting it translucent
         # instead of opaque is what leaves motion trails (VISUAL_REVIEW.md #4):
         # last frame's lights linger and fade INTO the scene over ~10 frames.

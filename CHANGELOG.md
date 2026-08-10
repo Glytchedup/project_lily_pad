@@ -6,6 +6,71 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added (the whole alphabet is a zoo — 2026-08-10)
+- **An animal for every letter, A–Z.** Twenty-six creatures where there were
+  four: alligator, bear, cow, duck, elephant, fox, giraffe, horse, iguana,
+  jellyfish, koala, lion, monkey, narwhal, owl, pig, quail, rabbit, sheep,
+  T. rex, unicorn, velociraptor, whale, x-ray fish, yak, zebra. The four
+  originals (cow, duck, pig, sheep) keep their hand-drawn front-on art
+  untouched.
+- **Dinosaurs.** Six of them: T. rex (T) and velociraptor (V) have their own
+  letters; stegosaurus, triceratops, brachiosaurus and pterodactyl arrive on
+  **F7–F12**, which previously all did the same balloon effect as F1–F6.
+  Stegosaurus and triceratops also joined the countable objects, so counting
+  to five can now mean five little stegosauruses.
+- **Animals move.** The new cast is drawn side-on and *crosses the screen*
+  rather than popping up and fading: quadrupeds walk with a two-beat bob,
+  rabbit/monkey/T. rex/velociraptor hop in parabolic arcs, owl/quail/
+  pterodactyl/jellyfish fly, whale/narwhal/x-ray fish swim. Direction is
+  random and sprites are mirrored to face the way they are going. Landings
+  squash and kick up dust. The front-on originals now take two little jumps
+  during their peekaboo, with the same squash and dust.
+- **Eleven new animal calls** (`roar`, `growl`, `screech`, `trumpet`, `neigh`,
+  `hoot`, `chirp`, `squeak`, `whalesong`, `bloop`, `stomp`), all procedurally
+  generated like the rest. Deliberately un-scary: the "big" calls are low,
+  short and soft-attacked, because a convincing T. rex roar is one a
+  two-year-old cries at. `CUE_VERSION` → 4, so devices regenerate on start.
+- **Screen sleep.** After `display.sleep_timeout` (default **600 s**) with no
+  keypresses the screen goes fully black, the keyboard LEDs go out, background
+  music stops and the render loop drops to 10 fps. Any key — including one
+  that produces no effect, like a lone Shift — brings it straight back.
+  `sleep_timeout = 0` disables it.
+
+### Changed
+- `effects/animals.py` split three ways: `animal_specs.py` (the cast list, one
+  data row per creature), `animal_art.py` (drawing and sprite caches), and
+  `animals.py` (who appears for which key, what they sound like, how they
+  move). Twenty-six bespoke drawing functions would have been a thousand lines
+  nobody could keep consistent.
+- The audio engine now reads `ANIMAL_VOICES` from the visual cast instead of
+  keeping its own copy, so a creature can never end up with art and no sound.
+- At most **5** animals are on screen at once (`MAX_ANIMALS`). With every
+  letter carrying a creature, a two-handed run along the keyboard otherwise
+  stacked a dozen full-height alpha blits per frame. The surplus animal is
+  dropped; the letter and its burst still fire.
+
+### Fixed
+- Peekaboo animals stopped blinking when the jumps were added — the jump
+  windows completely covered both blink windows, so the blink pose could never
+  be reached. Blinks now sit between the jumps.
+- Flying animals could sail off the top of the screen: the band a flyer starts
+  in now leaves room for half a sprite *plus* the full wave amplitude.
+- Sprites were being sliced by their own surface bounds — alligator and iguana
+  tails, rabbit ears, the unicorn's horn, the triceratops' beak and the whale's
+  spout all ran past the edge. Tails are clamped, head placement scales with
+  head size, and the head's vertical clamp leaves headroom for whatever sits on
+  top of it. `tests/test_animals.py` now asserts no sprite touches its own
+  left, right or top edge.
+
+### Not done, and why
+- **Powering the HDMI output down during sleep.** Both routes are dead on a
+  Pi 5, verified on the device: `vcgencmd display_power` returns `Command not
+  registered`, and `/sys/class/drm/card1-HDMI-A-1/dpms` is read-only. Blanking
+  the output would also risk the monitor dropping hot-plug detect — the exact
+  deadlock that forced `video=HDMI-A-1:1920x1080@60D` into cmdline.txt. Sleep
+  is therefore a black picture on a live output; use the monitor's own power
+  saving if you want the backlight off too.
+
 ### Fixed (first on-device run — Raspberry Pi 5, 2026-08-10)
 - **A monitor that was off at boot put the app in a permanent restart storm.**
   Both HDMI connectors read `disconnected`, the kernel logged `Cannot find any
