@@ -1,8 +1,8 @@
-"""After ten quiet minutes the playground should go dark.
+"""After five quiet minutes the playground should go dark.
 
-The room this runs in is a toddler's bedroom, so "nobody has touched it in ten
-minutes" has to end with a black screen and unlit keys — not an attract loop
-and a breathing rainbow keyboard playing music to an empty room.
+The room this runs in is a toddler's bedroom, so "nobody has touched it in
+five minutes" has to end with a black screen and unlit keys — not an attract
+loop and a breathing rainbow keyboard playing music to an empty room.
 
 Note what this is *not*: the HDMI output stays on. On a Pi 5 there is no way to
 power it down from software (``vcgencmd display_power`` is gone and the DRM
@@ -26,7 +26,7 @@ from lilypad.lighting.mock import MockLightingBackend
 SCREEN = (320, 240)
 
 
-def engine(sleep_timeout: float = 600.0) -> EffectEngine:
+def engine(sleep_timeout: float = 300.0) -> EffectEngine:
     return EffectEngine(SCREEN, rng=random.Random(7), sleep_timeout=sleep_timeout)
 
 
@@ -94,7 +94,7 @@ def test_falling_asleep_and_waking_are_both_logged(caplog):
 
 
 def test_waking_something_already_awake_logs_nothing(caplog):
-    eng = engine(sleep_timeout=600.0)
+    eng = engine(sleep_timeout=300.0)
     with caplog.at_level("INFO", logger="lilypad.effects.engine"):
         eng.wake(1000.0)
         assert not caplog.records
@@ -208,8 +208,14 @@ def test_repeated_set_sleep_is_a_no_op():
 
 # ---------------------------------------------------------------------- config
 
-def test_sleep_timeout_defaults_to_ten_minutes():
-    assert load_config(None).display.sleep_timeout == 600.0
+def test_sleep_timeout_defaults_to_five_minutes():
+    assert load_config(None).display.sleep_timeout == 300.0
+    # The shipped config file and the code default must agree, or the value
+    # silently changes the first time somebody deletes the key from the TOML.
+    import tomllib
+    from pathlib import Path
+    shipped = tomllib.loads(Path("config.toml").read_text(encoding="utf-8"))
+    assert shipped["display"]["sleep_timeout"] == 300.0
 
 
 def test_sleep_timeout_is_read_and_clamped(tmp_path):
@@ -242,7 +248,7 @@ def test_main_loop_wakes_on_the_raw_event_not_the_action():
     assert wake < mapper, "must wake before the mapper decides the key is a no-op"
 
 
-@pytest.mark.parametrize("timeout", (0.0, 1.0, 600.0))
+@pytest.mark.parametrize("timeout", (0.0, 1.0, 300.0))
 def test_engine_accepts_any_sane_timeout(timeout):
     EffectEngine(SCREEN, sleep_timeout=timeout)
 

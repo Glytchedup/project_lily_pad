@@ -141,15 +141,15 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 ## 7b. Screen sleep
 
 Set `display.sleep_timeout = 20` in `/etc/lilypad/config.toml` and restart, so
-you aren't waiting ten minutes; put it back to `600.0` afterwards.
+you aren't waiting five minutes; put it back to `300.0` afterwards.
 
 - [ ] Leave the keyboard alone. Both timeouts are measured from the **last
       keypress**, so with `idle_timeout = 60` and `sleep_timeout = 20` sleep
       wins and the attract animation never gets a chance — set
       `idle_timeout = 5` too if you want to watch the handover. At
       `sleep_timeout` the screen goes **fully black**, the keyboard LEDs go
-      **out**, and the music **stops**. (At the shipped 600 s / 60 s, attract
-      runs for nine minutes and then sleep takes over.)
+      **out**, and the music **stops**. (At the shipped 300 s / 60 s, attract
+      runs for four minutes and then sleep takes over.)
 - [ ] Press any letter: screen, lights and effects all come back within a
       fraction of a second, and that keypress still does its own thing.
 - [ ] Press only **a Shift** (which normally produces no effect): the screen

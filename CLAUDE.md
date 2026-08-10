@@ -60,7 +60,7 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
   escape combo, effect toggles, idle/sleep timeouts).
 
-**Screen sleep**: after `display.sleep_timeout` (default 600 s) with no keypresses
+**Screen sleep**: after `display.sleep_timeout` (default 300 s) with no keypresses
 the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
 throttled to `SLEEP_FPS`. Any *raw* keypress wakes it (`engine.wake()` is called
 from the event loop, not from `spawn`, so a lone Shift counts — the escape combo

@@ -45,7 +45,7 @@ class EffectEngine:
                  idle_timeout: float = 60.0, fps: int = 60,
                  rng: random.Random | None = None,
                  trails: bool = True, milestone_every: int = 50,
-                 sleep_timeout: float = 600.0) -> None:
+                 sleep_timeout: float = 300.0) -> None:
         self.size = size
         self.max_particles = max_particles
         self.idle_timeout = idle_timeout

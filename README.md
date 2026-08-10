@@ -13,7 +13,7 @@ exit the app, reach the OS, or trigger anything unexpected.
 - **Esc / Windows / other F-keys / media keys** → fun effects, never OS actions
 - **Two keys at once** → chord supernova · **Mashing 5+ keys** → rainbow chaos mode
 - **Keyboard RGB**: pressed keys flash, ripples spread, idle breathing, mash strobe
-- **After 10 quiet minutes** the screen goes black and the keys go dark; any key wakes it
+- **After 5 quiet minutes** the screen goes black and the keys go dark; any key wakes it
 
 **Parent escape hatch: hold BOTH Shifts + Backspace for 5 seconds.** A small
 progress bar appears bottom-right while you hold. The app exits cleanly and
@@ -132,7 +132,7 @@ To swap a letter's animal, edit one row of
 
 ## Bedtime
 
-After `display.sleep_timeout` — 10 minutes by default — with nobody touching
+After `display.sleep_timeout` — 5 minutes by default — with nobody touching
 the keyboard, the screen goes fully black, the keyboard lights go out and the
 background music stops. Pressing any key brings it all straight back.
 
@@ -160,7 +160,7 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | `escape.combo` | both Shifts + Backspace | evdev key names |
 | `escape.hold_seconds` | `5.0` | |
 | `display.idle_timeout` | `60` | seconds until the attract animation |
-| `display.sleep_timeout` | `600` | seconds until the screen goes black; `0` = never |
+| `display.sleep_timeout` | `300` | seconds until the screen goes black; `0` = never |
 
 ## Dev mode (no Pi needed)
 

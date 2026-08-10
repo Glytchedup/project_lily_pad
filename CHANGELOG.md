@@ -30,7 +30,7 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
   generated like the rest. Deliberately un-scary: the "big" calls are low,
   short and soft-attacked, because a convincing T. rex roar is one a
   two-year-old cries at. `CUE_VERSION` → 4, so devices regenerate on start.
-- **Screen sleep.** After `display.sleep_timeout` (default **600 s**) with no
+- **Screen sleep.** After `display.sleep_timeout` (default **300 s**) with no
   keypresses the screen goes fully black, the keyboard LEDs go out, background
   music stops and the render loop drops to 10 fps. Any key — including one
   that produces no effect, like a lone Shift — brings it straight back.

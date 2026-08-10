@@ -25,7 +25,7 @@ class DisplayConfig:
     dev_window: tuple[int, int] = (1280, 720)
     fps: int = 60
     idle_timeout: float = 60.0     # seconds until the attract animation
-    sleep_timeout: float = 600.0   # seconds until the screen goes black; 0 = never
+    sleep_timeout: float = 300.0   # seconds until the screen goes black; 0 = never
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,7 @@ def load(path: str | Path | None = None) -> Config:
             dev_window=(int(dev_window[0]), int(dev_window[1])),
             fps=int(display.get("fps", 60)),
             idle_timeout=float(display.get("idle_timeout", 60.0)),
-            sleep_timeout=max(0.0, float(display.get("sleep_timeout", 600.0))),
+            sleep_timeout=max(0.0, float(display.get("sleep_timeout", 300.0))),
         ),
         effects=EffectsConfig(
             max_particles=int(effects.get("max_particles", 900)),
