@@ -58,6 +58,12 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       cheap opaque clear permanently. (On a Pi installed before the visual
       upgrade the `trails` key won't be in that file — add it under
       `[effects]`; the installer keeps existing configs.)
+- [ ] Crossing animals leave a short motion blur behind them (~40 px at
+      1080p). That is the trail veil doing its job on a big opaque sprite and
+      it is intended — but it is new, because the old animals barely moved.
+      If you dislike it, `effects.trails = false` removes it everywhere.
+      (Checked on the dev box: the anti-ghost pass frequency makes no visible
+      difference to it, so don't go hunting in `GHOSTBUST_EVERY`.)
 - [ ] Trails on real KMSDRM: confirm streaks fade smoothly with NO
       flicker/strobe. The trail technique reads the previous frame back
       from the display surface, which is verified on the dev SDL path but
