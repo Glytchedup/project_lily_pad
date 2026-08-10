@@ -50,8 +50,33 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
   writing goes through `array('h').tobytes()`, and oscillators use a fixed-point
   wavetable. A full cue build (56 files, 6 MB, including four tunes) takes ~6 s.
 - `build_cues(dest, tunes=False)` skips the slow tune render for tests.
-- Character cues (whoosh, boom, drum, boing, animal calls) are unchanged —
-  they are caricatures, not music.
+- Character cues (whoosh, boom, drum, boing, animal calls) stay caricatures
+  rather than instruments, but were retuned to sit *under* the notes and the
+  spoken letter name — see the gentler-audio entry below.
+
+### Changed (gentler audio — cues were hard on the ears)
+Carried over from the `worktree-softer-sounds` branch and re-pointed at the new
+synth. The parts of that branch which retuned the old beep-style musical cues
+(`_tone` defaults, chime, count_note, celebration) are superseded: those cues no
+longer exist, and the `Voice` renderer shapes brightness by pitch instead.
+- Character cues softened: slower attacks (no clicky onsets), tamer harmonic
+  stacks (duck/pig buzz reduced), quieter noise layers (whoosh/boom/drum),
+  lower sparkle/pop pitch ranges, per-cue gains trimmed. `_mix` headroom
+  dropped from 0.9 to 0.72 — at full scale the animal calls buried both the
+  letter name and the key note.
+- New `_soften()` finishing pass — gentle one-pole ~3 kHz lowpass plus
+  downward-only peak normalisation — applied to the character cues **only**.
+  The musical cues are deliberately excluded: `Voice` already rolls off high
+  partials by pitch and adds a reverb tail, and a lowpass on top of that just
+  makes the bells sound underwater.
+- `CUE_VERSION` stamp (`cues.version`, now at 3) written by `build_cues()`;
+  the audio engine regenerates any sounds dir with a missing or stale stamp.
+  Without this a device with WAVs already on disk would keep playing the old
+  cues forever and no retune would ever reach it. A `tunes=False` build is
+  deliberately left unstamped — that set really is incomplete.
+- Cue regeneration failure (read-only dir — `/opt` under the Pi's overlayfs)
+  now degrades to the existing cues with a warning instead of crashing.
+- `_tone()` deleted: dead code once every caller moved to `render_note`.
 
 ### Added (visual WOW upgrade — implements all 10 VISUAL_REVIEW.md recommendations)
 - Pond scene (`effects/scenery.py`): pre-rendered night/dusk/aurora gradient

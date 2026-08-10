@@ -5,8 +5,9 @@ import pytest
 from lilypad.audio.engine import ANIMAL_LETTERS, AudioEngine
 from lilypad.audio.music import CHORD_NAMES, NOTE_MIDIS
 from lilypad.audio.synth import (
-    BELL, SAMPLE_RATE, baa, build_cues, celebration, chord_cue, count_note,
-    mash_chord_cue, moo, note_cue, oink, quack, render_note,
+    BELL, SAMPLE_RATE, baa, boom, build_cues, celebration, chord_cue,
+    count_note, cues_stale, drum, mash_chord_cue, moo, note_cue, oink, quack,
+    render_note, whoosh,
 )
 from lilypad.audio.tunes import TUNE_NAMES
 from lilypad.input.mapper import classify
@@ -35,6 +36,43 @@ def test_build_cues_writes_a_note_for_every_pitch_and_every_chord(tmp_path):
     assert {f"note_{m}" for m in NOTE_MIDIS} <= names
     assert {f"chord_{c}" for c in CHORD_NAMES} <= names
     assert "chord_mash" in names
+
+
+def test_build_cues_stamps_version_and_staleness_detects_it(tmp_path):
+    from lilypad.audio.synth import CUE_VERSION, cues_stale
+    assert cues_stale(tmp_path)                       # empty dir → stale
+    build_cues(tmp_path)
+    assert (tmp_path / "cues.version").read_text() == str(CUE_VERSION)
+    assert not cues_stale(tmp_path)                   # freshly built → current
+    (tmp_path / "cues.version").write_text("0")
+    assert cues_stale(tmp_path)                       # old version → stale
+    (tmp_path / "cues.version").unlink()
+    assert cues_stale(tmp_path)                       # pre-versioning dir → stale
+
+
+def test_a_cue_set_without_tunes_counts_as_stale(tmp_path):
+    # Otherwise a fast test-shaped build would mark a dir "current" while the
+    # background music is missing from it.
+    build_cues(tmp_path, tunes=False)
+    assert cues_stale(tmp_path)
+
+
+def test_softening_only_touches_the_character_cues(tmp_path):
+    """The musical cues must keep their brightness — Voice already shapes it."""
+    from lilypad.audio.synth import _SOFTENED
+    assert "whoosh" in _SOFTENED and "moo" in _SOFTENED
+    for name in _SOFTENED:
+        assert not name.startswith(("note_", "chord", "count_", "tune_"))
+    assert not any(f"note_{m}" in _SOFTENED for m in NOTE_MIDIS)
+    assert "celebration" not in _SOFTENED
+
+
+def test_softened_character_cues_stay_audible_and_quieter_than_full_scale():
+    from lilypad.audio.synth import _soften
+    for raw in (whoosh(), boom(), drum(), moo(), quack(), baa()):
+        soft = _soften(raw)
+        peak = max(abs(s) for s in soft)
+        assert 0.15 < peak <= 0.8, "audible, but with headroom under the notes"
 
 
 def test_build_cues_deterministic(tmp_path):

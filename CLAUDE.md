@@ -69,7 +69,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 243 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects)
+pytest                        # 247 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects)
 ```
 
 ## Status / gotchas

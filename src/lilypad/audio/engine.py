@@ -72,10 +72,16 @@ class AudioEngine:
         except Exception as exc:              # noqa: BLE001 — silence, never crash
             log.warning("audio unavailable (%s) — running silent", exc)
             return
-        if autogen and not (self.sounds_dir / "pop.wav").is_file():
-            log.info("audio: generating cues into %s", self.sounds_dir)
-            from .synth import build_cues
-            build_cues(self.sounds_dir)
+        if autogen:
+            from .synth import build_cues, cues_stale
+            if cues_stale(self.sounds_dir):
+                log.info("audio: (re)generating cues into %s", self.sounds_dir)
+                try:
+                    build_cues(self.sounds_dir)
+                except OSError as exc:
+                    # Read-only sounds dir — /opt under the Pi's overlayfs, for
+                    # instance. Keep whatever cues are there over crashing.
+                    log.warning("audio: cue regeneration failed (%s)", exc)
         if self.tunes == "always":
             self._start_tune()
 

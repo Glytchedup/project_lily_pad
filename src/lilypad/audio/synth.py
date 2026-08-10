@@ -33,6 +33,13 @@ from .music import (
 SAMPLE_RATE = 22050
 _TAU = math.tau
 
+#: Bump whenever the *sound* of any cue changes. ``build_cues`` stamps it into
+#: ``cues.version`` and the audio engine regenerates any sounds dir whose stamp
+#: doesn't match — otherwise a device that already has WAVs on disk keeps
+#: playing the old ones forever and a retune never reaches anybody.
+#:   1 = original cue set · 2 = softened cues · 3 = musical notes/chords/tunes
+CUE_VERSION = 3
+
 # Pentatonic-ish happy scale for chimes (C major pentatonic, one octave up)
 _SCALE_HZ = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]
 
@@ -263,19 +270,6 @@ def _env(i: int, n: int, attack: float = 0.01, release: float = 0.3) -> float:
     return 1.0
 
 
-def _tone(freq: float, dur: float, *, vibrato: float = 0.0,
-          harmonics: tuple[float, ...] = (1.0, 0.35, 0.12),
-          attack: float = 0.01, release: float = 0.4) -> list[float]:
-    n = int(SAMPLE_RATE * dur)
-    out = []
-    for i in range(n):
-        t = i / SAMPLE_RATE
-        f = freq * (1.0 + vibrato * math.sin(_TAU * 5.5 * t))
-        v = sum(a * math.sin(_TAU * f * (k + 1) * t) for k, a in enumerate(harmonics))
-        out.append(v * _env(i, n, attack, release) * 0.5)
-    return out
-
-
 def _glide(f0: float, f1: float, dur: float, *,
            vibrato: float = 0.0, vib_rate: float = 5.5,
            harmonics: tuple[float, ...] = (1.0, 0.35, 0.12),
@@ -298,17 +292,52 @@ def _glide(f0: float, f1: float, dur: float, *,
 
 
 def _mix(*layers: list[float]) -> list[float]:
-    """Sum layers, attenuating only if they would clip. Character cues are
-    tuned against this exact curve, so it stays as it was."""
+    """Sum the character-cue layers, attenuating only if they would clip.
+
+    The 0.72 ceiling (rather than a full-scale 0.9) is deliberate headroom:
+    these fire alongside a spoken letter name and a key note, and at 0.9 the
+    animal calls buried both.
+    """
     mix = Mixer()
     for layer in layers:
         mix.add(layer)
     peak = max(1.0, max((abs(s) for s in mix.buf), default=0.0))
-    return [s / peak * 0.9 for s in mix.buf]
+    return [s / peak * 0.72 for s in mix.buf]
 
 
 def _shift(samples: list[float], seconds: float) -> list[float]:
     return [0.0] * int(SAMPLE_RATE * seconds) + samples
+
+
+def _soften(samples: list[float]) -> list[float]:
+    """Finishing pass for the character cues: a gentle one-pole ~3 kHz lowpass
+    rounds off buzzy upper partials and any residual attack click, then peaks
+    above 0.8 are normalised *down* — never up, so quiet cues stay quiet.
+
+    Deliberately not applied to the musical cues: ``Voice`` already shapes
+    brightness by pitch and adds a reverb tail, and a 3 kHz lowpass on top of
+    that just makes the bells sound like they're underwater.
+    """
+    alpha = 0.46  # one-pole coefficient ≈ 3 kHz cutoff at 22.05 kHz
+    out, prev = [], 0.0
+    for s in samples:
+        prev = prev + alpha * (s - prev)
+        out.append(prev)
+    peak = max((abs(s) for s in out), default=0.0)
+    if peak > 0.8:
+        out = [s / peak * 0.8 for s in out]
+    return out
+
+
+def cues_stale(dest: Path) -> bool:
+    """True when ``dest`` lacks a complete cue set at the current CUE_VERSION."""
+    version_file = dest / "cues.version"
+    if not (dest / "pop.wav").is_file() or not version_file.is_file():
+        return True
+    try:
+        return version_file.read_text(encoding="ascii").strip() != str(CUE_VERSION)
+    except OSError:
+        return True
 
 
 # ------------------------------------------------------------ musical cues
@@ -370,7 +399,7 @@ def pop() -> list[float]:
     """Short pitch-drop blip."""
     n = int(SAMPLE_RATE * 0.12)
     return [
-        math.sin(_TAU * (900 - 600 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.02, 0.5) * 0.6
+        math.sin(_TAU * (750 - 450 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.08, 0.5) * 0.45
         for i in range(n)
     ]
 
@@ -382,9 +411,9 @@ def whoosh() -> list[float]:
     out, prev = [], 0.0
     for i in range(n):
         # One-pole lowpass over white noise, cutoff swept by envelope position
-        alpha = 0.05 + 0.4 * (i / n)
+        alpha = 0.04 + 0.22 * (i / n)
         prev = prev + alpha * (rng.uniform(-1, 1) - prev)
-        out.append(prev * _env(i, n, 0.15, 0.4) * 0.9)
+        out.append(prev * _env(i, n, 0.2, 0.45) * 0.55)
     return out
 
 
@@ -396,9 +425,9 @@ def boom() -> list[float]:
     for i in range(n):
         t = i / SAMPLE_RATE
         f = 140 - 90 * (i / n)
-        prev = prev + 0.12 * (rng.uniform(-1, 1) - prev)
-        body = math.sin(_TAU * f * t) * 0.8 + prev * 0.5
-        out.append(body * _env(i, n, 0.005, 0.6))
+        prev = prev + 0.10 * (rng.uniform(-1, 1) - prev)
+        body = math.sin(_TAU * f * t) * 0.8 + prev * 0.3
+        out.append(body * _env(i, n, 0.03, 0.6))
     return out
 
 
@@ -406,7 +435,7 @@ def sparkle() -> list[float]:
     """Tiny glissando up."""
     n = int(SAMPLE_RATE * 0.25)
     return [
-        math.sin(_TAU * (700 + 900 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.05, 0.4) * 0.4
+        math.sin(_TAU * (600 + 550 * (i / n)) * (i / SAMPLE_RATE)) * _env(i, n, 0.10, 0.45) * 0.30
         for i in range(n)
     ]
 
@@ -417,8 +446,8 @@ def drum() -> list[float]:
     out, prev = [], 0.0
     for i in range(n):
         t = i / SAMPLE_RATE
-        prev = prev + 0.3 * (rng.uniform(-1, 1) - prev)
-        out.append((math.sin(_TAU * 90 * t) * 0.9 + prev * 0.4) * _env(i, n, 0.003, 0.7))
+        prev = prev + 0.25 * (rng.uniform(-1, 1) - prev)
+        out.append((math.sin(_TAU * 90 * t) * 0.9 + prev * 0.22) * _env(i, n, 0.02, 0.7))
     return out
 
 
@@ -427,7 +456,7 @@ def boing() -> list[float]:
     n = int(SAMPLE_RATE * 0.35)
     return [
         math.sin(_TAU * (300 + 260 * math.sin(_TAU * 3.2 * (i / n))) * (i / SAMPLE_RATE))
-        * _env(i, n, 0.02, 0.4) * 0.5
+        * _env(i, n, 0.06, 0.4) * 0.42
         for i in range(n)
     ]
 
@@ -440,8 +469,8 @@ def boing() -> list[float]:
 # Nasal/reedy partial stacks — lots of upper harmonics at near-equal weight is
 # what makes a tone read as "buzzy voice" instead of "flute".
 _MOO_HARMONICS = (1.0, 0.50, 0.28, 0.14, 0.07)
-_QUACK_HARMONICS = (1.0, 0.80, 0.65, 0.50, 0.40, 0.30, 0.22)
-_OINK_HARMONICS = (1.0, 0.60, 0.40, 0.25, 0.15)
+_QUACK_HARMONICS = (1.0, 0.55, 0.32, 0.18, 0.10)
+_OINK_HARMONICS = (1.0, 0.50, 0.28, 0.15, 0.08)
 
 
 def moo() -> list[float]:
@@ -456,29 +485,36 @@ def moo() -> list[float]:
 def quack() -> list[float]:
     """Duck: two short buzzy nasal bursts with a fast decay (~0.5 s)."""
     first = _glide(320, 280, 0.16, harmonics=_QUACK_HARMONICS,
-                   attack=0.01, release=0.6, gain=0.45)
+                   attack=0.05, release=0.6, gain=0.42)
     second = _glide(300, 250, 0.20, harmonics=_QUACK_HARMONICS,
-                    attack=0.01, release=0.65, gain=0.45)
+                    attack=0.05, release=0.65, gain=0.42)
     return _mix(first, _shift(second, 0.28))
 
 
 def oink() -> list[float]:
     """Pig: two quick low grunts, hard attack, pitch dipping away (~0.5 s)."""
     first = _glide(165, 120, 0.18, harmonics=_OINK_HARMONICS, curve=0.6,
-                   attack=0.004, release=0.55, gain=0.5)
+                   attack=0.03, release=0.55, gain=0.5)
     second = _glide(150, 110, 0.20, harmonics=_OINK_HARMONICS, curve=0.6,
-                    attack=0.004, release=0.60, gain=0.5)
+                    attack=0.03, release=0.60, gain=0.5)
     return _mix(first, _shift(second, 0.28))
 
 
 def baa() -> list[float]:
     """Sheep: mid tone wobbled by a strong fast vibrato — the bleat (~0.8 s)."""
-    return _mix(_glide(228, 205, 0.8, vibrato=0.075, vib_rate=13.0,
-                       harmonics=(1.0, 0.55, 0.35, 0.20, 0.10),
-                       attack=0.05, release=0.35, gain=0.5))
+    return _mix(_glide(228, 205, 0.8, vibrato=0.06, vib_rate=11.0,
+                       harmonics=(1.0, 0.45, 0.22, 0.10, 0.05),
+                       attack=0.08, release=0.35, gain=0.5))
 
 
 # ----------------------------------------------------------------- building
+
+#: Cues that get the _soften() finishing pass — the character family only.
+_SOFTENED = frozenset({
+    "pop", "whoosh", "boom", "sparkle", "drum", "boing",
+    "moo", "quack", "oink", "baa",
+})
+
 
 def build_cues(dest: Path, *, tunes: bool = True) -> list[Path]:
     """Generate all non-voice cues into ``dest``. Deterministic seed.
@@ -513,7 +549,7 @@ def build_cues(dest: Path, *, tunes: bool = True) -> list[Path]:
         cues[f"chord_{name}"] = chord_cue(name)
     for name, samples in cues.items():
         path = dest / f"{name}.wav"
-        _write_wav(path, samples)
+        _write_wav(path, _soften(samples) if name in _SOFTENED else samples)
         written.append(path)
 
     if tunes:
@@ -525,6 +561,9 @@ def build_cues(dest: Path, *, tunes: bool = True) -> list[Path]:
         # The app itself may have run this on first launch; don't hold the
         # renderer's scratch space for the rest of the session.
         clear_cache()
+        # Stamped only on a complete build: a tunes=False set really is stale.
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "cues.version").write_text(str(CUE_VERSION), encoding="ascii")
     return written
 
 
