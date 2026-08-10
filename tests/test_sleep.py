@@ -77,6 +77,29 @@ def test_sleeping_draws_pure_black_and_nothing_else():
     assert eng.effects == [], "live effects should be dropped, not left running"
 
 
+def test_falling_asleep_and_waking_are_both_logged(caplog):
+    """A black screen looks exactly like a crashed app from outside the room.
+
+    These two lines are the only way to tell the difference over SSH, and the
+    on-device verification of this feature depends on them.
+    """
+    eng = engine(sleep_timeout=1.0)
+    eng.last_action_time = 1000.0
+    with caplog.at_level("INFO", logger="lilypad.effects.engine"):
+        now = _run_quiet(eng, 2.0)
+        assert any("asleep" in r.message for r in caplog.records)
+        caplog.clear()
+        eng.wake(now)
+        assert any("woken" in r.message for r in caplog.records)
+
+
+def test_waking_something_already_awake_logs_nothing(caplog):
+    eng = engine(sleep_timeout=600.0)
+    with caplog.at_level("INFO", logger="lilypad.effects.engine"):
+        eng.wake(1000.0)
+        assert not caplog.records
+
+
 def test_sleep_can_be_disabled():
     eng = engine(sleep_timeout=0.0)
     eng.last_action_time = 1000.0

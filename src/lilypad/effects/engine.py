@@ -4,6 +4,7 @@ graceful degradation."""
 
 from __future__ import annotations
 
+import logging
 import random
 import time
 
@@ -26,6 +27,8 @@ TRAIL_ALPHA = 80         # veil strength; lower = longer comet tails
 GHOSTBUST_EVERY = 4      # frames between SUB/MAX anti-ghost passes (see draw)
 TRAILS_OFF_BELOW = 0.4   # degradation ladder sheds trails below this scale...
 TRAILS_ON_ABOVE = 0.6    # ...and restores them above this one (hysteresis)
+log = logging.getLogger(__name__)
+
 CELEBRATION_COOLDOWN = 10.0  # s between milestone parties (mash-proofing)
 MAX_ANIMALS = 5          # concurrent creatures; see the note in spawn()
 ANIMAL_TYPES = (PeekabooAnimal, AnimalCrossing)
@@ -87,6 +90,8 @@ class EffectEngine:
         """
         self.last_action_time = time.monotonic() if now is None else now
         was_asleep, self.asleep = self.asleep, False
+        if was_asleep:
+            log.info("screen woken by a keypress")
         return was_asleep
 
     def spawn(self, action: Action, now: float | None = None) -> None:
@@ -221,6 +226,11 @@ class EffectEngine:
         """
         if self.asleep:
             return
+        # A black screen is indistinguishable from a crashed app from the
+        # outside. Say so in the journal, so a parent who SSHes in wondering
+        # why the playground is dark gets the answer in one line.
+        log.info("screen asleep after %.0fs with no keypresses — any key wakes it",
+                 self.sleep_timeout)
         self.asleep = True
         self.attract = None
         self.chaos = None
