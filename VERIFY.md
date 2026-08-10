@@ -113,8 +113,12 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 - [ ] `sudo systemctl start lilypad` brings it back.
 - [ ] Unplug/replug the keyboard mid-play: within a few seconds the app
       restarts (udev replug rule) and keys work again.
-- [ ] Kill test: `sudo pkill -9 -f "python -m lilypad"` → service restarts
-      itself within ~2 s (crash path).
+- [ ] Kill test: `sudo kill -9 $(systemctl show lilypad -p MainPID --value)`
+      → service restarts itself within ~2 s (crash path), and the journal shows
+      it re-grabbing both keyboard nodes and re-claiming the Razer device.
+      (Don't use `pkill -f "python -m lilypad"`: `-f` matches whole command
+      lines, so the shell running that very command matches its own pattern
+      and kills your SSH session along with the app.)
 
 ## 9. Power-pull resilience
 

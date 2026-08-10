@@ -6,6 +6,25 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Fixed (first on-device run — Raspberry Pi 5, 2026-08-10)
+- **A monitor that was off at boot put the app in a permanent restart storm.**
+  Both HDMI connectors read `disconnected`, the kernel logged `Cannot find any
+  crtc or sizes`, SDL raised `kmsdrm not available`, and the app exited — so
+  systemd restarted it every ~2.5 s, indefinitely. `--kiosk` now *waits* for a
+  display (`_wait_for_display`) instead of exiting: the moment the monitor
+  comes back the app starts, with no manual intervention. A monitor being
+  switched off is an ordinary event in a child's room, not an error.
+- **The unit could latch into `failed` and never recover.** `lilypad.service`
+  never set `StartLimitIntervalSec`, so systemd's default 5-starts-per-10 s
+  applied; the observed storm sat just under it by luck of timing. Any
+  faster-failing crash would have tripped it and left a black screen that
+  stayed black even after the cause cleared. Now `StartLimitIntervalSec=0`.
+  `Restart=on-failure` is unchanged, so the parent escape hatch's clean exit
+  still stays stopped.
+- `VERIFY.md` kill test used `pkill -9 -f "python -m lilypad"`, which matches
+  whole command lines — the shell running that very command matched its own
+  pattern and killed the SSH session along with the app. Now targets MainPID.
+
 ### Added (musical audio — keys are notes, chords, and background tunes)
 - `audio/music.py`: the theory core. Every key maps to a note of the **C major
   pentatonic** scale, derived from `lighting/keymap.py`'s LED matrix so the

@@ -5,6 +5,13 @@ Documentation=https://github.com/Glytchedup/project_lily_pad
 Conflicts=getty@tty1.service
 After=systemd-user-sessions.service getty@tty1.service
 Wants=multi-user.target
+# Never give up permanently. systemd's default (5 starts / 10 s) latches the
+# unit into `failed` after a burst — which on an appliance means a black screen
+# that stays black even once the underlying problem clears. Verified on-device:
+# a monitor that was off at boot produced a restart storm that sat just under
+# the default burst by luck. 0 disables the limit; the app itself now waits for
+# a display rather than exiting, so this is the backstop, not the fix.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

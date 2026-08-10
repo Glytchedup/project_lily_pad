@@ -50,6 +50,36 @@ def _draw_escape_cue(surface, progress: float) -> None:
                      (x, y, int(bar_w * progress), bar_h), border_radius=5)
 
 
+DISPLAY_RETRY_SECONDS = 3.0
+DISPLAY_LOG_EVERY = 10          # log once per this many attempts (~30 s)
+
+
+def _wait_for_display(retry: float = DISPLAY_RETRY_SECONDS):
+    """Take over the screen, waiting for one to exist if necessary.
+
+    A monitor that is switched off, asleep, or on another input reports its
+    HDMI connector as disconnected, and SDL then raises "kmsdrm not available".
+    Exiting on that would be wrong twice over: systemd would spin the service
+    in a restart storm, and once the restarts outpaced ``StartLimitBurst`` the
+    unit would latch into *failed* and stay dead even after the monitor came
+    back — a black box in a toddler's room until a parent SSHes in.
+
+    So we wait instead. The moment the display appears the app starts, and
+    nothing has to be restarted by hand. Verified on a Pi 5: the monitor being
+    off at boot is an ordinary event, not an error.
+    """
+    import pygame
+    attempt = 0
+    while True:
+        try:
+            return pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        except pygame.error as exc:
+            if attempt % DISPLAY_LOG_EVERY == 0:
+                log.warning("no display yet (%s) — waiting; is the monitor on?", exc)
+            attempt += 1
+            time.sleep(retry)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lilypad",
                                      description="Toddler Keyboard Playground")
@@ -85,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pygame.init()
     if kiosk:
-        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        screen = _wait_for_display()
     else:
         screen = pygame.display.set_mode(cfg.display.dev_window)
         pygame.display.set_caption("Lily Pad — dev mode (hold both Shifts + Backspace 5s to exit)")
