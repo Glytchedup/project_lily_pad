@@ -1,9 +1,17 @@
 """Headless pygame for effect tests (SDL dummy driver, tiny hidden display)."""
 
 import os
+import sys
+from pathlib import Path
 
-import pygame
-import pytest
+# Test *this* checkout. `pip install -e` records one absolute path, so inside a
+# git worktree `import lilypad` otherwise resolves to the main checkout and the
+# whole suite silently validates code you are not editing — passing or failing
+# for reasons invisible in the diff.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+import pygame  # noqa: E402
+import pytest  # noqa: E402
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")

@@ -32,8 +32,57 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 - [ ] Space → confetti; Enter → fireworks; arrows shove the frog.
 - [ ] Esc, Windows key, F-keys, PrtSc, media keys → each fires an effect
       and **nothing OS-ish happens** (no console, no VT switch, no blanking).
-- [ ] Letters C/D/P/S → cow/duck/pig/sheep peeks up and moos/quacks/oinks/baas;
-      B → bubbles that Pip can pop.
+- [ ] **Every letter A–Z brings an animal.** Walk the whole alphabet once and
+      confirm each one appears, is recognisable, and isn't cut off at a screen
+      edge. C/D/P/S still peek up from the bottom (cow/duck/pig/sheep); the
+      other 22 walk, hop, fly or swim right across, facing the way they go.
+- [ ] B → its bear **and** bubbles that Pip can pop.
+- [ ] **F7–F12 → a dinosaur** thunders across with a roar (six of them:
+      T. rex, velociraptor, stegosaurus, triceratops, brachiosaurus,
+      pterodactyl — press repeatedly to see different ones). F1–F6 → balloons.
+- [ ] Hopping animals (rabbit, monkey, T. rex, velociraptor) squash on landing
+      and kick up dust. If they slide instead of hopping, report it.
+- [ ] Run a hand along a whole row of letters: at most ~5 animals on screen at
+      once, and **every key still shows its giant letter** even when the
+      animal is skipped. Watch for stutter here specifically — this is the
+      heaviest new load on the Pi's blit path.
+- [ ] **Traced outlines, whole cast.** All 26 side-on animals are now drawn
+      from a real anatomical outline. Walk A–Z and F7–F12 and check each one:
+      - [ ] Instantly recognisable, and facing the way it is travelling.
+      - [ ] The eye is on the head — not on an ear, a horn, or thin air. The
+            ones worth a second look: **triceratops** (behind the brow horn,
+            not out on the frill), **yak** (head hangs low), **brachiosaurus**
+            (head is at the very top of the neck), **owl** (upright, so the
+            head is near the top rather than the front).
+      - [ ] **Unicorn has a gold horn** and **narwhal has a tusk**. Both are
+            drawn on separately; without them they are a white horse and a
+            small whale. If either is missing or floating detached, that's a bug.
+      - [ ] **Zebra has clean parallel stripes** with its legs clearly visible.
+            (They used to fan out and merge into black blobs that swallowed the
+            legs — if you see that again, it's a regression.)
+      - [ ] The **whale** and **alligator** are *long* — the whale is about 60%
+            of the screen width. Intended, but say so if they overwhelm the pond.
+      - [ ] Weakest of the set, by my own judgement — say if they don't read:
+            **monkey**, **koala**, **pterodactyl**.
+      - [ ] `journalctl -u lilypad | grep "animal art"` says `traced outlines`.
+            `drawn` means SDL_image here can't rasterise SVG and it fell back —
+            harmless, but you'd be judging the old art, so check this first.
+      - [ ] No stutter on the *first* press of any letter. They're prebuilt at
+            boot (`grep prebuilt` shows 156 sprites, ~2–3 s of the boot); if
+            that ever regresses it shows up exactly here and nowhere else.
+      - [ ] **The real question: does Pip like them more?** They are
+            anatomically right but less toy-like — smaller head, smaller eye.
+            `effects.silhouettes = false` + restart puts the whole cast back to
+            the older drawn art for an A/B.
+
+- [ ] **Pip the frog.** He is cel-shaded now and sits on his own lily pad.
+      - [ ] At rest he is **on the pad**, not floating above it or sunk into
+            it, and the pad is fully visible above the bottom edge.
+      - [ ] Big eyes, wide smile, pink cheeks; he blinks every few seconds.
+      - [ ] Arrow keys still shove him; he squashes on landing and rings
+            spread from his feet.
+      - [ ] Shove him hard into a corner and hold: **the pad drifts over and
+            settles under him**, and he never leaves the screen.
 - [ ] Hold any letter ~half a second → a rainbow comet wanders and streaks;
       release → it bursts.
 - [ ] ~50 presses → mega-celebration (fireworks + confetti + balloons + frog
@@ -46,6 +95,12 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       cheap opaque clear permanently. (On a Pi installed before the visual
       upgrade the `trails` key won't be in that file — add it under
       `[effects]`; the installer keeps existing configs.)
+- [ ] Crossing animals leave a short motion blur behind them (~40 px at
+      1080p). That is the trail veil doing its job on a big opaque sprite and
+      it is intended — but it is new, because the old animals barely moved.
+      If you dislike it, `effects.trails = false` removes it everywhere.
+      (Checked on the dev box: the anti-ghost pass frequency makes no visible
+      difference to it, so don't go hunting in `GHOSTBUST_EVERY`.)
 - [ ] Trails on real KMSDRM: confirm streaks fade smoothly with NO
       flicker/strobe. The trail technique reads the previous frame back
       from the display surface, which is verified on the dev SDL path but
@@ -97,6 +152,12 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 ## 7. Audio
 
 - [ ] Letters are spoken, numbers counted, effects have cues, volume sane.
+- [ ] Every letter's animal makes a sound, and it matches the animal on screen
+      (elephant trumpets, owl hoots, whale sings, T. rex roars). The call sits
+      **on top of** the spoken letter name, never instead of it.
+- [ ] None of the big animal calls are frightening. They are deliberately low,
+      short and softly attacked — a convincing T. rex roar is one a 2-year-old
+      cries at. If any of them startles her, say so; it's a bug, not taste.
 - [ ] Notes: walk the home row `A`→`L`; the pitch climbs step by step. `Z`,
       `A`, `Q` (same column, three rows) climb too.
 - [ ] Lay a whole hand across the keyboard — it is a chord, never a clash.
@@ -113,6 +174,32 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
       loops, ~40 s).
 - [ ] `music.tunes = "off"` + restart = no background music, keys unaffected.
 - [ ] `audio.mute = true` + restart = fully silent. (Set it back.)
+
+## 7b. Screen sleep
+
+Set `display.sleep_timeout = 20` in `/etc/lilypad/config.toml` and restart, so
+you aren't waiting five minutes; put it back to `300.0` afterwards.
+
+- [ ] Leave the keyboard alone. Both timeouts are measured from the **last
+      keypress**, so with `idle_timeout = 60` and `sleep_timeout = 20` sleep
+      wins and the attract animation never gets a chance — set
+      `idle_timeout = 5` too if you want to watch the handover. At
+      `sleep_timeout` the screen goes **fully black**, the keyboard LEDs go
+      **out**, and the music **stops**. (At the shipped 300 s / 60 s, attract
+      runs for four minutes and then sleep takes over.)
+- [ ] Press any letter: screen, lights and effects all come back within a
+      fraction of a second, and that keypress still does its own thing.
+- [ ] Press only **a Shift** (which normally produces no effect): the screen
+      still wakes. This matters — the escape combo starts with Shift, and a
+      hatch that looks dead in front of a black screen is worse than none.
+- [ ] While asleep, `top` over SSH shows the app near-idle (it drops to 10 fps).
+- [ ] `sleep_timeout = 0` + restart → never sleeps. (Set it back.)
+- Note: the HDMI **output stays on** — the picture is black, the signal isn't
+  cut. There is no software way to power the output down on a Pi 5
+  (`vcgencmd display_power` → `Command not registered`; the DRM `dpms` node is
+  read-only), and cutting it would risk exactly the hot-plug-detect deadlock
+  §1 fixes. If you want the monitor's backlight off, use the monitor's own
+  power-save setting.
 
 ## 8. Escape hatch + service behavior
 

@@ -31,6 +31,17 @@ dev_window = [1280, 720]
 fps = 60
 # Seconds of no keypresses before the idle "attract" animation starts.
 idle_timeout = 60.0
+# Seconds of no keypresses before the screen goes fully black and the keyboard
+# lights go out — the app is still running, and the very next keypress brings
+# everything straight back. 0 disables sleeping entirely.
+#
+# This is a black picture, not a powered-down HDMI output: on a Pi 5 there is
+# no way to switch the output off from software (vcgencmd display_power is
+# gone, and the DRM dpms node is read-only), and blanking the output would risk
+# the monitor dropping hot-plug detect — the exact deadlock that forced
+# video=HDMI-A-1:...D into cmdline.txt. Use the monitor's own power saving if
+# you want the backlight off too.
+sleep_timeout = 300.0
 
 [effects]
 # Hard cap on live particles; the engine lowers this automatically if the frame
@@ -46,6 +57,14 @@ trails = true
 # A mega-celebration (fireworks + confetti + balloons + frog party) fires every
 # this many keypresses. 0 disables milestones.
 milestone_every = 50
+# Traced-outline animals. A few creatures (currently giraffe, triceratops and
+# whale) are drawn from a real anatomical outline instead of being assembled
+# from ellipses — the shape comes from a public-domain silhouette, everything
+# else about them is still generated. false puts those three back to the drawn
+# version, which is the point: it is a trial, and this is how you compare.
+# Ignored if this machine's SDL_image cannot rasterise SVG; it falls back to
+# the drawn animals and says so in the log.
+silhouettes = true
 
 [lighting]
 # Backend: "auto" tries razer_hid, then openrazer, then mock.

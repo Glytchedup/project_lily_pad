@@ -20,11 +20,10 @@ from .tunes import TUNE_NAMES
 
 log = logging.getLogger(__name__)
 
-# Letters that summon a farm animal — imported from the visual cast so the
-# two layers can never drift apart (adding an animal there adds it here).
-from ..effects.animals import ANIMAL_LETTERS  # noqa: E402
-
-_ANIMAL_CUES = {"cow": "moo", "duck": "quack", "pig": "oink", "sheep": "baa"}
+# The cast and its calls are imported from the visual layer so the two can
+# never drift apart: adding an animal there adds its sound here, and a
+# creature with no entry in ANIMAL_VOICES is simply a quiet one.
+from ..effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES  # noqa: E402
 
 #: Action kinds that represent a fresh key going down, and so should sound a
 #: note. Numbers are excluded because the counting ladder already gives them a
@@ -191,10 +190,11 @@ class AudioEngine:
             else:
                 self._play(f"voice/{action.letter}", self._next_chime())
             animal = ANIMAL_LETTERS.get(action.letter.upper())
-            if animal is not None:
+            cue = ANIMAL_VOICES.get(animal) if animal else None
+            if cue is not None:
                 # Animal call layers *on top of* the letter name, never replaces it.
                 # Fallback for a pre-upgrade sounds dir that lacks the cue.
-                self._play(_ANIMAL_CUES[animal], "boing")
+                self._play(cue, "boing")
         elif kind == "number":
             self._play(f"voice/{action.count}", "pop")
             # One cue per press: the marimba note for the count, so the pitch
@@ -217,7 +217,12 @@ class AudioEngine:
         elif kind == "mash_start":
             self._play("chord_mash", "chord")
         elif kind == "special":
-            if action.letter == "drum":
+            if action.letter == "dino":
+                # One roar for every dinosaur: the effect layer picks which one
+                # shows up, and a second random pick here could easily play a
+                # pterodactyl's screech over a stomping triceratops.
+                self._play("roar", "boom")
+            elif action.letter == "drum":
                 self._play("drum")
             elif action.letter == "vacuum":
                 self._play("whoosh")

@@ -38,7 +38,8 @@ _TAU = math.tau
 #: doesn't match — otherwise a device that already has WAVs on disk keeps
 #: playing the old ones forever and a retune never reaches anybody.
 #:   1 = original cue set · 2 = softened cues · 3 = musical notes/chords/tunes
-CUE_VERSION = 3
+#:   4 = the full A-Z animal cast + dinosaur calls
+CUE_VERSION = 4
 
 # Pentatonic-ish happy scale for chimes (C major pentatonic, one octave up)
 _SCALE_HZ = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]
@@ -507,12 +508,124 @@ def baa() -> list[float]:
                        attack=0.08, release=0.35, gain=0.5))
 
 
+# --------------------------------------------- the rest of the A–Z + dinosaurs
+# Same rule as the farm four: these are cartoon shapes, not field recordings.
+# A toddler reads a roar as "big animal", a screech as "small fast animal", and
+# a stomp as "heavy" — pitch and envelope carry all of that, so each call is
+# built from the same _glide primitive rather than sampled anything.
+#
+# One deliberate constraint: nothing here is scary. A T. rex roar an adult
+# would call convincing is a roar a 2-year-old cries at, so the "big" calls are
+# low and short with a soft attack and no noise burst.
+
+_GROWLY = (1.0, 0.62, 0.40, 0.24, 0.14, 0.08)     # rich, buzzy — teeth and chest
+_BRASSY = (1.0, 0.70, 0.48, 0.30, 0.18)           # trumpet-like
+_REEDY = (1.0, 0.40, 0.24, 0.12)                  # small and thin
+_ROUND = (1.0, 0.28, 0.10)                        # soft, flute-ish
+
+
+def roar() -> list[float]:
+    """Big friendly dinosaur/lion: a low swell that rises then falls (~1.0 s)."""
+    swell = _glide(78, 132, 0.44, vibrato=0.03, vib_rate=5.0,
+                   harmonics=_GROWLY, attack=0.22, release=0.20, gain=0.50)
+    fall = _glide(126, 72, 0.55, vibrato=0.04, vib_rate=4.0,
+                  harmonics=_GROWLY, attack=0.06, release=0.55, gain=0.46)
+    return _mix(swell, _shift(fall, 0.40))
+
+
+def growl() -> list[float]:
+    """Bear/gator/koala: a short rumbling burr, no rise (~0.6 s)."""
+    return _mix(_glide(104, 88, 0.58, vibrato=0.055, vib_rate=17.0,
+                       harmonics=_GROWLY, attack=0.10, release=0.45, gain=0.46))
+
+
+def screech() -> list[float]:
+    """Raptor/monkey/fox: two fast high stabs sliding downward (~0.45 s)."""
+    first = _glide(880, 640, 0.14, harmonics=_REEDY, curve=0.5,
+                   attack=0.03, release=0.60, gain=0.34)
+    second = _glide(990, 700, 0.16, harmonics=_REEDY, curve=0.5,
+                    attack=0.03, release=0.62, gain=0.34)
+    return _mix(first, _shift(second, 0.20))
+
+
+def trumpet() -> list[float]:
+    """Elephant/brachiosaurus: a bright rising blare that flares open (~0.8 s)."""
+    return _mix(_glide(210, 430, 0.72, vibrato=0.02, vib_rate=6.5,
+                       harmonics=_BRASSY, curve=1.6,
+                       attack=0.10, release=0.30, gain=0.42))
+
+
+def neigh() -> list[float]:
+    """Horse/zebra/unicorn: a high whinny falling away in wobbles (~0.8 s)."""
+    return _mix(_glide(560, 300, 0.78, vibrato=0.075, vib_rate=15.0,
+                       harmonics=(1.0, 0.52, 0.30, 0.16, 0.08),
+                       attack=0.04, release=0.45, gain=0.40))
+
+
+def hoot() -> list[float]:
+    """Owl: two soft round notes, the second lower (~0.9 s)."""
+    first = _glide(400, 384, 0.26, vibrato=0.012, vib_rate=6.0,
+                   harmonics=_ROUND, attack=0.22, release=0.40, gain=0.40)
+    second = _glide(360, 330, 0.34, vibrato=0.015, vib_rate=5.0,
+                    harmonics=_ROUND, attack=0.20, release=0.50, gain=0.40)
+    return _mix(first, _shift(second, 0.40))
+
+
+def chirp() -> list[float]:
+    """Quail: three tiny rising blips (~0.45 s)."""
+    layers = [_shift(_glide(1180 + 90 * k, 1500 + 90 * k, 0.07,
+                            harmonics=(1.0, 0.22), attack=0.10,
+                            release=0.55, gain=0.26), 0.13 * k)
+              for k in range(3)]
+    return _mix(*layers)
+
+
+def squeak() -> list[float]:
+    """Rabbit/giraffe/iguana: one small soft rising peep (~0.3 s)."""
+    return _mix(_glide(700, 940, 0.26, harmonics=(1.0, 0.20),
+                       attack=0.16, release=0.55, gain=0.30))
+
+
+def whalesong() -> list[float]:
+    """Whale/narwhal: a long slow bend upward, then settling (~1.4 s)."""
+    up = _glide(180, 300, 0.80, vibrato=0.015, vib_rate=2.4,
+                harmonics=_ROUND, attack=0.25, release=0.35, gain=0.40)
+    down = _glide(290, 205, 0.70, vibrato=0.02, vib_rate=2.0,
+                  harmonics=_ROUND, attack=0.25, release=0.55, gain=0.36)
+    return _mix(up, _shift(down, 0.78))
+
+
+def bloop() -> list[float]:
+    """Jellyfish/fish: a watery blip that drops fast (~0.3 s)."""
+    return _mix(_glide(520, 190, 0.28, harmonics=(1.0, 0.16), curve=0.45,
+                       attack=0.06, release=0.62, gain=0.36))
+
+
+def stomp() -> list[float]:
+    """Stegosaurus/triceratops: two heavy footfalls — thud, not tone (~0.7 s)."""
+    rng = random.Random(77)
+
+    def thud(freq: float, dur: float) -> list[float]:
+        n = int(SAMPLE_RATE * dur)
+        out, prev = [], 0.0
+        for i in range(n):
+            t = i / SAMPLE_RATE
+            prev = prev + 0.18 * (rng.uniform(-1, 1) - prev)
+            out.append((math.sin(_TAU * freq * t) * 0.9 + prev * 0.30)
+                       * _env(i, n, 0.01, 0.75) * 0.5)
+        return out
+
+    return _mix(thud(62, 0.30), _shift(thud(54, 0.36), 0.30))
+
+
 # ----------------------------------------------------------------- building
 
 #: Cues that get the _soften() finishing pass — the character family only.
 _SOFTENED = frozenset({
     "pop", "whoosh", "boom", "sparkle", "drum", "boing",
     "moo", "quack", "oink", "baa",
+    "roar", "growl", "screech", "trumpet", "neigh", "hoot", "chirp",
+    "squeak", "whalesong", "bloop", "stomp",
 })
 
 
@@ -536,6 +649,17 @@ def build_cues(dest: Path, *, tunes: bool = True) -> list[Path]:
         "quack": quack(),
         "oink": oink(),
         "baa": baa(),
+        "roar": roar(),
+        "growl": growl(),
+        "screech": screech(),
+        "trumpet": trumpet(),
+        "neigh": neigh(),
+        "hoot": hoot(),
+        "chirp": chirp(),
+        "squeak": squeak(),
+        "whalesong": whalesong(),
+        "bloop": bloop(),
+        "stomp": stomp(),
         "celebration": celebration(),
         "chord_mash": mash_chord_cue(),
     }

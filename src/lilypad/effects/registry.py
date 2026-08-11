@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Callable
 
 from ..input.mapper import Action
-from .animals import ANIMAL_LETTERS, PeekabooAnimal
+from .animals import animal_effect, animal_for_letter, random_dinosaur
 from .base import BRIGHT_PALETTE, Effect, EffectContext
 from .bubbles import BubbleField
 from .letters import GiantLetter
@@ -40,9 +40,10 @@ def _letter(ctx: EffectContext, action: Action) -> list[Effect]:
     # (.upper() matches the audio engine's normalization — evdev names are
     # uppercase, but don't rely on every backend agreeing.)
     upper = action.letter.upper()
-    if upper in ANIMAL_LETTERS:
-        out.append(PeekabooAnimal(ctx, ANIMAL_LETTERS[upper]))
-    elif upper == "B":
+    animal = animal_for_letter(upper)
+    if animal is not None:
+        out.append(animal_effect(ctx, animal))
+    if upper == "B":
         out.append(BubbleField(ctx, count=8))
     return out
 
@@ -115,6 +116,12 @@ _SPECIAL_FACTORIES: dict[str, Factory] = {
     "vacuum": lambda ctx, a: [Vacuum(ctx, ctx.random_pos(0.3))],
     "balloon": lambda ctx, a: [Balloons(ctx, 8)],
     "drum": lambda ctx, a: [Rings(ctx, ctx.random_pos(0.25), count=3)],
+    # F7-F12: a dinosaur thunders across, with a shockwave off its feet.
+    "dino": lambda ctx, a: [
+        animal_effect(ctx, random_dinosaur(ctx)),
+        Rings(ctx, (ctx.width * 0.5, ctx.height * 0.92),
+              color=(214, 196, 150), count=2, life=0.9),
+    ],
 }
 
 

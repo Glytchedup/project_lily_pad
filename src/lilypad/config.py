@@ -24,7 +24,8 @@ class MusicConfig:
 class DisplayConfig:
     dev_window: tuple[int, int] = (1280, 720)
     fps: int = 60
-    idle_timeout: float = 60.0
+    idle_timeout: float = 60.0     # seconds until the attract animation
+    sleep_timeout: float = 300.0   # seconds until the screen goes black; 0 = never
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class EffectsConfig:
     chord_window: float = 0.15
     trails: bool = True          # translucent frame clear → motion trails
     milestone_every: int = 50    # keypresses per mega-celebration (0 disables)
+    silhouettes: bool = True     # traced-outline art for the creatures that have it
 
 
 @dataclass(frozen=True)
@@ -116,12 +118,14 @@ def load(path: str | Path | None = None) -> Config:
             dev_window=(int(dev_window[0]), int(dev_window[1])),
             fps=int(display.get("fps", 60)),
             idle_timeout=float(display.get("idle_timeout", 60.0)),
+            sleep_timeout=max(0.0, float(display.get("sleep_timeout", 300.0))),
         ),
         effects=EffectsConfig(
             max_particles=int(effects.get("max_particles", 900)),
             chord_window=float(effects.get("chord_window", 0.15)),
             trails=bool(effects.get("trails", True)),
             milestone_every=max(0, int(effects.get("milestone_every", 50))),
+            silhouettes=bool(effects.get("silhouettes", True)),
         ),
         lighting=LightingConfig(
             backend=backend,

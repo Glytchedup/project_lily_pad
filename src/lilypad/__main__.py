@@ -54,6 +54,11 @@ def _draw_escape_cue(surface, progress: float) -> None:
 DISPLAY_RETRY_SECONDS = 3.0
 DISPLAY_LOG_EVERY = 10          # log once per this many attempts (~30 s)
 
+#: Frame rate while the screen is asleep. The loop still has to run — it is
+#: what notices the next keypress — but painting black 60 times a second is
+#: pure heat, and a Pi in a toddler's bedroom should idle cold and quiet.
+SLEEP_FPS = 10
+
 #: Set by SIGTERM/SIGINT. Module-level rather than a local because the app has
 #: two places that must notice a shutdown: the wait-for-display loop, which runs
 #: before the main loop exists, and the main loop itself.
@@ -164,6 +169,13 @@ def main(argv: list[str] | None = None) -> int:
     size = screen.get_size()
     log.info("mode=%s display=%sx%s", "kiosk" if kiosk else "dev", *size)
 
+    # Must happen before the first sprite is cached, and after the display
+    # exists so the probe can build a real surface.
+    from .effects.animal_art import set_silhouettes
+    from .effects.animals import prewarm
+    set_silhouettes(cfg.effects.silhouettes)
+    prewarm(size[1])
+
     # Input backend
     if args.smoke:
         from .input.synthetic import SyntheticInputBackend
@@ -197,7 +209,8 @@ def main(argv: list[str] | None = None) -> int:
                           idle_timeout=cfg.display.idle_timeout,
                           fps=cfg.display.fps,
                           trails=cfg.effects.trails,
-                          milestone_every=cfg.effects.milestone_every)
+                          milestone_every=cfg.effects.milestone_every,
+                          sleep_timeout=cfg.display.sleep_timeout)
 
     clock = pygame.time.Clock()
     running = True
@@ -205,7 +218,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         while running and not _stop_requested:
-            dt = clock.tick(cfg.display.fps) / 1000.0
+            dt = clock.tick(SLEEP_FPS if engine.asleep
+                            else cfg.display.fps) / 1000.0
             # Measure work time only — clock.tick's fps-cap sleep must not
             # count against the frame budget or degradation can never recover.
             frame_start = time.perf_counter()
@@ -233,6 +247,10 @@ def main(argv: list[str] | None = None) -> int:
 
             for ev in events:
                 if ev.pressed:
+                    # Wake on the raw event, before the mapper decides whether
+                    # this key means anything: a key that produces no action
+                    # (a lone Shift) still means somebody is at the keyboard.
+                    engine.wake(now)
                     lighting.key_pressed(ev.name, now)
                 for action in mapper.feed(ev):
                     handle(action)
@@ -251,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
             # Background tunes are the soundtrack to an empty room: attract
             # mode fades them in, the next keypress fades them straight out.
             audio.set_idle(engine.attract is not None)
+            # Dark screen, dark keyboard.
+            lighting.set_sleep(engine.asleep)
             engine.draw(screen)
             _draw_escape_cue(screen, escape.hold_progress(now))
             pygame.display.flip()

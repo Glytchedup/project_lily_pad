@@ -56,9 +56,12 @@ _SPECIALS = {
     "COMPOSE": "pinwheel",
     "BACKSPACE": "vacuum",
     "DELETE": "vacuum",
-    "F1": "balloon", "F2": "balloon", "F3": "balloon", "F4": "balloon",
-    "F5": "balloon", "F6": "balloon", "F7": "balloon", "F8": "balloon",
-    "F9": "balloon", "F10": "balloon", "F11": "balloon", "F12": "balloon",
+    # Twelve keys all doing the identical balloon effect was a wasted row;
+    # the back half now summons a dinosaur.
+    "F1": "balloon", "F2": "balloon", "F3": "balloon",
+    "F4": "balloon", "F5": "balloon", "F6": "balloon",
+    "F7": "dino", "F8": "dino", "F9": "dino",
+    "F10": "dino", "F11": "dino", "F12": "dino",
     "MUTE": "drum", "VOLUMEUP": "drum", "VOLUMEDOWN": "drum",
     "PLAYPAUSE": "drum", "NEXTSONG": "drum", "PREVIOUSSONG": "drum",
     "STOPCD": "drum",
