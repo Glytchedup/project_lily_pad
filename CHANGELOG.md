@@ -6,6 +6,58 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Changed (the whole side-on cast is traced, and Pip got a makeover — 2026-08-10)
+- **All 26 side-on creatures now use traced outlines**, up from three. Every
+  letter animal and every dinosaur is built from a public-domain silhouette
+  instead of stacked ellipses. The four front-on farm animals (cow, duck, pig,
+  sheep) are deliberately unchanged — they peek up from the bottom rather than
+  crossing, so there is no side view to trace.
+- **A horn and a tusk are drawn procedurally**, because the outline cannot
+  supply them: there is no unicorn to photograph, and every public-domain
+  narwhal is either tuskless or drawn from above. Without them the two are a
+  white horse and a small whale, and the cast already has both.
+- Each outline was chosen from up to eight candidates rather than taking the
+  first hit — a top-down pterosaur reads as a paper kite, and the default
+  monkey reads as a blob. Notes on the awkward picks are in
+  `assets/silhouettes/CREDITS.md`.
+- Startup pre-warm now builds 156 sprites (~1 s at 1080p on a dev box).
+
+### Changed (Pip the frog — 2026-08-10)
+- **Pip is cel-shaded and sits on his own lily pad.** Flat colour with
+  hard-edged shadow and highlight bands and a single heavy keyline, which is
+  what reads from across a room where a soft gradient turns to mush. Bigger
+  eyes, a full-width smile, rosy cheeks, and a proper closed-lid blink.
+- His sprite is now **cached by (radius, pose)** instead of being redrawn from
+  a dozen primitives every frame. Squash stays continuous and is applied as a
+  cheap scale at draw time.
+- **His resting height moved up** (`Frog.floor_y`). He used to settle with his
+  feet on the very bottom row of pixels, which left nowhere to draw what he was
+  sitting on. The pad drifts along under him — it floats, so following him
+  reads as natural, and it means he is *always* on his pad even after a toddler
+  has shoved him into a corner.
+- The engine's splash-ripple check now asks the frog where its floor is instead
+  of assuming the bottom of the screen.
+
+### Fixed
+- **Zebra stripes merged into solid black.** Each stripe got its own random
+  tilt, so they fanned out toward the bottom of the sprite, overlapped and
+  swallowed the legs entirely. Stripes are now parallel under a single shear.
+- **The frog's mouth never rendered.** `pygame.draw.arc` is unreliable on a
+  wide, flat rect with a thick stroke and silently drew nothing; it is an
+  explicit sampled curve now.
+- **The unicorn's horn and the narwhal's tusk were cropped to stubs.** Sprites
+  are cut tight to the traced outline — that is what puts an animal's feet on
+  the ground line — so both accessories, which by definition stick out past the
+  outline, lost roughly a third of their length including the tip. The sprite
+  surface now reserves the room they need, derived from the same constants the
+  drawing uses so the two cannot drift apart again. The tusk also got slightly
+  thicker with a pair of spiral ridges, which is what makes it read as a tusk
+  rather than a hairline at the size it actually appears.
+- **Pip's lily pad hung a few pixels off the bottom of the screen.** His
+  resting height was a guessed multiple of his radius; it is now measured from
+  the pad sprite itself, including the bob, so the front notch stays on screen
+  at any resolution.
+
 ### Added (traced animal outlines, a three-creature trial — 2026-08-10)
 - **Giraffe, triceratops and whale are now drawn from a real anatomical
   outline** instead of being assembled from ellipses. The shape comes from a

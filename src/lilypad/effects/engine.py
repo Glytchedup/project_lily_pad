@@ -244,8 +244,10 @@ class EffectEngine:
             return
         self.pond.update(dt)
         self.frog.update(dt)
-        # Frog splash-down → water ripples at his feet.
-        if self.frog.just_bounced and self.frog.y >= self.frog.h - self.frog.r - 1:
+        # Frog splash-down → water ripples where he lands on his pad. Asks the
+        # frog where its floor is rather than assuming the bottom of the screen:
+        # he now rests high enough for the lily pad under him to be visible.
+        if self.frog.just_bounced and self.frog.y >= self.frog.floor_y - 1:
             self.effects.append(Rings(
                 self.ctx, (self.frog.x, self.frog.y + self.frog.r * 0.8),
                 color=RIPPLE_COLOR, count=2, life=0.6,

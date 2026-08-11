@@ -1,8 +1,8 @@
 """Sprites built from a real animal outline instead of stacked ellipses.
 
-A trial, currently covering three creatures (see ``animal_specs.STENCILS``).
-The rest of the cast is still assembled from primitives by ``animal_art``, and
-both kinds go through the same ``animal_sprite`` front door, so nothing
+Covers every side-on creature (see ``animal_specs.STENCILS``); the four
+front-on farm animals are still assembled from primitives by ``animal_art``.
+Both kinds go through the same ``animal_sprite`` front door, so nothing
 downstream — mirroring, squash, the ``(name, height, pose)`` cache, the gaits —
 knows or cares which one it got.
 
@@ -33,6 +33,7 @@ import random
 import re
 import zlib
 from pathlib import Path
+from typing import NamedTuple
 
 import pygame
 
@@ -54,7 +55,7 @@ _STROKE = 0.014
 
 _svg_cache: dict[str, bytes] = {}
 _shape_cache: dict[tuple[str, int], pygame.Surface] = {}
-_body_cache: dict[tuple[str, int], pygame.Surface] = {}
+_body_cache: dict[tuple[str, int], "_Body"] = {}
 _aspect_cache: dict[str, float] = {}
 
 _VIEWBOX = re.compile(rb'viewBox\s*=\s*"([\d.\s+-]+)"')
@@ -160,10 +161,14 @@ def _shape(name: str, height: int) -> pygame.Surface:
 
 
 def aspect(name: str) -> float:
-    """Measured width/height of the finished sprite, outline included."""
-    shape = _shape(name, 256)
-    stroke = max(1, int(round(256 * _STROKE)))
-    return (shape.get_width() + 2 * stroke) / 256.0
+    """Measured width/height of the finished sprite.
+
+    Measured from a real build rather than from the outline, because a horn or
+    a tusk widens the sprite and a computed guess would drift from the truth
+    the moment either changed.
+    """
+    ref = _painted(name, 256)
+    return ref.surface.get_width() / ref.surface.get_height()
 
 
 # ---------------------------------------------------------------------------
@@ -251,11 +256,16 @@ def _pattern(out: pygame.Surface, shape: pygame.Surface, spec: AnimalSpec,
                     pts.append((cx + math.cos(a) * rr, cy + math.sin(a) * rr))
                 pygame.draw.polygon(layer, spec.accent, pts)
     elif kind == "stripes":
-        for x in range(0, w, max(6, w // 22)):
-            tilt = rng.uniform(-0.12, 0.12) * h
+        # One shear for the whole coat, not a random tilt per stripe. Random
+        # tilts fan out toward the bottom of the sprite, overlap, and merge
+        # into solid black — which swallowed the zebra's legs entirely.
+        # Parallel stripes cannot merge no matter how they are shuffled.
+        step = max(8, w // 26)
+        lean = h * 0.05
+        for x in range(-int(lean), w, step):
+            bw = max(3, int(step * rng.uniform(0.32, 0.46)))
             pygame.draw.polygon(layer, spec.accent, [
-                (x, 0), (x + max(3, w // 60), 0),
-                (x + max(3, w // 60) + tilt, h), (x + tilt, h)])
+                (x, 0), (x + bw, 0), (x + bw + lean, h), (x + lean, h)])
     elif kind in ("spots", "speckle"):
         n = 26 if kind == "spots" else 60
         r_lo, r_hi = (0.030, 0.055) if kind == "spots" else (0.010, 0.020)
@@ -266,6 +276,109 @@ def _pattern(out: pygame.Surface, shape: pygame.Surface, spec: AnimalSpec,
                 max(1, int(h * rng.uniform(r_lo, r_hi))))
 
     out.blit(_clip(layer, shape), (0, 0))
+
+
+# Accessory geometry, as fractions of sprite height. Kept here rather than
+# inline so the drawing and the space reserved for it are derived from the same
+# numbers — when they drifted apart, both accessories were silently sliced off
+# at the sprite edge, taking the tip with them.
+_HORN_LEN, _HORN_W = 0.30, 0.045
+_HORN_TIP = (0.52, -0.86)          # tip offset, in units of horn length
+_TUSK_LEN, _TUSK_W = 0.34, 0.030
+
+#: Smallest sprite the traced pipeline can hold its own outline at.
+_MIN_HEIGHT = 24
+
+
+def _accessory_tip(kind: str, x: float, y: float,
+                   height: int) -> tuple[float, float]:
+    """Where the point of the accessory lands — the pixel that must survive."""
+    if kind == "horn":
+        length = height * _HORN_LEN
+        return (x + length * _HORN_TIP[0], y + length * _HORN_TIP[1])
+    if kind == "tusk":
+        return (x + height * _TUSK_LEN, y - max(2.0, height * _TUSK_W) * 0.15)
+    return (x, y)
+
+
+def _accessory_box(kind: str, x: float, y: float,
+                   height: int) -> tuple[float, float, float, float]:
+    """Bounding box (left, top, right, bottom) the accessory will occupy."""
+    tx, ty = _accessory_tip(kind, x, y, height)
+    if kind == "horn":
+        width = height * _HORN_W
+        return (min(x - width, tx), min(y - width, ty),
+                max(x + width, tx), max(y + width, ty))
+    if kind == "tusk":
+        width = max(2.0, height * _TUSK_W)
+        return (x, y - width, tx, y + width)
+    return (x, y, x, y)
+
+
+def _accessory_margin(stencil: StencilSpec, height: int,
+                      sw: int, sh: int) -> tuple[int, int, int, int]:
+    """Extra pixels needed on each side so the accessory is not clipped.
+
+    The sprite is cropped tight to the animal — that is what puts its feet
+    exactly on the ground line — so anything that sticks out past the outline
+    has to be given room explicitly.
+    """
+    if not stencil.accessory:
+        return (0, 0, 0, 0)
+    ax, ay = stencil.accessory_at
+    left, top, right, bottom = _accessory_box(
+        stencil.accessory, sw * ax, sh * ay, height)
+    return (max(0, math.ceil(-left) + 1),
+            max(0, math.ceil(right - sw) + 1),
+            max(0, math.ceil(-top) + 1),
+            max(0, math.ceil(bottom - sh) + 1))
+
+
+def _accessory(out: pygame.Surface, kind: str, x: int, y: int,
+               height: int, spec: AnimalSpec) -> None:
+    """Draw a part the outline could not supply.
+
+    Two creatures in the cast are defined by something no photograph of a real
+    animal provides. A unicorn is a horse plus a horn — there is no unicorn to
+    trace. And every public-domain narwhal outline turned out to be tuskless or
+    drawn from above; a tuskless narwhal is a small whale, and the app already
+    has a whale.
+
+    Both are drawn pointing right, because the sprite is assembled facing right
+    and mirrored later like everything else.
+    """
+    if kind == "horn":
+        width = height * _HORN_W
+        tip = _accessory_tip(kind, x, y, height)
+        pygame.draw.polygon(out, spec.accent, [
+            (x - width, y + width * 0.4), (x + width, y - width * 0.2), tip])
+        pygame.draw.polygon(out, OUTLINE, [
+            (x - width, y + width * 0.4), (x + width, y - width * 0.2), tip],
+            max(1, int(height * 0.006)))
+        # Two ridges, so it reads as a spiral horn rather than a plain spike.
+        for f in (0.40, 0.68):
+            pygame.draw.line(
+                out, OUTLINE,
+                (x - width * (1 - f) + (tip[0] - x) * f, y + (tip[1] - y) * f),
+                (x + width * (1 - f) + (tip[0] - x) * f,
+                 y - width * 0.4 + (tip[1] - y) * f),
+                max(1, int(height * 0.005)))
+    elif kind == "tusk":
+        width = max(2.0, height * _TUSK_W)
+        tip = _accessory_tip(kind, x, y, height)
+        pygame.draw.polygon(out, spec.accent, [
+            (x, y - width), (x, y + width), tip])
+        pygame.draw.polygon(out, OUTLINE, [
+            (x, y - width), (x, y + width), tip],
+            max(1, int(height * 0.005)))
+        # A narwhal tusk is a spiral. Two short ridges near the thick end are
+        # enough to say so at the size a toddler actually sees it.
+        for f in (0.22, 0.44):
+            pygame.draw.line(
+                out, OUTLINE,
+                (x + (tip[0] - x) * f, y - width * (1 - f)),
+                (x + (tip[0] - x) * (f + 0.10), y + width * (1 - f)),
+                max(1, int(height * 0.004)))
 
 
 def _eye(out: pygame.Surface, x: int, y: int, r: int, pose: str) -> None:
@@ -291,7 +404,21 @@ def _stroke_px(height: int) -> int:
     return max(1, int(round(height * _STROKE)))
 
 
-def _painted(name: str, height: int) -> pygame.Surface:
+class _Body(NamedTuple):
+    """A painted animal plus where inside its surface the animal actually is.
+
+    The two differ whenever an accessory sticks out past the outline, and the
+    eye is placed relative to the *animal*, not the surface.
+    """
+
+    surface: pygame.Surface
+    ox: int
+    oy: int
+    sw: int
+    sh: int
+
+
+def _painted(name: str, height: int) -> _Body:
     """Everything except the eye, cached.
 
     The eye is the only thing a pose changes, and the rest — eight offset
@@ -299,6 +426,13 @@ def _painted(name: str, height: int) -> pygame.Surface:
     pattern — is by far the expensive part. Splitting here means ``blink``
     costs one copy and two circles instead of a second full repaint.
     """
+    # Below this the keyline plus an accessory's reserved margin eat the whole
+    # sprite and the settling loop below bails with the body taller than the
+    # room left for it, which silently clips the feet. Callers already ask for
+    # far more than this — ``animal_art.animal_sprite`` clamps to 24 and a
+    # crossing animal is never under 48 — so this is a floor under a future
+    # caller, not a size anyone sees.
+    height = max(_MIN_HEIGHT, int(height))
     key = (name, height)
     cached = _body_cache.get(key)
     if cached is not None:
@@ -307,10 +441,25 @@ def _painted(name: str, height: int) -> pygame.Surface:
     stencil = STENCILS[name]
     spec = SPECS[name]
     stroke = _stroke_px(height)
-    shape = _shape(name, max(2, height - 2 * stroke))
-    sw, sh = shape.get_size()
 
-    out = pygame.Surface((sw + 2 * stroke, sh + 2 * stroke), pygame.SRCALPHA)
+    # The animal has to shrink to leave room for a horn or a tusk, and how much
+    # room those need depends on how wide the animal came out — so solve it by
+    # settling rather than in one step. Two passes is always enough; the third
+    # is insurance, and it costs nothing at cache-fill time.
+    inner = max(2, height - 2 * stroke)
+    ml = mr = mt = mb = 0
+    for _ in range(3):
+        shape = _shape(name, inner)
+        ml, mr, mt, mb = _accessory_margin(stencil, height, *shape.get_size())
+        want = height - 2 * stroke - mt - mb
+        if want == inner or want < 8:
+            break
+        inner = max(8, want)
+
+    shape = _shape(name, inner)
+    sw, sh = shape.get_size()
+    ox, oy = stroke + ml, stroke + mt
+    out = pygame.Surface((sw + 2 * stroke + ml + mr, height), pygame.SRCALPHA)
 
     # Keyline: the shape stamped in the outline colour all around, then the
     # coloured animal dropped on top. Eight offsets is enough to read as a
@@ -318,7 +467,7 @@ def _painted(name: str, height: int) -> pygame.Surface:
     dark = _tinted(shape, OUTLINE)
     for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1),
                    (-1, -1), (1, -1), (-1, 1), (1, 1)):
-        out.blit(dark, (stroke + dx * stroke, stroke + dy * stroke))
+        out.blit(dark, (ox + dx * stroke, oy + dy * stroke))
 
     body = _tinted(shape, spec.body)
     _shade_underside(body, shape, spec.shade, 0.46, 0.86)
@@ -326,10 +475,16 @@ def _painted(name: str, height: int) -> pygame.Surface:
         _shade_underside(body, shape, spec.accent, 1.0 - stencil.belly,
                          1.0 - stencil.belly * 0.35)
     _pattern(body, shape, spec, name)
-    out.blit(body, (stroke, stroke))
+    out.blit(body, (ox, oy))
 
-    _body_cache[key] = out
-    return out
+    if stencil.accessory:
+        ax, ay = stencil.accessory_at
+        _accessory(out, stencil.accessory, ox + int(sw * ax),
+                   oy + int(sh * ay), height, spec)
+
+    painted = _Body(out, ox, oy, sw, sh)
+    _body_cache[key] = painted
+    return painted
 
 
 def build(name: str, height: int, pose: str) -> pygame.Surface:
@@ -339,12 +494,11 @@ def build(name: str, height: int, pose: str) -> pygame.Surface:
     here — ``animal_art`` derives it from ``idle`` for the whole cast at once.
     """
     stencil = STENCILS[name]
-    stroke = _stroke_px(height)
-    out = _painted(name, height).copy()
-    sw = out.get_width() - 2 * stroke
-    sh = out.get_height() - 2 * stroke
+    painted = _painted(name, height)
+    out = painted.surface.copy()
 
     ex, ey = stencil.eye_at
-    _eye(out, stroke + int(sw * ex), stroke + int(sh * ey),
+    _eye(out, painted.ox + int(painted.sw * ex),
+         painted.oy + int(painted.sh * ey),
          max(3, int(height * stencil.eye)), pose)
     return out

@@ -41,8 +41,8 @@ Python 3.11+ package `lilypad/`, src-layout:
   farm animals keep their peekaboo. Sprite construction is arbitrarily expensive
   because everything is cached by (name, height, pose) — only the per-frame blit
   budget is sacred, which is also why concurrent animals are capped at
-  `MAX_ANIMALS`. **Three creatures (giraffe, triceratops, whale) get their
-  *shape* from a traced public-domain outline instead** — see below.
+  `MAX_ANIMALS`. **All 26 side-on creatures get their *shape* from a traced
+  public-domain outline** (`animal_stencil.py`) — see below.
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
@@ -61,24 +61,41 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
   escape combo, effect toggles, idle/sleep timeouts).
 
-**Traced outlines (a trial, `effects/animal_stencil.py`)**: the drawn cast
-fails on *proportion*, not detail — a giraffe reads as a giraffe because of its
-neck-to-leg ratio, which stacked ellipses are structurally bad at. So giraffe,
-triceratops and whale take their silhouette from a CC0 [PhyloPic](https://www.phylopic.org/)
-outline vendored in `assets/silhouettes/` (see `CREDITS.md` there — check the
-licence per *image*, PhyloPic also hosts CC-BY-NC-SA). Everything else about
-them is still generated: colour, belly shading, coat markings, an oversized
-cartoon eye, the dark keyline, and all motion. The outline is a **stencil, not
-a picture** — `fill(colour, BLEND_RGB_MAX)` swaps the colour through it and
-leaves the anti-aliased alpha edge intact, so it stays crisp at any size.
-Both routes come out of `animal_sprite`, so mirroring, squash, the cache and
+**Traced outlines (`effects/animal_stencil.py`)**: the old drawn cast failed on
+*proportion*, not detail — a giraffe reads as a giraffe because of its
+neck-to-leg ratio, which stacked ellipses are structurally bad at. So all 26
+side-on creatures take their silhouette from a CC0
+[PhyloPic](https://www.phylopic.org/) outline vendored in
+`assets/silhouettes/` (see `CREDITS.md` there — check the licence per *image*,
+PhyloPic also hosts CC-BY-NC-SA, which must never enter this repo). Everything
+else is still generated: colour, belly shading, coat markings, an oversized
+cartoon eye, the dark keyline, the unicorn's horn, the narwhal's tusk, and all
+motion. The outline is a **stencil, not a picture** — `fill(colour,
+BLEND_RGB_MAX)` swaps the colour through it and leaves the anti-aliased alpha
+edge intact, so it stays crisp at any size.
+
+Both art routes come out of `animal_sprite`, so mirroring, squash, the cache and
 the gaits are untouched; the cache key carries the mode so the two can't mix.
-`effects.silhouettes = false` reverts those three, which is how you compare
-them. If SDL_image can't rasterise SVG the whole feature disables itself and
-logs why. Sprites are prebuilt at startup because assembling one costs tens of
-ms against ~2 for a drawn one, and that hitch would otherwise land on the first
-keypress. **Expanding this to the rest of the cast is a per-animal job**: pick a
-CC0 outline, add a `StencilSpec` row, and find `eye_at` by eye.
+`effects.silhouettes = false` reverts the whole cast to the drawn art, which is
+still there and still tested. If SDL_image can't rasterise SVG the feature
+disables itself and logs why. Sprites are prebuilt at startup (156 of them,
+~1 s at 1080p) because assembling one costs several ms against ~2 for a drawn
+one, and that hitch would otherwise land on a child's first keypress.
+
+**Adding or recasting a creature** is a per-animal job: pick a CC0 outline,
+drop it in `assets/silhouettes/`, add a `StencilSpec` row, credit it, and find
+`eye_at` by *looking* — it is a fraction of the sprite box and the tests will
+catch it landing off the body, but only your eyes will catch it landing on an
+ear. The four front-on farm animals have no row and never will (see D16).
+
+**Pip the frog** (`effects/critter.py`) is cel-shaded — flat colour, hard-edged
+shadow/highlight bands, one heavy keyline stamped around the *union* of head
+and body so no seam crosses his face — and sits on his own lily pad. His sprite
+is cached by `(radius, pose)`; only the squash is continuous, applied as a
+cheap `scale` at draw time. `Frog.floor_y` is his resting height and is
+deliberately well above the bottom of the screen: that gap is what the pad
+occupies. Anything that needs to know where he lands must ask `floor_y` rather
+than assume `h - r`.
 
 **Screen sleep**: after `display.sleep_timeout` (default 300 s) with no keypresses
 the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
@@ -108,7 +125,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 588 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil)
+pytest                        # 880 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter)
 ```
 
 ## Status / gotchas

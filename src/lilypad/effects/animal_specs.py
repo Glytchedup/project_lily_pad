@@ -49,17 +49,21 @@ class StencilSpec:
     """The extra data a traced outline needs on top of its ``AnimalSpec``.
 
     Deliberately a separate table rather than more fields on ``AnimalSpec``:
-    this is a trial covering three creatures, and keeping it separate means
-    both "convert the rest of the cast" and "delete the whole idea" are small,
-    obvious changes.
+    keeping it separate means "delete the whole idea" stays a small, obvious
+    change, and the drawn art underneath is never disturbed.
 
-    ``eye_at``      where the eye goes, as a fraction of the sprite box. The
-                    one number per animal that has to be found by looking.
-    ``faces_left``  true if the source art points left; the loader flips it, so
-                    every animal in the app still faces right.
-    ``eye``         eye radius as a fraction of sprite height — much larger
-                    than life, on purpose (see ``animal_stencil._eye``).
-    ``belly``       height fraction given a lighter underside, 0 for none.
+    ``eye_at``        where the eye goes, as a fraction of the sprite box. The
+                      one number per animal that can only be found by looking.
+    ``faces_left``    true if the source art points left; the loader flips it,
+                      so every animal in the app still faces right.
+    ``eye``           eye radius as a fraction of sprite height — much larger
+                      than life, on purpose (see ``animal_stencil._eye``).
+    ``belly``         height fraction given a lighter underside, 0 for none.
+    ``accessory``     a part no real animal has, drawn on top: ``"horn"`` or
+                      ``"tusk"``. A unicorn without its horn is a white horse
+                      and a narwhal without its tusk is a small whale — in both
+                      cases the missing piece is the thing the name is *about*.
+    ``accessory_at``  where that part attaches, same fractional coordinates.
     """
 
     file: str
@@ -67,24 +71,73 @@ class StencilSpec:
     faces_left: bool = True
     eye: float = 0.055
     belly: float = 0.0
+    accessory: str = ""
+    accessory_at: tuple[float, float] = (0.0, 0.0)
 
 
 #: Creatures drawn from a traced outline instead of primitives. Anything not
 #: listed here is built the original way; both routes come out of
 #: ``animal_art.animal_sprite`` looking the same to everything downstream.
+#:
+#: The four front-on farm animals (cow, duck, pig, sheep) are deliberately
+#: absent and always will be: they peek up from the bottom of the screen rather
+#: than crossing it, because a mirrored front view is just a wrong front view.
+#: A side-on outline would mean rebuilding their whole performance.
 STENCILS: dict[str, StencilSpec] = {
-    "giraffe": StencilSpec(
-        file="giraffe.svg", eye_at=(0.815, 0.080), eye=0.042,
-    ),
+    # ------------------------------------------------------------- A–Z cast
+    "alligator": StencilSpec(file="alligator.svg", eye_at=(0.82, 0.20), eye=0.040),
+    "bear": StencilSpec(file="bear.svg", eye_at=(0.85, 0.22), eye=0.048),
+    "elephant": StencilSpec(file="elephant.svg", eye_at=(0.78, 0.20),
+                            faces_left=False, eye=0.038),
+    "fox": StencilSpec(file="fox.svg", eye_at=(0.85, 0.24), eye=0.050),
+    "giraffe": StencilSpec(file="giraffe.svg", eye_at=(0.815, 0.080), eye=0.042),
+    "horse": StencilSpec(file="horse.svg", eye_at=(0.90, 0.13),
+                         faces_left=False, eye=0.050),
+    "iguana": StencilSpec(file="iguana.svg", eye_at=(0.86, 0.22),
+                          faces_left=False, eye=0.042),
+    "jellyfish": StencilSpec(file="jellyfish.svg", eye_at=(0.45, 0.15),
+                             faces_left=False, eye=0.055),
+    "koala": StencilSpec(file="koala.svg", eye_at=(0.68, 0.13),
+                         faces_left=False, eye=0.046),
+    "lion": StencilSpec(file="lion.svg", eye_at=(0.85, 0.18),
+                        faces_left=False, eye=0.050),
+    "monkey": StencilSpec(file="monkey.svg", eye_at=(0.87, 0.24),
+                          faces_left=False, eye=0.052),
+    "narwhal": StencilSpec(file="narwhal.svg", eye_at=(0.87, 0.13), eye=0.040,
+                           belly=0.32, accessory="tusk", accessory_at=(0.93, 0.22)),
+    "owl": StencilSpec(file="owl.svg", eye_at=(0.78, 0.14), eye=0.100),
+    "quail": StencilSpec(file="quail.svg", eye_at=(0.76, 0.16),
+                         faces_left=False, eye=0.048),
+    "rabbit": StencilSpec(file="rabbit.svg", eye_at=(0.83, 0.27),
+                          faces_left=False, eye=0.050),
+    "unicorn": StencilSpec(file="unicorn.svg", eye_at=(0.87, 0.14), eye=0.050,
+                           accessory="horn", accessory_at=(0.90, 0.10)),
+    "whale": StencilSpec(file="whale.svg", eye_at=(0.900, 0.470), eye=0.050,
+                         belly=0.38),
+    "xrayfish": StencilSpec(file="xrayfish.svg", eye_at=(0.87, 0.42), eye=0.058,
+                            belly=0.34),
+    # Bison head hangs low, so the eye sits well down the sprite — at 0.33 it
+    # was up on the horn.
+    "yak": StencilSpec(file="yak.svg", eye_at=(0.895, 0.425), eye=0.050),
+    "zebra": StencilSpec(file="zebra.svg", eye_at=(0.895, 0.17),
+                         faces_left=False, eye=0.052),
+
+    # ----------------------------------------------------------- dinosaurs
+    "trex": StencilSpec(file="trex.svg", eye_at=(0.90, 0.11), eye=0.042),
+    "velociraptor": StencilSpec(file="velociraptor.svg", eye_at=(0.90, 0.16),
+                                eye=0.046),
+    "stegosaurus": StencilSpec(file="stegosaurus.svg", eye_at=(0.89, 0.49),
+                               faces_left=False, eye=0.045),
     "triceratops": StencilSpec(
         # Behind the brow horns, not on the frill — the frill is the big flat
         # area that reads as "head" at a glance and is the easy place to get
         # this wrong.
         file="triceratops.svg", eye_at=(0.845, 0.400), eye=0.048,
     ),
-    "whale": StencilSpec(
-        file="whale.svg", eye_at=(0.900, 0.470), eye=0.050, belly=0.38,
-    ),
+    "brachiosaurus": StencilSpec(file="brachiosaurus.svg", eye_at=(0.94, 0.05),
+                                 faces_left=False, eye=0.042),
+    "pterodactyl": StencilSpec(file="pterodactyl.svg", eye_at=(0.77, 0.48),
+                               eye=0.050),
 }
 
 
