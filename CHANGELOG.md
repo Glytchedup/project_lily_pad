@@ -6,6 +6,97 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Verified on real hardware — first full on-device bring-up (2026-08-12)
+Installed and run end-to-end on the actual Pi 5 (1 GB, Rev 1.1) with the
+BlackWidow attached. Everything below is measured, not inferred. Four faults
+cost most of the session; each is written up with the one command that
+identifies it, so the next occurrence takes minutes instead of hours.
+
+**What passed.** `install.sh` clean in all 6 phases on Raspberry Pi OS Lite 64-bit
+Trixie (Debian 13, kernel 6.18.34, Python 3.13.5, pygame-ce 2.5.8 / SDL 2.32.10).
+`--kiosk --smoke 15` exits 0. `razer_hid` claims the keyboard directly — the
+OpenRazer fallback was never needed. Exclusive `EVIOCGRAB` takes all four Razer
+event nodes. 156 traced-outline sprites prebuilt at boot; `animal art` reports
+`traced outlines`, not the `drawn` fallback. Power is clean under load:
+`throttled=0x0`, zero under-voltage events on the official 27 W PSU. The §8 kill
+test (`kill -9` the MainPID) recovers in ~3 s with `NRestarts` 0→1, re-grabbing
+both keyboard nodes and re-claiming the RGB device. Cold boot to playground is
+**7.1 s** (1.5 s kernel + 5.6 s userspace). Resident set ~217 MB of 990 MB.
+
+**SDL picks the right DRM card unaided.** The Pi 5 exposes `card0` = `v3d`
+(render-only, no CRTCs) and `card1` = `vc4-drm` (all connectors). SDL 2.32.10
+enumerates past v3d correctly, so `SDL_KMSDRM_DEVICE_INDEX=1` — offered in
+README troubleshooting and VERIFY.md §1 — was **not** required. Leave it unset
+unless the log actually says `kmsdrm not available`.
+
+**Fault 1 — Pi 5 bootloader offers net install ("Configure this Raspberry Pi").**
+Means the bootloader found no bootable OS. Not an OS-level problem; the app is
+irrelevant here. Cause was a corrupt FAT32 `bootfs` partition — Windows reported
+`HealthStatus=Warning` and refused to mount it. *Diagnose:* put the card in a PC
+and look at the boot partition; 0-byte or unmountable is conclusive. *Fix:*
+reflash. *With no PC to hand:* the bootloader's own network install (hold SHIFT
+at that screen) reflashes the card using only the Pi, a USB keyboard and **wired
+Ethernet** — the bootloader cannot use Wi-Fi. Cheap oversized microSDs are a
+counterfeit risk; `BOM.md` specifies 32 GB A2/U3 for a reason.
+
+**Fault 2 — no audio, and resolution stuck at 1024x768.** Both symptoms, one
+cause: the HDMI link read **0 bytes of EDID**. Without a CEA extension block the
+sink advertises no audio capability, `vc4-hdmi` refuses to open a PCM, and ALSA
+returns **error 524 (ENOTSUPP)**; `dmesg` repeats `HDMI: Unknown ELD version 0`.
+The connector still reports `connected` because hot-plug detect is a separate
+pin from the DDC lines, so video works at the generic fallback modes and nothing
+looks obviously broken. *Diagnose in one command:*
+`wc -c < /sys/class/drm/card1-HDMI-A-1/edid` — zero means EDID, not ALSA.
+*On this board the near HDMI port (HDMI-A-1, closest to USB-C) has dead DDC
+lines*; the same cable in the far port returned a full 256 bytes and identified
+the display. This contradicts `README.md`'s advice to use HDMI0, which remains
+correct in general — try the other port before suspecting the cable or the TV.
+Consequences once on the far port: it is ALSA **card 1**, not the default card 0,
+so `/etc/asound.conf` needs `defaults.pcm.card 1` / `defaults.ctl.card 1`, and
+the mode must be pinned with `video=HDMI-A-2:1920x1080@60D` in `cmdline.txt`
+(VERIFY.md §1's fix, retargeted). Restarting the service alone will **not** lift
+the app off 1024x768 — SDL inherits whatever mode the CRTC negotiated at boot, so
+only a reboot re-negotiates. Confirmed the forced mode does not break audio.
+Note `/proc/asound/card*/eld` keeps a **stale** ELD after unplugging, so a
+populated `monitor_name` there is not proof the port is live.
+
+**Fault 3 — Wi-Fi fails with `ssid-not-found` and an empty scan list.** Looks
+exactly like a wrong password and is not one: NetworkManager logs
+`has security, and secrets exist. No new secrets needed.` before failing, and
+`nmcli device wifi list` returns nothing at all — not even neighbours' networks.
+Cause is a regulatory-domain split: `iw reg get` showed `global country US` but
+**`phy#0 country 00: DFS-UNSET`**, and regdom `00` makes 5 GHz unusable. A Wi-Fi
+6E router living on 5 GHz + 6 GHz then has no band the Pi 5 radio can reach (it
+does 2.4/5 GHz only, never 6 GHz). *Fix is a reboot, not a command* — the
+self-managed `brcmfmac` driver reads its country at load time, so
+`iw phy phy0 set country US` on a running system achieves nothing. Imager already
+writes `cfg80211.ieee80211_regdom=US` into `cmdline.txt`; a cold boot applies it
+and the radio associates immediately. *Diagnose:* check `iw reg get` for a
+global/phy0 mismatch before touching credentials.
+
+**Fault 4 — `authorized_keys` silently ends up 0 bytes.** Pushing a public key
+over a pipe from PowerShell created the file with correct 600/700 permissions and
+no content, so key auth failed while every permission check looked right. Verify
+with `ssh-keygen -lf ~/.ssh/authorized_keys` and compare the fingerprint rather
+than trusting `ls`. Note `/home/pi` at `700` is fine for sshd's `StrictModes`.
+
+### Changed (deployment notes from the same bring-up — 2026-08-12)
+- **The read-only overlay on Trixie is `overlayroot`, not `boot=overlay`.**
+  `raspi-config nonint do_overlayfs 0` installs the Debian `overlayroot` package,
+  regenerates both initramfs images and prepends `overlayroot=tmpfs` to
+  `cmdline.txt`; `/` then mounts as `overlay` with `lowerdir=/media/root-ro`.
+  Detect it with `mount | grep -i overlay` — grepping for `boot=overlay` gives a
+  **false negative**. `/boot/firmware` stays `rw`, so it remains reversible.
+  README's update dance (`do_overlayfs 1` → reboot → change → re-enable → reboot)
+  is unchanged and still required for config edits and app updates.
+- **`NetworkManager-wait-online` is worth disabling on an appliance.** The Imager
+  image enables it and cloud-init pulls in `network-online.target`, which can
+  stall boot for up to a minute when the network is absent. `lilypad.service` has
+  no network dependency of any kind and the app is fully offline — all cues are
+  generated to disk at install time. Disabling the wait contributed to the 7.1 s
+  boot, and the playground was verified running on Wi-Fi alone with the Ethernet
+  cable unplugged.
+
 ### Changed (the whole side-on cast is traced, and Pip got a makeover — 2026-08-10)
 - **All 26 side-on creatures now use traced outlines**, up from three. Every
   letter animal and every dinosaur is built from a public-domain silhouette
