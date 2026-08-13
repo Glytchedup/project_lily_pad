@@ -44,8 +44,13 @@ keyboard and monitor.
    - **Username/password**: user `pi`, a password you'll remember
    - **Wi-Fi**: your SSID + password (or skip if using Ethernet)
    - **Services tab: enable SSH** (password auth is fine)
-4. Write the card, then boot the Pi with it (HDMI0 — the micro-HDMI port next
-   to the USB-C power connector — keyboard plugged into any USB port).
+4. Write the card, then boot the Pi with it (keyboard in any USB port). Start
+   with **HDMI0**, the micro-HDMI port next to the USB-C connector — but if you
+   get no sound or a resolution stuck at 1024x768, **try the other port before
+   suspecting the cable or the TV**. On the Pi 5 used for bring-up HDMI0 had
+   dead DDC lines: it reported `connected` while reading 0 bytes of EDID, so
+   video worked at fallback modes and nothing looked broken. `--doctor` names
+   this in one line (see [Diagnostics](#diagnostics)).
 
 ### 2. Install Lily Pad
 
@@ -84,6 +89,58 @@ sudo raspi-config nonint do_overlayfs 0   # enable overlay (read-only root)
 
 To update the app later: disable the overlay (`... do_overlayfs 1`), reboot,
 `git pull && sudo ./install.sh`, re-enable, reboot.
+
+> On Trixie this installs Debian's `overlayroot` package and prepends
+> `overlayroot=tmpfs` to `cmdline.txt` — it does **not** write `boot=overlay`.
+> Check it with `mount | grep -i overlay`; grepping for `boot=overlay` gives a
+> false negative on a system where the overlay is very much on.
+
+---
+
+## Diagnostics
+
+One command answers "why is it doing that":
+
+```bash
+sudo /opt/lilypad/venv/bin/python -m lilypad --doctor
+```
+
+It checks the board model, whether the card has moved to a different Pi, HDMI
+EDID per connector, which ALSA card the live port maps to, the `video=` pin,
+the Wi-Fi regulatory domain, `authorized_keys`, the root overlay, under-voltage,
+the service, and the generated sounds — and prints the remedy next to anything
+that isn't right. It touches neither the display nor the keyboard, so it's safe
+to run while the playground is up. `install.sh` runs it at the end. Exit status
+is 1 if anything failed, so it drops straight into a script.
+
+Each check exists because that exact fault cost real hours during the first
+bring-up; the write-ups are in [CHANGELOG.md](CHANGELOG.md).
+
+## Moving the card between Pis
+
+Testing on one Pi and then swapping the microSD into the Pi 5 works — a single
+Raspberry Pi OS image carries a kernel and device trees for every model, so the
+card boots whatever you put it in (**Pi 3 or newer**; 64-bit Pi OS won't run on
+a Pi 1/2/Zero W, and `--doctor` says so plainly rather than letting it look like
+a bad flash).
+
+Two things are properties of the *board*, not the card:
+
+- **The HDMI ALSA card index.** A Pi 3 exposes one `vc4hdmi`; a Pi 4/5 exposes
+  `vc4hdmi0` and `vc4hdmi1`. Nothing to do — `lilypad-audio.service` re-derives
+  this at every boot from whichever connector returned EDID, which is also why
+  moving the cable between ports fixes itself after a reboot.
+- **The `video=` pin in `cmdline.txt`**, if you added one. A Pi 5 has two HDMI
+  connectors and a Pi 3 has one, so a pin written on one board can name a
+  connector the other hasn't got — and that failure mode is a black screen with
+  no error anywhere. `install.sh` records the board it ran on, and `--doctor`
+  compares, so after a swap it tells you whether the pin still points somewhere
+  real.
+
+So the routine after a swap is: boot it, run `--doctor`, fix anything it flags,
+and re-run `install.sh` if you want the stamp updated. Performance differs of
+course — the effect engine degrades gracefully, so an older Pi is a valid
+functional test but not a frame-rate one.
 
 ---
 
@@ -183,8 +240,11 @@ python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = heal
 | Black screen at boot | `journalctl -u lilypad -e` over SSH. `EGL not initialized` → re-run `install.sh` (installs Mesa/EGL). Two displays/cards: set `SDL_KMSDRM_DEVICE_INDEX=1` in the unit. |
 | Keyboard RGB dead but app fine | `journalctl -u lilypad | grep lighting` — if `razer_hid` failed, try the OpenRazer fallback: install per [openrazer.github.io](https://openrazer.github.io/) (use `--no-install-recommends` on Pi OS), set `lighting.backend = "openrazer"`. |
 | Keyboard lights flicker / disconnect | Underpowered USB. Confirm the official 27 W PSU (Pi 5); lower `lighting.brightness`; last resort: powered hub (BOM contingency). |
-| Screen black; log says `no display yet` | The monitor is off, asleep, or on another input — the Pi genuinely can't see it, because a sleeping monitor often drops HDMI hot-plug detect. Wake the monitor and the app takes the screen within ~3 s on its own. To stop it happening at all, force a mode: append `video=HDMI-A-1:1920x1080@60D` to the single line in `/boot/firmware/cmdline.txt` and reboot. The Pi then always drives HDMI0, so the monitor wakes by itself whenever it's powered. **Recommended before enabling overlayfs.** |
-| No sound | Monitor may need HDMI audio selected; test `speaker-test -t wav` over SSH. Or set `audio.mute = true` and enjoy the silence. |
+| Screen black; log says `no display yet` | The monitor is off, asleep, or on another input — the Pi genuinely can't see it, because a sleeping monitor often drops HDMI hot-plug detect. Wake the monitor and the app takes the screen within ~3 s on its own. To stop it happening at all, force a mode: append `video=<connector>:1920x1080@60D` to the single line in `/boot/firmware/cmdline.txt` and reboot. **Use the connector that actually has the monitor** — `--doctor` prints it, and pinning the wrong one leaves the Pi driving nothing. **Recommended before enabling overlayfs.** |
+| No sound, and/or resolution stuck at 1024x768 | One cause, two symptoms: the HDMI link read **0 bytes of EDID**, so the sink advertised no audio capability and ALSA returns error 524. Check with `wc -c < /sys/class/drm/card1-HDMI-A-1/edid` — zero means EDID, not ALSA. Move the cable to the **other HDMI port** and reboot (restarting the service won't help: SDL inherits the mode the CRTC negotiated at boot). `--doctor` does this whole diagnosis for you. |
+| Sound only after moving ports | The far port is a different ALSA card. `lilypad-audio.service` re-derives this at every boot, so it should fix itself — `journalctl -u lilypad-audio` shows what it picked. Failing that, `--doctor` reports the mismatch. |
+| Wi-Fi says `ssid-not-found` with an empty scan list | Not a wrong password. Check `iw reg get` for a `global country US` / `phy#0 country 00` split — regdom `00` makes 5 GHz unusable, so a 5/6 GHz router is invisible. The fix is a **cold boot**, not a command: `brcmfmac` reads its country at load time. |
+| SSH key auth fails but permissions look right | `ssh-keygen -lf ~/.ssh/authorized_keys` — a key pushed over a pipe from PowerShell can land as a 0-byte file with perfect 600/700 permissions. Compare the fingerprint; don't trust `ls`. |
 | Keys leak to a console after escape | They shouldn't — getty@tty1 is disabled. Get a shell via SSH, not the console. |
 | Forgot the escape combo | It's in `/etc/lilypad/config.toml` — or just pull power; the app restarts on boot (enable overlayfs and the card doesn't care). |
 

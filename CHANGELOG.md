@@ -6,6 +6,44 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added — the bring-up faults became code, and the card can now move (2026-08-13)
+The four faults from the 2026-08-12 bring-up were written up but only as prose,
+which helps exactly once. They are now checks that run.
+
+- **`--doctor`** (`src/lilypad/doctor.py`, `python -m lilypad --doctor`). One
+  command, eleven checks, each printing the remedy next to the finding: board
+  model, card swap, HDMI EDID per connector, the ALSA card the live port maps
+  to, the `video=` pin, the Wi-Fi regulatory domain, `authorized_keys`, the root
+  overlay, under-voltage, the service, and the generated sounds. Exit 1 on any
+  failure. Touches neither the display nor the keyboard, so it is safe to run
+  while the playground is up, and `install.sh` finishes by running it.
+  Every filesystem root and command runner is injected, which is why 59 tests
+  cover it on a dev box with no Pi attached.
+- **`lilypad-audio.service`** (`src/lilypad/hdmi_audio.py`) re-derives
+  `/etc/asound.conf` at **every boot** from whichever connector returned EDID,
+  rather than install.sh baking an index in once. This fixes the second half of
+  fault 2 without a manual step, follows the cable if it moves ports, and
+  composes with `overlayroot` for free — the write lands in tmpfs and is
+  regenerated next boot. It refuses to touch a hand-written `asound.conf`, and
+  writes atomically via a temp file so a power pull can't leave half a config.
+- **The SD card is expected to move between Pis** — tested on one board, then
+  swapped into the Pi 5. Two settings are properties of the board rather than
+  the card: the HDMI ALSA index (now self-correcting, above) and the `video=`
+  pin, which can name a connector the new board hasn't got. That failure is a
+  black screen with nothing in any log, so `install.sh` stamps the board it ran
+  on and `--doctor` compares. A 32-bit-only board (Pi 1/2/Zero W) is reported
+  as such rather than looking like a bad flash.
+- `install.sh` gained phase 7: disable `NetworkManager-wait-online` (the app is
+  fully offline and the wait can stall boot for a minute), set the HDMI audio
+  card, write the hardware stamp, and self-check.
+
+### Changed
+- **README and VERIFY no longer say "use HDMI0" unconditionally.** That advice
+  is what sent the bring-up down fault 2 — on that board HDMI0 is the port with
+  dead DDC lines. Both now say to check EDID first and name the connector the
+  monitor is actually on. Troubleshooting gained rows for all four faults, and
+  VERIFY gained §10 (diagnostics) and §11 (card swap, test Pi → Pi 5).
+
 ### Verified on real hardware — first full on-device bring-up (2026-08-12)
 Installed and run end-to-end on the actual Pi 5 (1 GB, Rev 1.1) with the
 BlackWidow attached. Everything below is measured, not inferred. Four faults

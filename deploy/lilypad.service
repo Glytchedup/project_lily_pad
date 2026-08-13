@@ -5,6 +5,10 @@ Documentation=https://github.com/Glytchedup/project_lily_pad
 Conflicts=getty@tty1.service
 After=systemd-user-sessions.service getty@tty1.service
 Wants=multi-user.target
+# Re-derive the HDMI audio card before the mixer opens. Wants= not Requires=:
+# if it fails the playground still starts, just possibly on the wrong card.
+Wants=lilypad-audio.service
+After=lilypad-audio.service
 # Never give up permanently. systemd's default (5 starts / 10 s) latches the
 # unit into `failed` after a burst — which on an appliance means a black screen
 # that stays black even once the underlying problem clears. Verified on-device:

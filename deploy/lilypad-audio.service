@@ -1,0 +1,26 @@
+[Unit]
+Description=Lily Pad - point ALSA at the HDMI port that has a monitor
+Documentation=https://github.com/Glytchedup/project_lily_pad
+# Must land before the app opens the mixer, and before anything else reads
+# /etc/asound.conf. sound.target is where ALSA card discovery has settled.
+After=sound.target
+Before=lilypad.service
+# Ordering alone doesn't pull it in; lilypad.service Wants= this unit.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+# Derived at every boot rather than written once by install.sh: the HDMI ALSA
+# card index is a property of the *board*, and this SD card is expected to move
+# between a test Pi and the Pi 5. See src/lilypad/hdmi_audio.py.
+ExecStart=/opt/lilypad/venv/bin/python -m lilypad.hdmi_audio
+Environment=PYTHONUNBUFFERED=1
+# Never block the playground. If this fails the app still starts; the worst
+# case is audio on the wrong card, which `--doctor` reports.
+SuccessExitStatus=0 1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

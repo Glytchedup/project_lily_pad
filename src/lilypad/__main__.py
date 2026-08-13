@@ -131,7 +131,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--smoke", type=float, metavar="SECONDS",
                         help="self-test: synthesize random key events for N "
                              "seconds, then exit cleanly")
+    parser.add_argument("--doctor", action="store_true",
+                        help="diagnose the display, audio, network and "
+                             "deployment state, then exit")
     args = parser.parse_args(argv)
+
+    # Before anything imports pygame or touches the display: the doctor has to
+    # be runnable while the service is up, and on a machine with no screen.
+    if args.doctor:
+        from .doctor import format_report, run_all
+        report = run_all()
+        print(format_report(report), end="")
+        return 1 if report.failed else 0
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
