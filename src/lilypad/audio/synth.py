@@ -704,6 +704,12 @@ def build_voice(dest: Path) -> list[Path]:
         ["zero", "one", "two", "three", "four", "five",
          "six", "seven", "eight", "nine", "ten"]) if n > 0}
     words["10"] = "ten"
+    # Colours and shapes are the third lesson on the board. Imported from the
+    # effects layer for the same reason the animal calls are — one list, so a
+    # shape that exists visually can never be one the voice has no word for.
+    from ..effects.shapes import NAMED_COLORS, SHAPE_KINDS
+    words |= {name: name for name in NAMED_COLORS}
+    words |= {kind: kind for kind in SHAPE_KINDS}
     for name, word in words.items():
         path = dest / f"{name}.wav"
         subprocess.run(

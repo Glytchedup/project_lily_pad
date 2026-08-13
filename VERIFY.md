@@ -44,6 +44,13 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
 ## 2. Every key does something (visuals)
 
 - [ ] Letter keys → giant letter + burst; digits → count-along shapes.
+- [ ] **Colour keys** (`` ` `` `-` `=` `[` `]` `\` `Ins`) → five different
+      shapes in one colour, matching confetti, and the colour named aloud.
+- [ ] **Shape keys** (`;` `'` `,` `.` `/` and the numpad operators) → one huge
+      shape, named aloud, in a colour that **changes between presses**. Press
+      the same shape key five times and confirm the colour varies — a shape
+      welded to one colour is the bug this design exists to avoid.
+- [ ] Numpad digits still count (they share the `KP` prefix with shape keys).
 - [ ] Space → confetti; Enter → fireworks; arrows shove the frog.
 - [ ] Esc, Windows key, F-keys, PrtSc, media keys → each fires an effect
       and **nothing OS-ish happens** (no console, no VT switch, no blanking).

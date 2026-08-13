@@ -30,9 +30,10 @@ MAX_COMETS = 4              # cap concurrent hold-comets (mash covers the rest)
 
 @dataclass(frozen=True)
 class Action:
-    kind: str                     # letter|number|space|arrow|enter|special|sparkle|chord|mash_start|mash_end|hold_start|hold_end
+    kind: str                     # letter|number|shape|color|space|arrow|enter|special|sparkle|chord|mash_start|mash_end|hold_start|hold_end
     key: str = ""                 # originating key name ("" for synthetic actions)
-    letter: str = ""              # for kind == "letter"
+    letter: str = ""              # for kind == "letter"; also the name for
+                                  # "special", "shape" and "color"
     count: int = 0                # for kind == "number"
     direction: tuple[int, int] = (0, 0)   # for kind == "arrow"
     keys: tuple[str, ...] = ()    # for kind == "chord"
@@ -68,12 +69,54 @@ _SPECIALS = {
 }
 
 
+# The punctuation keys used to be twelve identical sparkles — the same wasted
+# row the F-keys had before their back half became dinosaurs. They now name a
+# colour or a shape out loud, which makes them the third lesson on the board
+# after letters and numbers.
+#
+# Grouped by where they physically sit, so a parent can point: the six colours
+# run along the top-right of the board and round the bracket cluster, and the
+# shapes are the punctuation to the right of L and along the bottom row.
+
+_COLOR_KEYS = {
+    "GRAVE": "red",
+    "MINUS": "orange",
+    "EQUAL": "yellow",
+    "LEFTBRACE": "green",
+    "RIGHTBRACE": "blue",
+    "BACKSLASH": "purple",
+    # Pink has no home in that run, and the nav cluster is otherwise sparkles.
+    "INSERT": "pink",
+}
+
+_SHAPE_KEYS = {
+    "SEMICOLON": "star",
+    "APOSTROPHE": "heart",
+    "COMMA": "circle",
+    "DOT": "square",
+    "SLASH": "triangle",
+    # The numpad already counts; its operator keys can carry the same five.
+    "KPSLASH": "circle",
+    "KPASTERISK": "star",
+    "KPPLUS": "square",
+    "KPMINUS": "triangle",
+    "KPDOT": "heart",
+}
+
+
 def classify(name: str) -> Action:
     """Total mapping: every key name yields exactly one base Action."""
     if len(name) == 1 and name.isalpha():
         return Action(kind="letter", key=name, letter=name)
     if name in _DIGIT_COUNT:
         return Action(kind="number", key=name, count=_DIGIT_COUNT[name])
+    # Must precede the numpad-digit rule below: KPDOT and KPSLASH both start
+    # with "KP", and neither tail is a digit, but being explicit is cheaper
+    # than relying on that staying true.
+    if name in _SHAPE_KEYS:
+        return Action(kind="shape", key=name, letter=_SHAPE_KEYS[name])
+    if name in _COLOR_KEYS:
+        return Action(kind="color", key=name, letter=_COLOR_KEYS[name])
     if name.startswith("KP") and name[2:] in _DIGIT_COUNT:  # numpad digits
         return Action(kind="number", key=name, count=_DIGIT_COUNT[name[2:]])
     if name == "SPACE":

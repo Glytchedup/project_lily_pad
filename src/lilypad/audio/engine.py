@@ -29,7 +29,8 @@ from ..effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES  # noqa: E402
 #: note. Numbers are excluded because the counting ladder already gives them a
 #: pitch; the synthetic kinds (chord, mash_*, hold_*) are excluded because the
 #: press that produced them has already played its note.
-_NOTE_KINDS = frozenset({"letter", "space", "arrow", "enter", "special", "sparkle"})
+_NOTE_KINDS = frozenset({"letter", "space", "arrow", "enter", "special", "sparkle",
+                         "shape", "color"})
 
 _TUNE_MODES = ("idle", "always", "off")
 
@@ -204,6 +205,11 @@ class AudioEngine:
             # the same cue fire twice at double amplitude.
             count = max(1, min(action.count, 10))
             self._play(f"count_{count - 1}")
+        elif kind in ("shape", "color"):
+            # The name is the whole point of these keys. "pop" is the fallback
+            # for a sounds dir generated before the vocabulary existed, or one
+            # built on a box with no espeak-ng.
+            self._play(f"voice/{action.letter}", "pop")
         elif kind == "space":
             self._play("whoosh")
         elif kind == "enter":

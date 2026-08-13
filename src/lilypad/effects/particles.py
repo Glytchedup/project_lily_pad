@@ -168,8 +168,14 @@ def shaped_burst(ctx: EffectContext, pos: tuple[float, float], shape: str,
     return sys_
 
 
-def confetti_rain(ctx: EffectContext, count: int = 140) -> ParticleSystem:
-    """Full-width falling confetti (spacebar)."""
+def confetti_rain(ctx: EffectContext, count: int = 140,
+                  colors: list[tuple[int, int, int]] | None = None) -> ParticleSystem:
+    """Full-width falling confetti (spacebar).
+
+    ``colors`` restricts the palette — a colour key rains confetti in the one
+    colour it is naming, so the background agrees with the lesson instead of
+    arguing with it.
+    """
     sys_ = ParticleSystem()
     n = max(8, int(count * ctx.scale))
     for _ in range(n):
@@ -177,7 +183,7 @@ def confetti_rain(ctx: EffectContext, count: int = 140) -> ParticleSystem:
             x=ctx.rng.uniform(0, ctx.width), y=ctx.rng.uniform(-ctx.height * 0.3, 0),
             vx=ctx.rng.uniform(-40, 40), vy=ctx.rng.uniform(160, 420),
             life=ctx.rng.uniform(1.2, 2.4),
-            color=random_bright(ctx.rng),
+            color=ctx.rng.choice(colors) if colors else random_bright(ctx.rng),
             size=ctx.rng.uniform(4, 9),
             gravity=140.0,
         ))

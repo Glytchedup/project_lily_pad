@@ -302,7 +302,8 @@ def test_every_key_makes_some_sound(tmp_path):
 # ------------------------------------------------- audio engine (background)
 
 def test_set_idle_starts_and_stops_the_tune_once_per_transition(tmp_path):
-    engine = AudioEngine(tmp_path, mute=False, autogen=False)
+    # Explicit: "off" is the default now, so idle mode has to be asked for.
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="idle")
     calls: list[str] = []
     engine._start_tune = lambda: calls.append("start")
     engine._stop_tune = lambda: calls.append("stop")

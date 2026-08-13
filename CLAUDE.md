@@ -30,8 +30,8 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `effects/` — pygame renderer: engine (60 fps budget, graceful degradation, motion
   trails, milestones, **screen sleep**), registry (action → effect factory), particles
   (+ additive glow, shaped fireworks), letters (outline/rainbow/googly eyes), numbers
-  (countable objects), scenery (pond background), bubbles, comet (key-hold rainbows),
-  ambient/idle attract. The animal cast is three files: `animal_specs.py` is the cast
+  (countable objects), **shapes** (colours + shapes — see below), scenery (pond
+  background), bubbles, comet (key-hold rainbows), ambient/idle attract. The animal cast is three files: `animal_specs.py` is the cast
   list (one data row per creature — edit this to recast a letter), `animal_art.py`
   turns a row into a cached sprite, and `animals.py` owns who appears for which key,
   what they sound like (`ANIMAL_VOICES`, imported by the audio engine so the two
@@ -57,6 +57,13 @@ Python 3.11+ package `lilypad/`, src-layout:
   four original anthemic-pop instrumental loops, rendered to seamless WAVs and played
   as idle background music via `pygame.mixer.music`. Letter/number names come from
   espeak-ng.
+- `doctor.py` — on-device diagnostics (`python -m lilypad --doctor`), one check
+  per fault the first bring-up hit. Every filesystem root and command runner is
+  injected, which is the only reason it is testable off-Pi — keep it that way.
+- `hdmi_audio.py` — picks the ALSA card matching whichever HDMI connector
+  returned EDID. Runs at **every boot** via `lilypad-audio.service`, not once at
+  install, because the card index is a property of the board and this SD card is
+  expected to move between a test Pi and the Pi 5.
 - `escape.py` — parent escape hatch state machine.
 - `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
   escape combo, effect toggles, idle/sleep timeouts).
@@ -88,6 +95,19 @@ drop it in `assets/silhouettes/`, add a `StencilSpec` row, credit it, and find
 catch it landing off the body, but only your eyes will catch it landing on an
 ear. The four front-on farm animals have no row and never will (see D16).
 
+**Colours and shapes** (`effects/shapes.py`) are the third lesson, on the
+punctuation keys. The two effects are deliberately opposite: `GiantShape`
+holds the shape constant and randomises the colour, `ColorSplash` holds the
+colour constant and varies the shapes — a circle that is always blue teaches
+"blue circle" as one word, so *don't* "fix" the randomness. Art is cel-shaded
+like Pip and drawn at `SUPERSAMPLE`× then scaled down. Colour is a
+`BLEND_RGB_MULT` tint over one cached **white** master per `(kind, size)`, so
+the palette is nearly free; the dark keyline survives the multiply on purpose,
+and it is load-bearing — five same-coloured shapes sit side by side in a
+splash and would otherwise merge. `audio/synth.py:build_voice` imports
+`NAMED_COLORS` and `SHAPE_KINDS` rather than repeating them, so a new shape
+cannot ship without a spoken word.
+
 **Pip the frog** (`effects/critter.py`) is cel-shaded — flat colour, hard-edged
 shadow/highlight bands, one heavy keyline stamped around the *union* of head
 and body so no seam crosses his face — and sits on his own lily pad. His sprite
@@ -95,7 +115,11 @@ is cached by `(radius, pose)`; only the squash is continuous, applied as a
 cheap `scale` at draw time. `Frog.floor_y` is his resting height and is
 deliberately well above the bottom of the screen: that gap is what the pad
 occupies. Anything that needs to know where he lands must ask `floor_y` rather
-than assume `h - r`.
+than assume `h - r`. **His resting test is frame-rate relative** — a landing
+counts as a bounce only if it beats `h * GRAVITY * dt * REST_FACTOR`. The old
+fixed threshold made a *stationary* frog register an impact every frame below
+~37 fps, squashing and spawning ripples forever; never reintroduce a constant
+there. He rides the pad's bob only while `resting`.
 
 **Screen sleep**: after `display.sleep_timeout` (default 300 s) with no keypresses
 the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
@@ -125,7 +149,8 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 880 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter)
+python -m lilypad --doctor    # on-device diagnostics (safe to run anywhere)
+pytest                        # 1009 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, shapes, doctor, hdmi_audio)
 ```
 
 ## Status / gotchas

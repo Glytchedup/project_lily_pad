@@ -193,6 +193,29 @@ To swap a letter's animal, edit one row of
 `src/lilypad/effects/animal_specs.py` and the matching entry in
 `ANIMAL_LETTERS` / `ANIMAL_VOICES` in `src/lilypad/effects/animals.py`.
 
+## Colours and shapes
+
+The punctuation keys used to be a dozen identical sparkles. They now name a
+colour or a shape out loud — the third lesson on the board, after letters and
+numbers.
+
+| Keys | What happens |
+|---|---|
+| `` ` `` `-` `=` `[` `]` `\` `Ins` | **red, orange, yellow, green, blue, purple, pink** — the screen fills with five different shapes, all that one colour, and confetti to match |
+| `;` `'` `,` `.` `/` | **star, heart, circle, square, triangle** — one huge shape in a random colour |
+| Numpad `/` `*` `+` `-` `.` | the same five shapes (the numpad digits still count) |
+
+The two halves are deliberately opposite, and that is the whole teaching idea:
+a **shape** key holds the shape constant and varies the colour, so the shape
+is the only thing to generalise from; a **colour** key holds the colour
+constant and varies the shapes. A circle that is always blue just teaches
+"blue circle" as a single word.
+
+The art is generated, cel-shaded like Pip — flat fill, one hard shadow
+crescent, a gloss and a heavy keyline. Every colour comes from a single cached
+white master via a multiply, so the full palette costs one small surface per
+combination rather than a fresh render.
+
 ## Bedtime
 
 After `display.sleep_timeout` — 5 minutes by default — with nobody touching

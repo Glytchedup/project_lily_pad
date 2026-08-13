@@ -20,6 +20,8 @@ def test_every_registry_kind_yields_effects():
         "chord": Action(kind="chord", keys=("A", "B")),
         "sparkle": Action(kind="sparkle", key="MACRO1"),
         "special": Action(kind="special", key="ESC", letter="swirl"),
+        "shape": Action(kind="shape", key="COMMA", letter="circle"),
+        "color": Action(kind="color", key="GRAVE", letter="red"),
     }
     assert set(samples) == registered_kinds()
     for kind, action in samples.items():

@@ -6,6 +6,50 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added — colours and shapes (2026-08-13)
+- **The punctuation keys now name a colour or a shape out loud.** They were
+  twelve identical sparkles, which is the same wasted-row problem the F-keys
+  had before their back half became dinosaurs. Seven colour keys along the
+  top-right (red, orange, yellow, green, blue, purple, pink) and five shape
+  keys around the bottom-right (star, heart, circle, square, triangle), with
+  the numpad operators carrying the shapes too.
+- **The two halves are deliberately opposite**, which is the whole teaching
+  idea. A shape key shows one shape in a *random* colour, so the shape is the
+  only constant to generalise from; a colour key shows five *different* shapes
+  in one colour. A circle that is always blue teaches "blue circle" as a
+  single word.
+- Art is cel-shaded to match Pip — flat fill, one hard shadow crescent, a
+  gloss and a heavy keyline, drawn at 3x and scaled down for clean edges. The
+  keyline is load-bearing rather than decorative: five same-coloured shapes
+  sit side by side in a colour splash and would otherwise merge into a blob.
+- Every colour comes from one cached white master through a
+  `BLEND_RGB_MULT` tint, so the whole palette costs a small surface per
+  combination instead of a fresh supersampled render. 10 masters prewarm in
+  0.05 s at 1080p.
+- `build_voice` imports the colour and shape lists from the effects layer, the
+  same way the animal calls are imported, so a shape can never ship without a
+  word for it.
+
+### Fixed
+- **Pip no longer twitches on his pad at low frame rates.** The test for "was
+  that a real landing?" was a flat `impact < 40`, but the speed a *resting*
+  frog carries back into the floor is `h * GRAVITY * dt` — 25 per frame at
+  60 fps and 1080p, and 41 per frame at 37 fps. Below roughly 37 fps a frog
+  sitting perfectly still registered a fresh impact every single frame, so he
+  stayed squashed and rained ripples forever. That is exactly where a loaded
+  Pi lives, and the engine's own graceful degradation takes it there sooner.
+  The threshold is now gravity's own per-frame step. Two related twitches went
+  with it: exponential drag never reaches zero, so he slid a fraction of a
+  pixel sideways indefinitely with the pad chasing him; and the pad bobbed
+  while he did not, sliding up through the soles of his feet. A settled frog
+  now rides the bob.
+
+### Changed
+- **Background tunes default to `"off"`.** An unattended playground goes quiet
+  — the attract animation runs in silence and the screen sleeps to black.
+  Music playing to an empty room is noise in the house. The four tunes are
+  untouched and still selectable via `music.tunes = "idle"` or `"always"`.
+
 ### Added — the bring-up faults became code, and the card can now move (2026-08-13)
 The four faults from the 2026-08-12 bring-up were written up but only as prose,
 which helps exactly once. They are now checks that run.

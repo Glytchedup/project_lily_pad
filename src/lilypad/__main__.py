@@ -184,8 +184,10 @@ def main(argv: list[str] | None = None) -> int:
     # exists so the probe can build a real surface.
     from .effects.animal_art import set_silhouettes
     from .effects.animals import prewarm
+    from .effects.shapes import prewarm as prewarm_shapes
     set_silhouettes(cfg.effects.silhouettes)
     prewarm(size[1])
+    prewarm_shapes(size[1])
 
     # Input backend
     if args.smoke:
