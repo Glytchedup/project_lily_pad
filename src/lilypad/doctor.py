@@ -53,10 +53,6 @@ class Check:
     detail: str
     remedy: str = ""
 
-    @property
-    def ok(self) -> bool:
-        return self.status in (PASS, SKIP)
-
 
 Runner = Callable[[Sequence[str]], "str | None"]
 

@@ -253,7 +253,3 @@ def clear_cache() -> None:
     rest of the session.
     """
     _NOTE_CACHE.clear()
-
-
-def melody_beats(tune: Tune) -> float:
-    return sum(beats for _, beats in tune.melody)

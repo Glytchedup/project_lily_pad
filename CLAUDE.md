@@ -31,9 +31,17 @@ Python 3.11+ package `lilypad/`, src-layout:
   trails, milestones, **screen sleep**), registry (action → effect factory), particles
   (+ additive glow, shaped fireworks), letters (outline/rainbow/googly eyes), numbers
   (countable objects), **shapes** (colours + shapes — see below), scenery (pond
-  background), bubbles, comet (key-hold rainbows), ambient/idle attract. The animal cast is three files: `animal_specs.py` is the cast
-  list (one data row per creature — edit this to recast a letter), `animal_art.py`
-  turns a row into a cached sprite, and `animals.py` owns who appears for which key,
+  background), bubbles, comet (key-hold rainbows), ambient/idle attract. The
+  animal cast is a small package. `animal_specs.py` is the cast list (one data
+  row per creature — edit this to recast a letter). `animal_art.py` is the
+  **front door**: the public sprite API and the caches, and the module everything
+  else imports from. The drawing behind it is split by purpose —
+  `animal_paint.py` (palette + primitives; depends on nothing),
+  `animal_farm.py` (the four hand-drawn front-on originals),
+  `animal_parts.py` (where ears, muzzles, tails and features attach),
+  `animal_body.py` (six builders, one per body plan), `animal_mini.py`
+  (countable objects). Imports run one way, into `animal_paint`; a back-edge
+  makes a cycle. And `animals.py` owns who appears for which key,
   what they sound like (`ANIMAL_VOICES`, imported by the audio engine so the two
   can't drift), and how they move. Every letter A–Z has a creature; six are
   dinosaurs, four of which live on F7–F12. Side-on animals **cross the screen**

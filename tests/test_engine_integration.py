@@ -8,7 +8,6 @@ import pygame
 from lilypad.effects.animals import PeekabooAnimal
 from lilypad.effects.base import EffectContext
 from lilypad.effects.bubbles import BubbleField
-from lilypad.effects.comet import Comet
 from lilypad.effects.engine import EffectEngine
 from lilypad.effects.registry import celebration, effects_for
 from lilypad.input.mapper import Action

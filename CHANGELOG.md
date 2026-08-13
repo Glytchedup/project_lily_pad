@@ -6,6 +6,48 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Changed — the animal cast is a package, not one 1,444-line file (2026-08-13)
+- **`animal_art.py` split five ways by purpose.** It was three times the size of
+  the next-largest effects file and doing four unrelated jobs. `animal_art.py`
+  stays the front door — the public sprite API and the caches — and re-exports
+  everything, so no caller changed. Behind it: `animal_paint.py` (palette and
+  primitives, depending on nothing), `animal_farm.py` (the four hand-drawn
+  front-on originals), `animal_parts.py` (where ears, muzzles, tails and
+  features attach), `animal_body.py` (six builders, one per body plan) and
+  `animal_mini.py` (countable objects). Imports run one way into
+  `animal_paint`, so the graph stays a DAG.
+- **Verified as a pure move**: all 734 sprites — every creature × 2 sizes × 3
+  poses × both facings × both art routes, plus the minis — hash byte-identical
+  before and after.
+- Dead code removed: `Check.ok`, `melody_beats`, `voice_for`, and the
+  `BONE_WHITE` / `FROG_GREEN_DARK` constants, none of which had a single caller.
+
+### Fixed — dev mode and the Pi disagreed about punctuation (2026-08-13)
+- **Every colour and shape key was dead in `--dev`.** pygame names punctuation
+  by the printed glyph (`,`), evdev by word (`COMMA`), and the mapper speaks
+  evdev — so the new keys worked on the Pi and fell through to a generic
+  sparkle on a desktop. The bug predates the feature; nothing had mapped
+  punctuation before, so nothing noticed. It matters because it quietly
+  breaks the "runs and tests on a desktop" promise this project develops
+  against. Numpad operators had the same problem in reverse: `[.]` stripped its
+  brackets onto the main-row `.`, making KPDOT and DOT the same key.
+- Guarded by parity tests that walk every pygame key constant and assert each
+  one the mapper knows is reachable from a desktop keyboard.
+
+### Added — tests for the hardware that had none (2026-08-13)
+- **evdev, razer_hid, the OpenRazer fallback and `make_backend` were at 0%, 54%,
+  0% and 19%.** Fakes for `evdev`, `usb.core`/`usb.util` and the OpenRazer
+  daemon bring all four to 98–100% on a machine with no Razer anything
+  attached. Overall coverage 89% → 94%; 1,118 tests.
+- Worth having beyond the line count: the Razer wire protocol (90-byte report,
+  XOR checksum, one frame-row per row then a display command), `make_backend`
+  refusing to silently fall through on an *explicit* choice, every
+  restore-on-close path surviving an already-unplugged device, and evdev
+  raising rather than continuing when it grabs nothing — a silent failure there
+  is a keyboard that still reaches the console.
+- The synthetic smoke backend now presses the colour and shape keys, so the
+  on-device self-test reaches every effect family.
+
 ### Added — colours and shapes (2026-08-13)
 - **The punctuation keys now name a colour or a shape out loud.** They were
   twelve identical sparkles, which is the same wasted-row problem the F-keys

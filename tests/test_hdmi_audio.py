@@ -1,9 +1,5 @@
 """Boot-time ALSA selection, including the card-swap cases it exists for."""
 
-from pathlib import Path
-
-import pytest
-
 from lilypad import hdmi_audio
 from lilypad.doctor import Connector
 from lilypad.hdmi_audio import HEADER, alsa_card_for, apply, desired_conf

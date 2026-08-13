@@ -32,7 +32,7 @@ import math
 import pygame
 
 from .base import EffectContext, random_bright
-from .particles import ParticleSystem, burst, confetti_rain
+from .particles import burst, confetti_rain
 
 #: Every shape a key can name. Deliberately the five a 2-year-old meets first —
 #: adding "pentagon" would be a word for the adult in the room, not the child.
