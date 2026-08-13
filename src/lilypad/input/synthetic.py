@@ -17,7 +17,14 @@ _KEYS = (
     [chr(c) for c in range(ord("A"), ord("Z") + 1)]
     + [str(d) for d in range(10)]
     + ["SPACE", "ENTER", "LEFT", "RIGHT", "UP", "DOWN",
-       "ESC", "F5", "BACKSPACE", "PLAYPAUSE", "LEFTMETA"]
+       "ESC", "F5", "F9", "BACKSPACE", "PLAYPAUSE", "LEFTMETA"]
+    # Colour and shape keys. The smoke run is the on-device self-test, so it
+    # has to reach every effect family — a whole subsystem that the automated
+    # check never touches is a subsystem nobody finds out about until a
+    # toddler does.
+    + ["GRAVE", "MINUS", "EQUAL", "LEFTBRACE", "RIGHTBRACE", "BACKSLASH",
+       "INSERT"]
+    + ["SEMICOLON", "APOSTROPHE", "COMMA", "DOT", "SLASH"]
 )
 
 
