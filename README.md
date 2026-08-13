@@ -153,10 +153,16 @@ keys pressed at once is a chord: a toddler lying on the keyboard still makes
 music. Two keys inside the chord window add the diatonic triad their lower note
 roots; a mash storm brings a wide open swell.
 
-When nobody has touched a key for `display.idle_timeout`, one of four original
-instrumental tunes fades in behind the attract animation and fades straight out
-on the next keypress. They are in the same key as the keys, so playing over
-them lands in tune.
+**When nobody is playing, it goes quiet.** After `display.idle_timeout` the
+attract animation runs in silence, and after `display.sleep_timeout` the screen
+goes black too. A playground that serenades an empty room is just noise in the
+house.
+
+There are four original instrumental tunes if you want them — set
+`music.tunes = "idle"` to have one fade in behind the attract animation and
+fade straight out on the next keypress, or `"always"` to loop. They are in the
+same key as the keys, so playing over them lands in tune. The default is
+`"off"`.
 
 ## The animals
 
@@ -210,7 +216,7 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | `audio.mute` | `false` | `true` = fully silent |
 | `audio.volume` | `0.8` | keypress cue level, 0–1 |
 | `music.key_notes` | `true` | every key plays a musical note |
-| `music.tunes` | `"idle"` | background tunes: `idle` \| `always` \| `off` |
+| `music.tunes` | `"off"` | background tunes: `off` \| `idle` \| `always` |
 | `music.tune_volume` | `0.45` | background music level, 0–1 |
 | `lighting.backend` | `"auto"` | `razer_hid` → `openrazer` → `mock` fallback chain |
 | `lighting.brightness` | `0.9` | keyboard LEDs, 0–1 |

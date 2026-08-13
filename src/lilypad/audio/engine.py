@@ -46,12 +46,12 @@ _GAINS = (
 class AudioEngine:
     def __init__(self, sounds_dir: str | Path, *, mute: bool = False,
                  volume: float = 0.8, autogen: bool = True,
-                 key_notes: bool = True, tunes: str = "idle",
+                 key_notes: bool = True, tunes: str = "off",
                  tune_volume: float = 0.45) -> None:
         self.mute = mute
         self.volume = volume
         self.key_notes = key_notes
-        self.tunes = tunes if tunes in _TUNE_MODES else "idle"
+        self.tunes = tunes if tunes in _TUNE_MODES else "off"
         self.tune_volume = tune_volume
         self.sounds_dir = Path(sounds_dir)
         self._sounds: dict[str, object] = {}

@@ -15,11 +15,13 @@ volume = 0.8
 # chord. false = no key notes (character cues and chimes only).
 key_notes = true
 # Background instrumental tunes:
+#   "off"    — never (default): an unattended playground goes quiet, which is
+#              what you want in a room where a toddler has wandered off. Music
+#              that plays to an empty room is just noise in the house.
 #   "idle"   — play only during the attract animation, fading out on the next
 #              keypress, so playing is never competing with backing music
 #   "always" — loop continuously
-#   "off"    — never
-tunes = "idle"
+tunes = "off"
 # Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
 # the level of the keypress cues.
 tune_volume = 0.45
