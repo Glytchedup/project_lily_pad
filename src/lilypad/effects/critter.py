@@ -281,6 +281,13 @@ def lily_pad_sprite(r: int) -> pygame.Surface:
 _PAD_SINK = 0.40
 _PAD_BOB = 0.05
 
+#: Downward acceleration, in screen heights per second squared.
+GRAVITY = 1.4
+
+#: How much faster than one frame of gravity a landing must be to count as a
+#: real bounce. Anything slower is Pip settling, not Pip hopping.
+REST_FACTOR = 1.5
+
 
 def pad_reach(r: int) -> float:
     """How far below the waterline the pad's lowest bob reaches."""
@@ -310,10 +317,16 @@ class _Pad:
         self.x += (target_x - self.x) * min(1.0, dt * self.FOLLOW)
 
     @property
+    def bob(self) -> float:
+        """Vertical float, as an offset. Exposed so a resting Pip can ride it —
+        a pad sliding up and down through the soles of his feet is worse than
+        no bob at all."""
+        return math.sin(self.age * 1.3) * self.r * _PAD_BOB
+
+    @property
     def y(self) -> float:
         sprite_h = lily_pad_sprite(self.r).get_height()
-        bob = math.sin(self.age * 1.3) * self.r * _PAD_BOB
-        return self.surface_y + sprite_h * _PAD_SINK + bob
+        return self.surface_y + sprite_h * _PAD_SINK + self.bob
 
     def draw(self, surface: pygame.Surface) -> None:
         sprite = lily_pad_sprite(self.r)
@@ -332,6 +345,9 @@ class Frog:
         self.vy = 0.0
         self.squash = 0.0        # 0..1, decays; squashes the draw
         self.age = 0.0
+        #: Settled on the pad with no vertical motion left. Drives whether he
+        #: rides the pad's float, and is the honest answer to "is he still?".
+        self.resting = False
         self.hop_impulse = self.h * 0.9
         self.just_bounced = False    # set each update; engine spawns ripples
         self._excited_until = 0.0    # celebration joy-hops while age < this
@@ -362,7 +378,7 @@ class Frog:
         self.age += dt
         self.squash = max(0.0, self.squash - dt * 3)
         # Gravity + drag
-        self.vy += self.h * 1.4 * dt
+        self.vy += self.h * GRAVITY * dt
         self.vx *= max(0.0, 1.0 - 1.2 * dt)
         self.x += self.vx * dt
         self.y += self.vy * dt
@@ -375,12 +391,20 @@ class Frog:
         if self.y < r:
             self.y, self.vy, bounced = r, abs(self.vy) * 0.85, True
         elif self.y > self.floor_y:
-            # A resting frog re-enters the floor by a sub-pixel every frame
-            # (gravity), so only a real impact counts as a bounce — otherwise
-            # he'd stay squashed forever and rain ripples while sitting still.
+            # A resting frog re-enters the floor every frame carrying exactly
+            # the speed gravity just gave him — which is proportional to dt.
+            #
+            # This test used to be a flat `impact < 40`, and that number is
+            # only true at one frame rate: at 1080p gravity adds 25/frame at
+            # 60 fps but 41/frame at 37 fps, so below ~37 fps a *sitting still*
+            # frog registered a fresh landing on every single frame, squashing
+            # and raining ripples forever. Exactly the frame rates a Pi drops
+            # to under load, and the engine's own degradation makes it more
+            # likely, not less. Compare against gravity's own step so the test
+            # means the same thing at 60 fps and at 10.
             impact = abs(self.vy)
             self.y = self.floor_y
-            if impact < 40:
+            if impact <= self.h * GRAVITY * dt * REST_FACTOR:
                 self.vy = 0.0
             else:
                 self.vy = -impact * 0.7
@@ -392,6 +416,13 @@ class Frog:
         if bounced:
             self.squash = 1.0
         self.just_bounced = bounced
+        # Drag is exponential and so never actually reaches zero: left alone,
+        # Pip slides a fraction of a pixel sideways forever and the pad chases
+        # him for the rest of the afternoon. Below a pixel a second, stop.
+        if abs(self.vx) < self.w * 0.001:
+            self.vx = 0.0
+        self.resting = (self.vy == 0.0 and self.vx == 0.0
+                        and self.y >= self.floor_y - 0.5)
         self.pad.update(dt, self.x)
         return True
 
@@ -411,9 +442,13 @@ class Frog:
             sprite = pygame.transform.scale(
                 sprite, (max(2, int(sw * (1 + 0.22 * self.squash))),
                          max(2, int(sh * (1 - 0.22 * self.squash)))))
+        # Once he is settled, ride the pad's float instead of hovering at a
+        # fixed height while it slides up and down through his feet. In flight
+        # the pad is irrelevant — he is nowhere near it.
+        y = self.y + (self.pad.bob if self.resting else 0.0)
         # Bottom-anchored so a squashing frog settles onto his pad rather than
         # shrinking toward his own middle.
-        rect = sprite.get_rect(midbottom=(int(self.x), int(self.y + self._feet)))
+        rect = sprite.get_rect(midbottom=(int(self.x), int(y + self._feet)))
         surface.blit(sprite, rect)
 
     def __len__(self) -> int:

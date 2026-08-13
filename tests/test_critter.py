@@ -242,3 +242,94 @@ def test_landing_on_his_pad_still_makes_a_splash():
             break
     else:
         pytest.fail("he landed back on his pad and made no ripples")
+
+
+# --------------------------------------------------------------------------
+# Resting — the frame-rate bug
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("fps", [60, 45, 37, 30, 20, 10])
+def test_he_sits_still_at_every_frame_rate(fps):
+    """A sitting frog must not register a landing every frame.
+
+    Gravity adds ``h * GRAVITY * dt`` per frame, so the old fixed
+    ``impact < 40`` threshold was only true above ~37 fps at 1080p. Below that
+    a frog doing nothing at all squashed and spawned ripples on every single
+    frame — and those are exactly the frame rates a loaded Pi drops to, which
+    is where it is most visible and least excusable.
+    """
+    frog = Frog((1920, 1080))
+    dt = 1.0 / fps
+    for _ in range(fps * 3):            # let him settle
+        frog.update(dt)
+    assert frog.resting
+
+    for _ in range(fps * 3):
+        frog.update(dt)
+        assert not frog.just_bounced, f"phantom landing at {fps} fps"
+        assert frog.squash == 0.0, f"phantom squash at {fps} fps"
+
+
+@pytest.mark.parametrize("fps", [60, 30, 10])
+def test_a_real_hop_still_bounces(fps):
+    """The rest test must not be so loose that genuine landings stop counting."""
+    frog = Frog((1920, 1080))
+    dt = 1.0 / fps
+    for _ in range(fps * 3):
+        frog.update(dt)
+
+    frog.vy = -frog.hop_impulse
+    for _ in range(fps * 4):
+        frog.update(dt)
+        if frog.just_bounced:
+            return
+    pytest.fail(f"a full-impulse hop never landed at {fps} fps")
+
+
+def test_resting_frog_holds_one_position():
+    frog = Frog(SIZE)
+    for _ in range(300):
+        frog.update(1 / 60)
+    ys, xs = [], []
+    for _ in range(120):
+        frog.update(1 / 60)
+        ys.append(frog.y)
+        xs.append(frog.x)
+    assert max(ys) - min(ys) == 0.0
+    assert max(xs) - min(xs) == 0.0
+
+
+def test_sideways_drift_actually_stops():
+    """Exponential drag never reaches zero, so without a floor Pip slides a
+    fraction of a pixel sideways forever and the pad chases him all day."""
+    frog = Frog(SIZE)
+    frog.shove((1, 0))
+    for _ in range(60 * 20):
+        frog.update(1 / 60)
+    assert frog.vx == 0.0
+    assert frog.resting
+
+
+def test_a_resting_frog_rides_the_pad():
+    """He floats *with* the pad rather than hovering while it slides through
+    his feet — which is what made sitting still look glitchy."""
+    frog = Frog(SIZE)
+    for _ in range(300):
+        frog.update(1 / 60)
+    assert frog.resting
+
+    drawn = []
+    for _ in range(240):
+        frog.update(1 / 60)
+        drawn.append(frog.y + frog.pad.bob)
+    # frog.y itself never moves; the drawn height varies by the bob alone.
+    assert max(drawn) - min(drawn) > 1.0
+
+
+def test_in_flight_he_ignores_the_pad_bob():
+    frog = Frog(SIZE)
+    for _ in range(300):
+        frog.update(1 / 60)
+    frog.shove((0, -1))
+    frog.update(1 / 60)
+    assert not frog.resting
