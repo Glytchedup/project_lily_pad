@@ -18,6 +18,7 @@ held 5 s) exits cleanly.
 | `BOM.md` | Hardware shopping list (Pi, PSU, SD, etc. — keyboard/monitor already owned) |
 | `README.md` | Flash-to-playing instructions for the Pi |
 | `VERIFY.md` | On-device verification checklist (no Pi was attached during development) |
+| `SWAP.md` | Protocol for moving the SD card from a test Pi to the Pi 5 |
 | `CHANGELOG.md` | Entry per meaningful change |
 
 ## Architecture (summary — details in PLAN.md)

@@ -259,8 +259,9 @@ you aren't waiting five minutes; put it back to `300.0` afterwards.
 
 ## 11. Card swap (test Pi → Pi 5)
 
-Only if you are developing on one Pi and deploying to another. The card itself
-travels fine — one Raspberry Pi OS image boots any model from Pi 3 up.
+Only if you are developing on one Pi and deploying to another. The full
+step-by-step lives in [SWAP.md](SWAP.md); this is the in-context checklist. The
+card itself travels fine — one Raspberry Pi OS image boots any model from Pi 3 up.
 
 - [ ] Shut down cleanly (`sudo poweroff`) before pulling the card; if the
       overlay is enabled it doesn't matter, but the habit is free.

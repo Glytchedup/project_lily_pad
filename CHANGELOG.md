@@ -6,6 +6,14 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added — SWAP.md, the test-Pi → Pi 5 migration protocol (2026-08-13)
+- A standalone procedure for moving the SD card from a test Pi to the Pi 5:
+  finalise the software (overlay off → `git pull` → `install.sh` → `poweroff`),
+  the physical swap (27 W USB-C, micro-HDMI, the near/far port trap), first-boot
+  validation driven by `--doctor` (board model, card-swap warning, EDID, the
+  `video=` pin, ALSA, regdom, power), re-stamping, and re-verifying performance
+  on the real target. Cross-linked from the CLAUDE.md doc table and VERIFY §11.
+
 ### Changed — the animal cast is a package, not one 1,444-line file (2026-08-13)
 - **`animal_art.py` split five ways by purpose.** It was three times the size of
   the next-largest effects file and doing four unrelated jobs. `animal_art.py`
