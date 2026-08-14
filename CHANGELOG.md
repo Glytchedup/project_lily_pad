@@ -6,6 +6,197 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added — a piano flourish when Pip celebrates (2026-08-13)
+- **Celebrations sound like celebrations now.** A new `flourish` cue in
+  `audio/synth.py` (~1.9 s, rendered to WAV at build time like everything
+  else): a quick run up the C pentatonic on the felt `PIANO` voice —
+  C5 D5 E5 G5 A5, crescendo — landing on a warm rolled C major chord with one
+  quiet C6 grace note on top. Strictly pentatonic pitch classes throughout, so
+  it can land on whatever key notes the child is holding; built for heavy
+  repeat (piano attacks only, a gesture rather than a melody, peak measured at
+  the chord bloom with a 0.06 onset — nothing startles). `CUE_VERSION` → 5, so
+  devices with an older sound set regenerate on next launch.
+- **It fires from the same signals that launch Pip's cheer**, so the hop and
+  the music land together: the milestone path via the existing
+  `consume_celebration()` poll, and mash storms via the same `mash_start`
+  dispatch (where it rides on top of the add9 swell — every flourish pitch
+  class over the swell's {C D G} is consonant by construction).
+- **Debounced.** `AudioEngine._play_flourish` carries a 2.5 s cooldown —
+  longer than the cue, so two can never sound at once even when a toddler
+  cycles in and out of mash mode — and plays on a reserved mixer channel, so
+  a retrigger *replaces* the flourish still ringing instead of stacking, and
+  a hail of key notes can never steal its channel mid-party.
+- **The flourish is the milestone sound now**; the old I–V–vi–IV cadence
+  fanfare survives as the fallback (pre-upgrade sound dirs, or
+  `music.flourish = false` in config — the new toggle, default on). Never
+  both at once: the cadence walks through G and F while the flourish holds C,
+  and layering them puts a B natural against a C. Still a discrete event cue
+  — the tunes stay off by default and the playground still goes quiet when
+  nobody is playing.
+- 8 new tests (cue length/onset/pentatonic material, cooldown debounce,
+  mash + milestone triggers, toggle + missing-cue fallbacks, config);
+  1,171 total.
+
+### Added — Reactive Pip: the frog is a co-player, not scenery (2026-08-13)
+- **Pip now reacts to what the child spawns.** The engine tells him where every
+  new effect appeared (`Frog.notice(pos, kind)`, fed by a small `_spawn_pos`
+  helper that reads the position effects already carry), and he answers three
+  ways. *Gaze-follow*: his pupils steer toward the most recent spawn and relax
+  back to neutral after ~2 s — quantised into eight `look_*` poses so gaze
+  stays inside the `(radius, pose)` sprite cache rather than becoming a
+  per-frame rebuild. *Tongue-catch*: a flick toward the spawn (a cached
+  open-mouth `tongue` pose; the stretch itself is four vector strokes, the one
+  continuous thing besides squash) plus a happy hop whose landing is a real
+  bounce — squash and splash ripples come for free. Flicks are rationed by a
+  0.7 s cooldown because a toddler mashes several keys a second; the gaze
+  tracks every one of them. *Celebration*: milestones and mash storms put him
+  in a `cheer` pose (arms up, happy-shut ∩ eyes, open mouth) with one launch
+  visibly bigger than any joy-hop; during a mash storm the engine rolls the
+  party forward every frame so he cheers exactly as long as the storm rages.
+- Effects that had no single "where" grew an honest one for his gaze:
+  `ParticleSystem` bursts record their origin, `CountAlong` and `ColorSplash`
+  the crown of their arc/row, `Fireworks` the patch of sky it bursts in.
+  Full-width confetti stays `None` — there is nothing to look *at*.
+- `critter.prewarm()` builds all 12 poses at boot alongside the animal and
+  shape prewarms, so his first glance doesn't hitch on a child's first key.
+- The sacred bits are untouched: poses cached by `(radius, pose)`, the
+  frame-rate-relative rest test, `floor_y`, and the union keyline. Arrows
+  still shove rather than notify — he *is* the action there, not the audience.
+- 40 new tests (gaze directions, flick rationing, hop-from-rest-only, tongue
+  reach cap, party lifecycle, per-kind notify coverage); 1,163 total.
+
+### Added — SWAP.md, the test-Pi → Pi 5 migration protocol (2026-08-13)
+- A standalone procedure for moving the SD card from a test Pi to the Pi 5:
+  finalise the software (overlay off → `git pull` → `install.sh` → `poweroff`),
+  the physical swap (27 W USB-C, micro-HDMI, the near/far port trap), first-boot
+  validation driven by `--doctor` (board model, card-swap warning, EDID, the
+  `video=` pin, ALSA, regdom, power), re-stamping, and re-verifying performance
+  on the real target. Cross-linked from the CLAUDE.md doc table and VERIFY §11.
+
+### Changed — the animal cast is a package, not one 1,444-line file (2026-08-13)
+- **`animal_art.py` split five ways by purpose.** It was three times the size of
+  the next-largest effects file and doing four unrelated jobs. `animal_art.py`
+  stays the front door — the public sprite API and the caches — and re-exports
+  everything, so no caller changed. Behind it: `animal_paint.py` (palette and
+  primitives, depending on nothing), `animal_farm.py` (the four hand-drawn
+  front-on originals), `animal_parts.py` (where ears, muzzles, tails and
+  features attach), `animal_body.py` (six builders, one per body plan) and
+  `animal_mini.py` (countable objects). Imports run one way into
+  `animal_paint`, so the graph stays a DAG.
+- **Verified as a pure move**: all 734 sprites — every creature × 2 sizes × 3
+  poses × both facings × both art routes, plus the minis — hash byte-identical
+  before and after.
+- Dead code removed: `Check.ok`, `melody_beats`, `voice_for`, and the
+  `BONE_WHITE` / `FROG_GREEN_DARK` constants, none of which had a single caller.
+
+### Fixed — dev mode and the Pi disagreed about punctuation (2026-08-13)
+- **Every colour and shape key was dead in `--dev`.** pygame names punctuation
+  by the printed glyph (`,`), evdev by word (`COMMA`), and the mapper speaks
+  evdev — so the new keys worked on the Pi and fell through to a generic
+  sparkle on a desktop. The bug predates the feature; nothing had mapped
+  punctuation before, so nothing noticed. It matters because it quietly
+  breaks the "runs and tests on a desktop" promise this project develops
+  against. Numpad operators had the same problem in reverse: `[.]` stripped its
+  brackets onto the main-row `.`, making KPDOT and DOT the same key.
+- Guarded by parity tests that walk every pygame key constant and assert each
+  one the mapper knows is reachable from a desktop keyboard.
+
+### Added — tests for the hardware that had none (2026-08-13)
+- **evdev, razer_hid, the OpenRazer fallback and `make_backend` were at 0%, 54%,
+  0% and 19%.** Fakes for `evdev`, `usb.core`/`usb.util` and the OpenRazer
+  daemon bring all four to 98–100% on a machine with no Razer anything
+  attached. Overall coverage 89% → 94%; 1,118 tests.
+- Worth having beyond the line count: the Razer wire protocol (90-byte report,
+  XOR checksum, one frame-row per row then a display command), `make_backend`
+  refusing to silently fall through on an *explicit* choice, every
+  restore-on-close path surviving an already-unplugged device, and evdev
+  raising rather than continuing when it grabs nothing — a silent failure there
+  is a keyboard that still reaches the console.
+- The synthetic smoke backend now presses the colour and shape keys, so the
+  on-device self-test reaches every effect family.
+
+### Added — colours and shapes (2026-08-13)
+- **The punctuation keys now name a colour or a shape out loud.** They were
+  twelve identical sparkles, which is the same wasted-row problem the F-keys
+  had before their back half became dinosaurs. Seven colour keys along the
+  top-right (red, orange, yellow, green, blue, purple, pink) and five shape
+  keys around the bottom-right (star, heart, circle, square, triangle), with
+  the numpad operators carrying the shapes too.
+- **The two halves are deliberately opposite**, which is the whole teaching
+  idea. A shape key shows one shape in a *random* colour, so the shape is the
+  only constant to generalise from; a colour key shows five *different* shapes
+  in one colour. A circle that is always blue teaches "blue circle" as a
+  single word.
+- Art is cel-shaded to match Pip — flat fill, one hard shadow crescent, a
+  gloss and a heavy keyline, drawn at 3x and scaled down for clean edges. The
+  keyline is load-bearing rather than decorative: five same-coloured shapes
+  sit side by side in a colour splash and would otherwise merge into a blob.
+- Every colour comes from one cached white master through a
+  `BLEND_RGB_MULT` tint, so the whole palette costs a small surface per
+  combination instead of a fresh supersampled render. 10 masters prewarm in
+  0.05 s at 1080p.
+- `build_voice` imports the colour and shape lists from the effects layer, the
+  same way the animal calls are imported, so a shape can never ship without a
+  word for it.
+
+### Fixed
+- **Pip no longer twitches on his pad at low frame rates.** The test for "was
+  that a real landing?" was a flat `impact < 40`, but the speed a *resting*
+  frog carries back into the floor is `h * GRAVITY * dt` — 25 per frame at
+  60 fps and 1080p, and 41 per frame at 37 fps. Below roughly 37 fps a frog
+  sitting perfectly still registered a fresh impact every single frame, so he
+  stayed squashed and rained ripples forever. That is exactly where a loaded
+  Pi lives, and the engine's own graceful degradation takes it there sooner.
+  The threshold is now gravity's own per-frame step. Two related twitches went
+  with it: exponential drag never reaches zero, so he slid a fraction of a
+  pixel sideways indefinitely with the pad chasing him; and the pad bobbed
+  while he did not, sliding up through the soles of his feet. A settled frog
+  now rides the bob.
+
+### Changed
+- **Background tunes default to `"off"`.** An unattended playground goes quiet
+  — the attract animation runs in silence and the screen sleeps to black.
+  Music playing to an empty room is noise in the house. The four tunes are
+  untouched and still selectable via `music.tunes = "idle"` or `"always"`.
+
+### Added — the bring-up faults became code, and the card can now move (2026-08-13)
+The four faults from the 2026-08-12 bring-up were written up but only as prose,
+which helps exactly once. They are now checks that run.
+
+- **`--doctor`** (`src/lilypad/doctor.py`, `python -m lilypad --doctor`). One
+  command, eleven checks, each printing the remedy next to the finding: board
+  model, card swap, HDMI EDID per connector, the ALSA card the live port maps
+  to, the `video=` pin, the Wi-Fi regulatory domain, `authorized_keys`, the root
+  overlay, under-voltage, the service, and the generated sounds. Exit 1 on any
+  failure. Touches neither the display nor the keyboard, so it is safe to run
+  while the playground is up, and `install.sh` finishes by running it.
+  Every filesystem root and command runner is injected, which is why 59 tests
+  cover it on a dev box with no Pi attached.
+- **`lilypad-audio.service`** (`src/lilypad/hdmi_audio.py`) re-derives
+  `/etc/asound.conf` at **every boot** from whichever connector returned EDID,
+  rather than install.sh baking an index in once. This fixes the second half of
+  fault 2 without a manual step, follows the cable if it moves ports, and
+  composes with `overlayroot` for free — the write lands in tmpfs and is
+  regenerated next boot. It refuses to touch a hand-written `asound.conf`, and
+  writes atomically via a temp file so a power pull can't leave half a config.
+- **The SD card is expected to move between Pis** — tested on one board, then
+  swapped into the Pi 5. Two settings are properties of the board rather than
+  the card: the HDMI ALSA index (now self-correcting, above) and the `video=`
+  pin, which can name a connector the new board hasn't got. That failure is a
+  black screen with nothing in any log, so `install.sh` stamps the board it ran
+  on and `--doctor` compares. A 32-bit-only board (Pi 1/2/Zero W) is reported
+  as such rather than looking like a bad flash.
+- `install.sh` gained phase 7: disable `NetworkManager-wait-online` (the app is
+  fully offline and the wait can stall boot for a minute), set the HDMI audio
+  card, write the hardware stamp, and self-check.
+
+### Changed
+- **README and VERIFY no longer say "use HDMI0" unconditionally.** That advice
+  is what sent the bring-up down fault 2 — on that board HDMI0 is the port with
+  dead DDC lines. Both now say to check EDID first and name the connector the
+  monitor is actually on. Troubleshooting gained rows for all four faults, and
+  VERIFY gained §10 (diagnostics) and §11 (card swap, test Pi → Pi 5).
+
 ### Verified on real hardware — first full on-device bring-up (2026-08-12)
 Installed and run end-to-end on the actual Pi 5 (1 GB, Rev 1.1) with the
 BlackWidow attached. Everything below is measured, not inferred. Four faults

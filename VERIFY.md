@@ -21,14 +21,36 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
   it says: the connector reads `disconnected`. A sleeping monitor often drops
   hot-plug detect, and then nothing can wake it because there's no signal to
   wake it with. Fix that permanently by appending
-  `video=HDMI-A-1:1920x1080@60D` to the single line in
-  `/boot/firmware/cmdline.txt` and rebooting — the Pi then drives HDMI0
-  unconditionally. Verified on a Pi 5: connector flips to `connected`, the app
-  acquires the screen on boot with zero waiting. **Do this before overlayfs.**
+  `video=<connector>:1920x1080@60D` to the single line in
+  `/boot/firmware/cmdline.txt` and rebooting. Verified on a Pi 5: connector
+  flips to `connected`, the app acquires the screen on boot with zero waiting.
+  **Do this before overlayfs.**
+- [ ] **Use the connector that has the monitor**, which is not automatically
+      HDMI0. Run `sudo /opt/lilypad/venv/bin/python -m lilypad --doctor` and
+      read the `HDMI EDID` line — it prints the byte count for every connector.
+      Pinning a mode onto a port with no monitor leaves the Pi driving nothing,
+      and this is also the setting that does **not** survive moving the card to
+      another Pi (see §11).
+- [ ] **Audio and resolution are the same test.** If there's no sound *and* the
+      resolution is stuck at 1024x768, that is one fault, not two: the link read
+      0 bytes of EDID, so the sink advertised no audio capability and ALSA
+      returns error 524. Confirm with
+      `wc -c < /sys/class/drm/card1-HDMI-A-1/edid` — zero is conclusive. Move
+      the cable to the other port and **reboot**; restarting the service will
+      not lift the app off 1024x768, because SDL inherits the mode the CRTC
+      negotiated at boot. On the bring-up board the *near* port (HDMI-A-1,
+      closest to USB-C) was the dead one.
 
 ## 2. Every key does something (visuals)
 
 - [ ] Letter keys → giant letter + burst; digits → count-along shapes.
+- [ ] **Colour keys** (`` ` `` `-` `=` `[` `]` `\` `Ins`) → five different
+      shapes in one colour, matching confetti, and the colour named aloud.
+- [ ] **Shape keys** (`;` `'` `,` `.` `/` and the numpad operators) → one huge
+      shape, named aloud, in a colour that **changes between presses**. Press
+      the same shape key five times and confirm the colour varies — a shape
+      welded to one colour is the bug this design exists to avoid.
+- [ ] Numpad digits still count (they share the `KP` prefix with shape keys).
 - [ ] Space → confetti; Enter → fireworks; arrows shove the frog.
 - [ ] Esc, Windows key, F-keys, PrtSc, media keys → each fires an effect
       and **nothing OS-ish happens** (no console, no VT switch, no blanking).
@@ -225,7 +247,41 @@ you aren't waiting five minutes; put it back to `300.0` afterwards.
       reboot) and yank power twice more: still boots clean every time.
 - [ ] `mount | grep overlay` confirms the root overlay is active.
 
-## 10. Sign-off
+## 10. Diagnostics
+
+- [ ] `sudo /opt/lilypad/venv/bin/python -m lilypad --doctor` reports no
+      faults. Run it once here even if everything already works, so you know
+      what a good report looks like before you ever need it in anger.
+- [ ] It is safe to run while the playground is up — confirm it does not
+      disturb the display, the keyboard grab, or the audio device.
+- [ ] Warnings are acceptable at this point (no `video=` pin yet, no overlay
+      yet); **failures are not**.
+
+## 11. Card swap (test Pi → Pi 5)
+
+Only if you are developing on one Pi and deploying to another. The full
+step-by-step lives in [SWAP.md](SWAP.md); this is the in-context checklist. The
+card itself travels fine — one Raspberry Pi OS image boots any model from Pi 3 up.
+
+- [ ] Shut down cleanly (`sudo poweroff`) before pulling the card; if the
+      overlay is enabled it doesn't matter, but the habit is free.
+- [ ] Boot the target Pi and run `--doctor` **first**, before anything else.
+- [ ] The `Card swap` line reports the move and names the old board. This is a
+      warning, not a fault — it's telling you which settings to re-check.
+- [ ] `Forced HDMI mode` still points at a connector this board actually has.
+      A Pi 5 has HDMI-A-1 and HDMI-A-2; a Pi 3 or Zero 2 W has only
+      HDMI-A-1, so a pin written on the Pi 5 can name a connector that doesn't
+      exist here — and the symptom is a black screen with nothing in any log.
+- [ ] Audio works without touching anything: `lilypad-audio.service` re-derives
+      the ALSA card at every boot. `journalctl -u lilypad-audio` shows the
+      connector it chose and the card it mapped to.
+- [ ] Re-run `sudo ./install.sh` on the target board to refresh the stamp
+      (and disable the overlay first if it's on).
+- [ ] Re-run §6 (performance) on the real target. An older test Pi is a valid
+      *functional* test but not a frame-rate one — the engine degrades
+      gracefully, so it will look fine and still be slower.
+
+## 12. Sign-off
 
 - [ ] Toddler test: hand over the keyboard, observe delight.
 

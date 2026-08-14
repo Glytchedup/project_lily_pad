@@ -5,9 +5,9 @@ import pytest
 from lilypad.audio.engine import ANIMAL_LETTERS, AudioEngine
 from lilypad.audio.music import CHORD_NAMES, NOTE_MIDIS
 from lilypad.audio.synth import (
-    BELL, SAMPLE_RATE, baa, boom, build_cues, celebration, chord_cue,
-    count_note, cues_stale, drum, mash_chord_cue, moo, note_cue, oink, quack,
-    render_note, whoosh,
+    BELL, FLOURISH_CHORD, FLOURISH_RUN, FLOURISH_SPARKLE, SAMPLE_RATE, baa,
+    boom, build_cues, celebration, chord_cue, count_note, cues_stale, drum,
+    flourish, mash_chord_cue, moo, note_cue, oink, quack, render_note, whoosh,
 )
 from lilypad.audio.tunes import TUNE_NAMES
 from lilypad.input.mapper import classify
@@ -20,7 +20,7 @@ def test_build_cues_writes_valid_wavs(tmp_path):
     paths = build_cues(tmp_path, tunes=False)
     names = {p.stem for p in paths}
     assert {"pop", "whoosh", "boom", "sparkle", "chord", "drum", "boing"} <= names
-    assert {"moo", "quack", "oink", "baa", "celebration"} <= names
+    assert {"moo", "quack", "oink", "baa", "celebration", "flourish"} <= names
     assert {f"count_{i}" for i in range(10)} <= names
     assert sum(1 for n in names if n.startswith("chime")) == 6
     for p in paths:
@@ -155,6 +155,31 @@ def test_celebration_is_a_long_loud_fanfare():
     assert max(abs(s) for s in samples) > 0.5
 
 
+def test_flourish_is_short_gentle_and_audible():
+    samples = flourish()
+    assert all(-1.0 <= s <= 1.0 for s in samples)
+    # Short — a toddler triggers it constantly, so it must never outstay a
+    # party — but unmistakably one when it lands.
+    assert 1.5 < len(samples) / SAMPLE_RATE < 2.3
+    assert max(abs(s) for s in samples) > 0.5
+    # Gentle onset: the run swells in over the piano attack, it doesn't slam.
+    head = samples[:int(SAMPLE_RATE * 0.003)]
+    assert max(abs(s) for s in head) < 0.3
+
+
+def test_flourish_material_is_strictly_pentatonic():
+    """The one structural promise: the flourish may land on top of whatever
+    key notes the child is holding, so every pitch class must be C major
+    pentatonic — consonance by construction, same as the key notes."""
+    from lilypad.audio.music import PENTATONIC
+    for midi in FLOURISH_RUN + FLOURISH_CHORD + (FLOURISH_SPARKLE,):
+        assert midi % 12 in PENTATONIC, midi
+    # And the shape is the celebration: a run that only climbs, resolving
+    # onto a C chord with the grace note on C too.
+    assert FLOURISH_RUN == tuple(sorted(set(FLOURISH_RUN)))
+    assert FLOURISH_CHORD[0] % 12 == 0 and FLOURISH_SPARKLE % 12 == 0
+
+
 def test_count_notes_are_in_range():
     for i in range(10):
         samples = count_note(i)
@@ -274,6 +299,73 @@ def test_mash_storm_gets_the_open_swell(tmp_path):
     assert _first_choices(played) == ["chord_mash"]
 
 
+# ------------------------------------------ audio engine (celebration flourish)
+
+class _FakeChannel:
+    def __init__(self):
+        self.played = []
+
+    def play(self, sound):
+        self.played.append(sound)
+
+
+def _flourish_recorder(tmp_path, **kwargs):
+    """A recorder whose flourish 'exists': the reserved channel records its
+    plays, ``_get`` serves the cue, and ``_play`` records any fallback."""
+    engine, played = _recorder(tmp_path, **kwargs)
+    channel = _FakeChannel()
+    engine._flourish_channel = channel
+    engine._get = lambda name: "flourish-cue" if name == "flourish" else None
+    return engine, played, channel
+
+
+def test_celebration_is_the_piano_flourish_now(tmp_path):
+    engine, played, channel = _flourish_recorder(tmp_path)
+    engine.on_celebration(now=0.0)
+    assert channel.played == ["flourish-cue"]
+    # Never both at once: the legacy cadence walks through G and F while the
+    # flourish holds C, and layering them puts a B natural against a C.
+    assert played == []
+
+
+def test_flourish_cooldown_blocks_rapid_retriggers(tmp_path):
+    from lilypad.audio.engine import FLOURISH_COOLDOWN
+    engine, played, channel = _flourish_recorder(tmp_path)
+    engine.on_celebration(now=0.0)
+    engine.on_celebration(now=FLOURISH_COOLDOWN * 0.4)
+    assert len(channel.played) == 1     # debounced, not stacked...
+    assert played == []                 # ...and no fanfare pile-on instead
+    engine.on_celebration(now=FLOURISH_COOLDOWN + 0.1)
+    assert len(channel.played) == 2     # the next party sounds again
+
+
+def test_mash_storm_fires_the_flourish_over_the_swell(tmp_path):
+    from lilypad.input.mapper import Action
+    engine, played, channel = _flourish_recorder(tmp_path)
+    engine.on_action(Action(kind="mash_start"))
+    assert _first_choices(played) == ["chord_mash"]   # the swell still fires
+    assert len(channel.played) == 1
+    # Toddlers cycle in and out of mash mode in under a second: a second
+    # storm inside the cooldown must not stack a second flourish.
+    engine.on_action(Action(kind="mash_start"))
+    assert len(channel.played) == 1
+
+
+def test_flourish_toggled_off_restores_the_legacy_fanfare(tmp_path):
+    engine, played, channel = _flourish_recorder(tmp_path, flourish=False)
+    engine.on_celebration(now=0.0)
+    assert channel.played == []
+    assert played == [("celebration", "chord")]
+
+
+def test_missing_flourish_cue_falls_back_to_the_legacy_fanfare(tmp_path):
+    # A pre-upgrade sounds dir: no flourish.wav on disk, regeneration failed
+    # (read-only /opt). The milestone must still make its old sound.
+    engine, played = _recorder(tmp_path)
+    engine.on_celebration(now=0.0)
+    assert played == [("celebration", "chord")]
+
+
 def test_numbers_use_the_count_ladder_not_the_key_note(tmp_path):
     engine, played = _recorder(tmp_path)
     engine.on_action(classify("3"))
@@ -302,7 +394,8 @@ def test_every_key_makes_some_sound(tmp_path):
 # ------------------------------------------------- audio engine (background)
 
 def test_set_idle_starts_and_stops_the_tune_once_per_transition(tmp_path):
-    engine = AudioEngine(tmp_path, mute=False, autogen=False)
+    # Explicit: "off" is the default now, so idle mode has to be asked for.
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="idle")
     calls: list[str] = []
     engine._start_tune = lambda: calls.append("start")
     engine._stop_tune = lambda: calls.append("stop")

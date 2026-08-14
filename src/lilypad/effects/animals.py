@@ -121,11 +121,6 @@ def animal_for_letter(letter: str) -> str | None:
     return ANIMAL_LETTERS.get(letter.upper()[:1])
 
 
-def voice_for(name: str) -> str | None:
-    """The audio cue name for a creature, or None if it is a quiet one."""
-    return ANIMAL_VOICES.get(name)
-
-
 # ---------------------------------------------------------------------------
 # Shared bits
 # ---------------------------------------------------------------------------

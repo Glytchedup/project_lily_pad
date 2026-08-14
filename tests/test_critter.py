@@ -242,3 +242,334 @@ def test_landing_on_his_pad_still_makes_a_splash():
             break
     else:
         pytest.fail("he landed back on his pad and made no ripples")
+
+
+# --------------------------------------------------------------------------
+# Resting — the frame-rate bug
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("fps", [60, 45, 37, 30, 20, 10])
+def test_he_sits_still_at_every_frame_rate(fps):
+    """A sitting frog must not register a landing every frame.
+
+    Gravity adds ``h * GRAVITY * dt`` per frame, so the old fixed
+    ``impact < 40`` threshold was only true above ~37 fps at 1080p. Below that
+    a frog doing nothing at all squashed and spawned ripples on every single
+    frame — and those are exactly the frame rates a loaded Pi drops to, which
+    is where it is most visible and least excusable.
+    """
+    frog = Frog((1920, 1080))
+    dt = 1.0 / fps
+    for _ in range(fps * 3):            # let him settle
+        frog.update(dt)
+    assert frog.resting
+
+    for _ in range(fps * 3):
+        frog.update(dt)
+        assert not frog.just_bounced, f"phantom landing at {fps} fps"
+        assert frog.squash == 0.0, f"phantom squash at {fps} fps"
+
+
+@pytest.mark.parametrize("fps", [60, 30, 10])
+def test_a_real_hop_still_bounces(fps):
+    """The rest test must not be so loose that genuine landings stop counting."""
+    frog = Frog((1920, 1080))
+    dt = 1.0 / fps
+    for _ in range(fps * 3):
+        frog.update(dt)
+
+    frog.vy = -frog.hop_impulse
+    for _ in range(fps * 4):
+        frog.update(dt)
+        if frog.just_bounced:
+            return
+    pytest.fail(f"a full-impulse hop never landed at {fps} fps")
+
+
+def test_resting_frog_holds_one_position():
+    frog = Frog(SIZE)
+    for _ in range(300):
+        frog.update(1 / 60)
+    ys, xs = [], []
+    for _ in range(120):
+        frog.update(1 / 60)
+        ys.append(frog.y)
+        xs.append(frog.x)
+    assert max(ys) - min(ys) == 0.0
+    assert max(xs) - min(xs) == 0.0
+
+
+def test_sideways_drift_actually_stops():
+    """Exponential drag never reaches zero, so without a floor Pip slides a
+    fraction of a pixel sideways forever and the pad chases him all day."""
+    frog = Frog(SIZE)
+    frog.shove((1, 0))
+    for _ in range(60 * 20):
+        frog.update(1 / 60)
+    assert frog.vx == 0.0
+    assert frog.resting
+
+
+def test_a_resting_frog_rides_the_pad():
+    """He floats *with* the pad rather than hovering while it slides through
+    his feet — which is what made sitting still look glitchy."""
+    frog = Frog(SIZE)
+    for _ in range(300):
+        frog.update(1 / 60)
+    assert frog.resting
+
+    drawn = []
+    for _ in range(240):
+        frog.update(1 / 60)
+        drawn.append(frog.y + frog.pad.bob)
+    # frog.y itself never moves; the drawn height varies by the bob alone.
+    assert max(drawn) - min(drawn) > 1.0
+
+
+def test_in_flight_he_ignores_the_pad_bob():
+    frog = Frog(SIZE)
+    for _ in range(300):
+        frog.update(1 / 60)
+    frog.shove((0, -1))
+    frog.update(1 / 60)
+    assert not frog.resting
+
+
+# --------------------------------------------------------------------------
+# Reactions — gaze, tongue, party
+# --------------------------------------------------------------------------
+
+def settled(frames=300):
+    """A frog at rest with age 5.0 — comfortably outside any blink window."""
+    frog = Frog(SIZE)
+    for _ in range(frames):
+        frog.update(1 / 60)
+    assert frog.resting
+    return frog
+
+
+def run(frog, seconds):
+    for _ in range(int(seconds * 60)):
+        frog.update(1 / 60)
+
+
+# ---------------------------------------------------------------- gaze-follow
+def test_he_looks_at_what_just_spawned():
+    frog = settled()
+    frog.notice((50.0, 50.0), "letter")
+    run(frog, 0.5)                      # let the tongue flick finish first
+    assert frog.pose == "look_ul"
+
+
+@pytest.mark.parametrize("target, expected", [
+    ("left", "look_l"),
+    ("right", "look_r"),
+    ("up", "look_u"),
+    ("down", "look_d"),
+])
+def test_his_pupils_steer_the_right_way(target, expected):
+    frog = settled()
+    eye_y = frog.y - frog.r
+    pos = {
+        "left": (0.0, eye_y),
+        "right": (float(SIZE[0]), eye_y),
+        "up": (frog.x, 0.0),
+        "down": (frog.x, float(SIZE[1])),
+    }[target]
+    frog.notice(pos)
+    run(frog, 0.5)
+    assert frog.pose == expected
+
+
+def test_gaze_relaxes_back_to_neutral():
+    frog = settled()
+    frog.notice((50.0, 50.0))
+    run(frog, 0.5)
+    assert frog.pose.startswith("look")
+    run(frog, 2.2)                      # GAZE_HOLD expires
+    assert frog.pose in ("idle", "blink")
+
+
+def test_a_spawn_on_top_of_him_does_not_cross_his_eyes():
+    """Looking "at" something closer than his own face reads as a glitch."""
+    frog = settled()
+    frog.notice((frog.x + frog.r * 0.5, frog.y))
+    run(frog, 0.5)
+    assert not frog.pose.startswith("look")
+
+
+def test_look_poses_are_cached_like_any_other():
+    first = frog_sprite(40, "look_l")
+    assert frog_sprite(40, "look_l") is first
+    assert frog_sprite(40, "look_r") is not first
+
+
+def test_look_poses_actually_move_the_pupils():
+    def px(s):
+        return [s.get_at((x, y)) for x in range(0, s.get_width(), 2)
+                for y in range(0, s.get_height(), 2)]
+    left, right, idle = (px(frog_sprite(48, p)) for p in ("look_l", "look_r", "idle"))
+    assert left != right, "left and right gaze are the same picture"
+    assert left != idle, "gazing left looks no different from idle"
+
+
+# --------------------------------------------------------------- tongue-catch
+def test_a_spawn_flicks_his_tongue():
+    frog = settled()
+    frog.notice((100.0, 100.0))
+    assert frog.pose == "tongue"
+    run(frog, 0.5)
+    assert frog.pose != "tongue", "the tongue never came back in"
+
+
+def test_tongue_flicks_are_rationed():
+    """The gaze tracks every keypress; the tongue is on a cooldown, because a
+    toddler mashes several keys a second and a machine-gun tongue reads as a
+    seizure, not a catch."""
+    frog = settled()
+    frog.notice((100.0, 100.0))
+    run(frog, 0.4)                      # flick done, cooldown still running
+    frog.notice((800.0, 100.0))
+    assert frog.pose != "tongue"
+    run(frog, 0.4)                      # cooldown expired
+    frog.notice((800.0, 100.0))
+    assert frog.pose == "tongue"
+
+
+def test_a_catch_comes_with_a_happy_hop():
+    frog = settled()
+    floor = frog.y
+    frog.notice((100.0, 100.0))
+    assert frog.vy < 0, "no hop"
+    run(frog, 0.15)
+    assert frog.y < floor, "he never left the pad"
+    run(frog, 3.0)
+    assert frog.resting, "he never settled back down"
+
+
+def test_the_hop_only_fires_from_rest():
+    """Mid-flight from an arrow shove, a spawn must not add a boost — the
+    tongue and gaze still react, but the arrow-key physics stay untouched."""
+    frog = settled()
+    frog.shove((0, -1))
+    run(frog, 0.1)
+    vy_before = frog.vy
+    frog.notice((100.0, 100.0))
+    assert frog.vy == vy_before
+
+
+def test_the_tongue_is_actually_drawn():
+    frog = settled()
+    frog.notice((frog.x, 50.0))         # straight up
+    for _ in range(6):                  # ~0.1 s: full extension
+        frog.update(1 / 60)
+    surf = pygame.Surface(SIZE)
+    surf.fill((0, 0, 0))
+    frog.draw(surf)
+    from lilypad.effects.critter import TONGUE
+    hits = sum(1 for y in range(150, 420, 2)
+               for x in range(int(frog.x) - 6, int(frog.x) + 7, 2)
+               if surf.get_at((x, y))[:3] == TONGUE)
+    assert hits > 0, "no tongue pixels between his mouth and the target"
+
+
+def test_the_tongue_reach_is_capped():
+    """A far-corner spawn gets a stretch *toward* it, not a screen-crossing
+    lick — past a certain length it stops reading as a tongue at all."""
+    frog = settled()
+    frog.notice((0.0, 0.0))
+    for _ in range(6):
+        frog.update(1 / 60)
+    surf = pygame.Surface(SIZE)
+    surf.fill((0, 0, 0))
+    frog.draw(surf)
+    from lilypad.effects.critter import TONGUE
+    near_corner = sum(1 for y in range(0, 100, 2) for x in range(0, 100, 2)
+                      if surf.get_at((x, y))[:3] == TONGUE)
+    anywhere = sum(1 for y in range(0, SIZE[1], 3) for x in range(0, SIZE[0], 3)
+                   if surf.get_at((x, y))[:3] == TONGUE)
+    assert anywhere > 0, "the tongue was not drawn at all"
+    assert near_corner == 0, "the tongue reached all the way to the corner"
+
+
+# ---------------------------------------------------------------- celebration
+def test_celebrate_launches_an_extra_high_hop():
+    frog = settled()
+    frog.celebrate()
+    assert frog.pose == "cheer"
+    # Bigger than the 0.8× joy-hops that follow — the party *opens* big.
+    assert frog.vy < -frog.hop_impulse * 0.8
+
+
+def test_celebrate_never_cancels_a_faster_rise():
+    frog = settled()
+    frog.shove((0, -2))                 # already rocketing upward
+    rising = frog.vy
+    frog.celebrate()
+    assert frog.vy <= rising
+
+
+def test_the_cheer_owns_the_mouth():
+    """A party mid-flick retracts the tongue, and spawns during the party
+    don't restart it — cheer and tongue share the one mouth."""
+    frog = settled()
+    frog.notice((100.0, 100.0))
+    assert frog.pose == "tongue"
+    frog.celebrate()
+    assert frog.pose == "cheer"
+    frog.notice((800.0, 100.0))
+    assert frog.pose == "cheer"
+
+
+def test_keep_celebrating_extends_without_relaunching():
+    frog = settled()
+    frog.celebrate(0.5)
+    while frog.vy <= 0:                 # ride the launch to the apex
+        frog.update(1 / 60)
+    falling = frog.vy
+    frog.keep_celebrating(2.0)
+    assert frog.vy == falling, "the extension re-fired the launch"
+    assert frog.pose == "cheer"
+
+
+def test_the_party_ends():
+    frog = settled()
+    frog.celebrate(0.5)
+    run(frog, 7.0)                      # the mega-launch takes a while to decay
+    assert frog.pose != "cheer"
+    assert frog.resting
+
+
+def test_cheer_reads_differently_from_idle():
+    idle = frog_sprite(48, "idle")
+    cheer = frog_sprite(48, "cheer")
+    assert idle.get_size() == cheer.get_size()
+    diff = sum(1 for x in range(0, idle.get_width(), 2)
+               for y in range(0, idle.get_height(), 2)
+               if idle.get_at((x, y)) != cheer.get_at((x, y)))
+    assert diff > 0
+
+
+# -------------------------------------------------------------------- prewarm
+@pytest.mark.parametrize("pose", critter.POSES)
+def test_every_pose_builds_in_the_same_box(pose):
+    """Same geometry, different dressing — a pose that changed the sprite box
+    would make him visibly jump when it was swapped in."""
+    assert frog_sprite(40, pose).get_size() == frog_sprite(40, "idle").get_size()
+
+
+def test_prewarm_builds_every_pose_and_is_idempotent():
+    count = critter.prewarm(SIZE[1])
+    assert count == len(critter.POSES)
+    built = len(critter._sprite_cache)
+    assert built == len(critter.POSES)
+    assert critter.prewarm(SIZE[1]) == count
+    assert len(critter._sprite_cache) == built
+
+
+def test_prewarm_uses_the_radius_a_frog_will_ask_for():
+    """A prewarm at the wrong radius is worse than none: double the work and
+    the first-glance hitch survives anyway."""
+    critter.prewarm(SIZE[1])
+    frog = Frog(SIZE)
+    assert (frog.r, "cheer") in critter._sprite_cache

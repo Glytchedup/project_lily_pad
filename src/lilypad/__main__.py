@@ -131,7 +131,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--smoke", type=float, metavar="SECONDS",
                         help="self-test: synthesize random key events for N "
                              "seconds, then exit cleanly")
+    parser.add_argument("--doctor", action="store_true",
+                        help="diagnose the display, audio, network and "
+                             "deployment state, then exit")
     args = parser.parse_args(argv)
+
+    # Before anything imports pygame or touches the display: the doctor has to
+    # be runnable while the service is up, and on a machine with no screen.
+    if args.doctor:
+        from .doctor import format_report, run_all
+        report = run_all()
+        print(format_report(report), end="")
+        return 1 if report.failed else 0
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -173,8 +184,12 @@ def main(argv: list[str] | None = None) -> int:
     # exists so the probe can build a real surface.
     from .effects.animal_art import set_silhouettes
     from .effects.animals import prewarm
+    from .effects.critter import prewarm as prewarm_frog
+    from .effects.shapes import prewarm as prewarm_shapes
     set_silhouettes(cfg.effects.silhouettes)
     prewarm(size[1])
+    prewarm_shapes(size[1])
+    prewarm_frog(size[1])
 
     # Input backend
     if args.smoke:
@@ -199,7 +214,8 @@ def main(argv: list[str] | None = None) -> int:
                         mute=cfg.audio.mute, volume=cfg.audio.volume,
                         key_notes=cfg.music.key_notes,
                         tunes=cfg.music.tunes,
-                        tune_volume=cfg.music.tune_volume)
+                        tune_volume=cfg.music.tune_volume,
+                        flourish=cfg.music.flourish)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,

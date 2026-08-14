@@ -12,6 +12,7 @@ short-circuits everything.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from ..input.mapper import Action
@@ -29,9 +30,16 @@ from ..effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES  # noqa: E402
 #: note. Numbers are excluded because the counting ladder already gives them a
 #: pitch; the synthetic kinds (chord, mash_*, hold_*) are excluded because the
 #: press that produced them has already played its note.
-_NOTE_KINDS = frozenset({"letter", "space", "arrow", "enter", "special", "sparkle"})
+_NOTE_KINDS = frozenset({"letter", "space", "arrow", "enter", "special", "sparkle",
+                         "shape", "color"})
 
 _TUNE_MODES = ("idle", "always", "off")
+
+#: Seconds between celebration flourishes. Milestones already carry their own
+#: 10 s cooldown, but mash storms don't: a toddler cycling in and out of mash
+#: mode several times a second would otherwise stack flourish on flourish into
+#: mush. Longer than the cue itself (~1.9 s), so two can never sound at once.
+FLOURISH_COOLDOWN = 2.5
 
 #: Relative level per cue family. Key notes sit *under* the spoken letter name
 #: rather than masking it — the voice is the part with teaching value.
@@ -46,13 +54,14 @@ _GAINS = (
 class AudioEngine:
     def __init__(self, sounds_dir: str | Path, *, mute: bool = False,
                  volume: float = 0.8, autogen: bool = True,
-                 key_notes: bool = True, tunes: str = "idle",
-                 tune_volume: float = 0.45) -> None:
+                 key_notes: bool = True, tunes: str = "off",
+                 tune_volume: float = 0.45, flourish: bool = True) -> None:
         self.mute = mute
         self.volume = volume
         self.key_notes = key_notes
-        self.tunes = tunes if tunes in _TUNE_MODES else "idle"
+        self.tunes = tunes if tunes in _TUNE_MODES else "off"
         self.tune_volume = tune_volume
+        self.flourish = flourish
         self.sounds_dir = Path(sounds_dir)
         self._sounds: dict[str, object] = {}
         self._chime_cycle = 0
@@ -60,6 +69,8 @@ class AudioEngine:
         self._tune_playing = False
         self._idle = False
         self._enabled = False
+        self._last_flourish = float("-inf")
+        self._flourish_channel = None
         if mute:
             log.info("audio: muted by config")
             return
@@ -71,6 +82,15 @@ class AudioEngine:
         except Exception as exc:              # noqa: BLE001 — silence, never crash
             log.warning("audio unavailable (%s) — running silent", exc)
             return
+        try:
+            # One reserved channel for the celebration flourish: a retrigger
+            # *replaces* the flourish still sounding instead of stacking over
+            # it, and a hail of key notes can never steal its channel
+            # mid-party. Everything else keeps the remaining 15.
+            pygame.mixer.set_reserved(1)
+            self._flourish_channel = pygame.mixer.Channel(0)
+        except Exception:                     # noqa: BLE001 — shares the pool then
+            self._flourish_channel = None
         if autogen:
             from .synth import build_cues, cues_stale
             if cues_stale(self.sounds_dir):
@@ -204,6 +224,11 @@ class AudioEngine:
             # the same cue fire twice at double amplitude.
             count = max(1, min(action.count, 10))
             self._play(f"count_{count - 1}")
+        elif kind in ("shape", "color"):
+            # The name is the whole point of these keys. "pop" is the fallback
+            # for a sounds dir generated before the vocabulary existed, or one
+            # built on a box with no espeak-ng.
+            self._play(f"voice/{action.letter}", "pop")
         elif kind == "space":
             self._play("whoosh")
         elif kind == "enter":
@@ -216,6 +241,13 @@ class AudioEngine:
             self._play(f"chord_{chord_for_keys(action.keys)}", "chord")
         elif kind == "mash_start":
             self._play("chord_mash", "chord")
+            # A mash storm is a party: the same action dispatch launches Pip
+            # into his cheer over in the effects engine, so the flourish lands
+            # together with his jump. It rides *on top of* the add9 swell —
+            # every flourish pitch class over the swell's {C D G} is consonant
+            # by construction — and the cooldown inside keeps a toddler
+            # cycling in and out of mash mode from stacking it into noise.
+            self._play_flourish()
         elif kind == "special":
             if action.letter == "dino":
                 # One roar for every dinosaur: the effect layer picks which one
@@ -232,9 +264,42 @@ class AudioEngine:
         elif kind == "sparkle":
             self._play("sparkle")
 
-    def on_celebration(self) -> None:
-        """Milestone mega-party fanfare; called by the effects engine's main
-        loop. Falls back to the plain chord if the cue is missing."""
+    def _play_flourish(self, now: float | None = None) -> bool:
+        """The celebration piano flourish, debounced.
+
+        Returns False when the flourish cannot play at all — toggled off,
+        muted, cue missing from a pre-upgrade sounds dir, no mixer — so a
+        caller can fall back. Returns True when it fired *or* when the
+        cooldown swallowed it: either way a flourish is (still) sounding, the
+        party has its music, and nothing else should pile on.
+        """
+        if not self.flourish or self.mute:
+            return False
+        sound = self._get("flourish")
+        if sound is None:
+            return False
+        now = time.monotonic() if now is None else now
+        if now - self._last_flourish < FLOURISH_COOLDOWN:
+            return True
+        self._last_flourish = now
+        if self._flourish_channel is not None:
+            self._flourish_channel.play(sound)
+        else:
+            sound.play()
+        return True
+
+    def on_celebration(self, now: float | None = None) -> None:
+        """Milestone mega-party; called by the main loop when the effects
+        engine signals one (the same signal that launches Pip's cheer).
+
+        The piano flourish *is* the celebration sound now. The legacy cadence
+        fanfare survives only as the fallback — a pre-upgrade cue set, or the
+        flourish toggled off in config. Never both at once: the old cadence
+        walks through G and F while the flourish holds C, and layering them
+        puts a B natural against a C.
+        """
+        if self._play_flourish(now):
+            return
         self._play("celebration", "chord")
 
     def close(self) -> None:

@@ -16,8 +16,15 @@ class AudioConfig:
 @dataclass(frozen=True)
 class MusicConfig:
     key_notes: bool = True       # every key plays a musical note
-    tunes: str = "idle"          # idle | always | off
+    # off | idle | always. Off by default: an unattended playground should go
+    # quiet rather than serenade an empty room. The tunes are still there for
+    # anyone who wants them.
+    tunes: str = "off"
     tune_volume: float = 0.45    # background music level, independent of cues
+    # The short piano flourish when Pip celebrates (milestones, mash storms).
+    # A discrete event cue, not background music — the playground still goes
+    # quiet when nobody is playing. false restores the legacy fanfare cue.
+    flourish: bool = True
 
 
 @dataclass(frozen=True)
@@ -90,7 +97,7 @@ def load(path: str | Path | None = None) -> Config:
             f"lighting.backend must be one of {sorted(_VALID_BACKENDS)}, got {backend!r}"
         )
 
-    tune_mode = str(music.get("tunes", "idle"))
+    tune_mode = str(music.get("tunes", MusicConfig.tunes))
     if tune_mode not in _VALID_TUNE_MODES:
         raise ValueError(
             f"music.tunes must be one of {sorted(_VALID_TUNE_MODES)}, got {tune_mode!r}"
@@ -113,6 +120,7 @@ def load(path: str | Path | None = None) -> Config:
             key_notes=bool(music.get("key_notes", True)),
             tunes=tune_mode,
             tune_volume=_clamp(float(music.get("tune_volume", 0.45)), 0.0, 1.0),
+            flourish=bool(music.get("flourish", True)),
         ),
         display=DisplayConfig(
             dev_window=(int(dev_window[0]), int(dev_window[1])),

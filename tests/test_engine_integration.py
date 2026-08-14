@@ -8,7 +8,6 @@ import pygame
 from lilypad.effects.animals import PeekabooAnimal
 from lilypad.effects.base import EffectContext
 from lilypad.effects.bubbles import BubbleField
-from lilypad.effects.comet import Comet
 from lilypad.effects.engine import EffectEngine
 from lilypad.effects.registry import celebration, effects_for
 from lilypad.input.mapper import Action
@@ -142,6 +141,59 @@ def test_frog_pops_bubbles():
     e.effects.append(field)
     e.update(1 / 60, now=0.0)
     assert len(field.bubbles) < n
+
+
+# ------------------------------------------------------------- reactive Pip
+
+def test_spawns_tell_pip_where_to_look():
+    e = make_engine()
+    assert e.frog.last_noticed is None
+    e.spawn(Action(kind="letter", key="Q", letter="Q"), now=0.0)
+    assert e.frog.last_noticed == "letter"
+    tx, ty = e.frog._gaze_target
+    assert 0 <= tx <= SIZE[0] and 0 <= ty <= SIZE[1]
+
+
+def test_every_registry_kind_gives_pip_a_target():
+    """The product invariant is that every key visibly does something; Pip
+    reacting is now part of "something", so no registry kind may be mute."""
+    for action in (Action(kind="letter", key="Q", letter="Q"),
+                   Action(kind="number", key="3", count=3),
+                   Action(kind="shape", key="[", letter="circle"),
+                   Action(kind="color", key="]", letter="red"),
+                   Action(kind="space", key="SPACE"),
+                   Action(kind="enter", key="ENTER"),
+                   Action(kind="chord", keys=("A", "B")),
+                   Action(kind="sparkle", key="F1"),
+                   Action(kind="special", key="ESC", letter="swirl")):
+        e = make_engine()
+        e.spawn(action, now=0.0)
+        assert e.frog.last_noticed == action.kind, f"{action.kind} was mute"
+
+
+def test_arrow_shoves_do_not_hijack_his_gaze():
+    """Arrows are the child steering Pip himself — he is the action, not the
+    audience, so there is nothing for him to look at."""
+    e = make_engine()
+    e.spawn(Action(kind="arrow", key="LEFT", direction=(-1, 0)), now=0.0)
+    assert e.frog.last_noticed is None
+
+
+def test_milestone_party_launches_pip():
+    e = make_engine(milestone_every=5)
+    run(e, 3.0)                          # let him settle on the pad first
+    for i in range(5):
+        e.spawn(Action(kind="sparkle", key=f"K{i}"), now=0.0)
+    # The party launch is bigger than any happy-hop a plain spawn produces.
+    assert e.frog.vy < -e.frog.hop_impulse
+
+
+def test_mash_storm_keeps_pip_partying():
+    e = make_engine()
+    e.spawn(Action(kind="mash_start"), now=0.0)
+    assert e.frog._excited_until > e.frog.age
+    run(e, 2.0)                          # no mash_end: the storm still rages
+    assert e.frog._excited_until > e.frog.age, "the party fizzled mid-storm"
 
 
 # ----------------------------------------------------------------- drawing

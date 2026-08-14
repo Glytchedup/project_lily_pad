@@ -39,7 +39,8 @@ _TAU = math.tau
 #: playing the old ones forever and a retune never reaches anybody.
 #:   1 = original cue set · 2 = softened cues · 3 = musical notes/chords/tunes
 #:   4 = the full A-Z animal cast + dinosaur calls
-CUE_VERSION = 4
+#:   5 = the celebration piano flourish
+CUE_VERSION = 5
 
 # Pentatonic-ish happy scale for chimes (C major pentatonic, one octave up)
 _SCALE_HZ = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50]
@@ -383,6 +384,38 @@ def celebration() -> list[float]:
     return mix.render(0.9)
 
 
+#: The flourish's material, as MIDI notes. Module-level so the tests can hold
+#: the one structural promise — every pitch class is C major pentatonic, so it
+#: may land on top of whatever key notes the child is holding — against the
+#: actual notes rather than against a comment.
+FLOURISH_RUN = (72, 74, 76, 79, 81)     # C5 D5 E5 G5 A5 — straight up the scale
+FLOURISH_CHORD = (60, 64, 67, 72)       # C4 E4 G4 C5 — a warm rolled C major
+FLOURISH_SPARKLE = 84                   # C6 — one quiet grace note on top
+_FLOURISH_STEP = 0.085                  # run pacing, seconds per note
+
+
+def flourish() -> list[float]:
+    """Pip's party piece (~1.9 s): a quick pentatonic run up the felt piano,
+    landing on a warm rolled C major chord with one high grace note.
+
+    Played at every celebration — milestones and mash storms — so it is built
+    to survive heavy repetition: piano attacks only (no percussion, no noise
+    burst), a five-note scale run that reads as a gesture rather than a melody
+    to tire of, and a crescendo whose only news is "something good happened".
+    """
+    mix = Mixer()
+    for i, midi in enumerate(FLOURISH_RUN):
+        # Crescendo into the chord: the run swells rather than stabs.
+        mix.add(render_note(midi, 0.55, PIANO), i * _FLOURISH_STEP,
+                0.60 + 0.06 * i)
+    land = len(FLOURISH_RUN) * _FLOURISH_STEP
+    for j, midi in enumerate(FLOURISH_CHORD):
+        # A 14 ms roll: perfectly simultaneous onsets read as a machine.
+        mix.add(render_note(midi, 1.25, PIANO), land + j * 0.014, 0.9)
+    mix.add(render_note(FLOURISH_SPARKLE, 0.9, PIANO), land + 0.16, 0.5)
+    return mix.render(0.85)
+
+
 def chord_fanfare() -> list[float]:
     """Legacy three-note stab, kept as the fallback for a pre-upgrade cue set."""
     return chord_cue("C")
@@ -661,6 +694,7 @@ def build_cues(dest: Path, *, tunes: bool = True) -> list[Path]:
         "bloop": bloop(),
         "stomp": stomp(),
         "celebration": celebration(),
+        "flourish": flourish(),
         "chord_mash": mash_chord_cue(),
     }
     for i in range(6):
@@ -704,6 +738,12 @@ def build_voice(dest: Path) -> list[Path]:
         ["zero", "one", "two", "three", "four", "five",
          "six", "seven", "eight", "nine", "ten"]) if n > 0}
     words["10"] = "ten"
+    # Colours and shapes are the third lesson on the board. Imported from the
+    # effects layer for the same reason the animal calls are — one list, so a
+    # shape that exists visually can never be one the voice has no word for.
+    from ..effects.shapes import NAMED_COLORS, SHAPE_KINDS
+    words |= {name: name for name in NAMED_COLORS}
+    words |= {kind: kind for kind in SHAPE_KINDS}
     for name, word in words.items():
         path = dest / f"{name}.wav"
         subprocess.run(

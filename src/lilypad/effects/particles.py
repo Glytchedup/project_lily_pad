@@ -46,7 +46,11 @@ class Particle:
 class ParticleSystem:
     """One effect instance owning a list of particles."""
 
-    def __init__(self) -> None:
+    def __init__(self, pos: tuple[float, float] | None = None) -> None:
+        #: Nominal origin, for anyone who needs to know *where* this burst
+        #: happened (Pip's gaze-follow). None for systems with no single
+        #: place, like full-width confetti.
+        self.pos = pos
         self.particles: list[Particle] = []
 
     def __len__(self) -> int:
@@ -71,7 +75,7 @@ def burst(ctx: EffectContext, pos: tuple[float, float], count: int = 60,
           speed: float = 420.0, gravity: float = 380.0,
           size: float = 7.0, life: float = 1.2) -> ParticleSystem:
     """Radial explosion — the workhorse."""
-    sys_ = ParticleSystem()
+    sys_ = ParticleSystem(pos)
     n = max(4, int(count * ctx.scale))
     palette = colors or BRIGHT_PALETTE
     for _ in range(n):
@@ -150,7 +154,7 @@ def shaped_burst(ctx: EffectContext, pos: tuple[float, float], shape: str,
     """Explosion whose particles fly outward into a picture (heart/star/smiley):
     velocity is proportional to each template point, so with heavy drag the
     shape forms mid-air and lingers as it falls."""
-    sys_ = ParticleSystem()
+    sys_ = ParticleSystem(pos)
     n = max(12, int(count * ctx.scale))
     points = _SHAPES.get(shape, _star_outline_points)(n)
     palette = colors or BRIGHT_PALETTE
@@ -168,8 +172,14 @@ def shaped_burst(ctx: EffectContext, pos: tuple[float, float], shape: str,
     return sys_
 
 
-def confetti_rain(ctx: EffectContext, count: int = 140) -> ParticleSystem:
-    """Full-width falling confetti (spacebar)."""
+def confetti_rain(ctx: EffectContext, count: int = 140,
+                  colors: list[tuple[int, int, int]] | None = None) -> ParticleSystem:
+    """Full-width falling confetti (spacebar).
+
+    ``colors`` restricts the palette — a colour key rains confetti in the one
+    colour it is naming, so the background agrees with the lesson instead of
+    arguing with it.
+    """
     sys_ = ParticleSystem()
     n = max(8, int(count * ctx.scale))
     for _ in range(n):
@@ -177,7 +187,7 @@ def confetti_rain(ctx: EffectContext, count: int = 140) -> ParticleSystem:
             x=ctx.rng.uniform(0, ctx.width), y=ctx.rng.uniform(-ctx.height * 0.3, 0),
             vx=ctx.rng.uniform(-40, 40), vy=ctx.rng.uniform(160, 420),
             life=ctx.rng.uniform(1.2, 2.4),
-            color=random_bright(ctx.rng),
+            color=ctx.rng.choice(colors) if colors else random_bright(ctx.rng),
             size=ctx.rng.uniform(4, 9),
             gravity=140.0,
         ))
@@ -192,7 +202,7 @@ def ring_burst(ctx: EffectContext, pos: tuple[float, float],
     but because it's made of fading particles it plays nicely with motion
     trails (a redrawn pygame circle stacks into a bullseye moiré under the
     trail veil; this doesn't)."""
-    sys_ = ParticleSystem()
+    sys_ = ParticleSystem(pos)
     n = max(10, int(count * ctx.scale))
     c = color or random_bright(ctx.rng)
     for i in range(n):
@@ -306,6 +316,9 @@ class Fireworks:
 
     def __init__(self, ctx: EffectContext, rockets: int = 3) -> None:
         self.ctx = ctx
+        # Nominal "where the show is": the patch of sky the rockets burst in.
+        # Pip's gaze wants one point, and a frog watching fireworks looks up.
+        self.pos = (ctx.width * 0.5, ctx.height * 0.32)
         self.rockets: list[Fireworks._Rocket] = []
         self.bursts: list[Fireworks._Burst] = []
         self.trail = ParticleSystem()
@@ -427,7 +440,8 @@ class SpiralBurst:
 
     def __init__(self, ctx: EffectContext, pos: tuple[float, float],
                  count: int = 50, clockwise: bool = True) -> None:
-        self.sys = ParticleSystem()
+        self.pos = pos
+        self.sys = ParticleSystem(pos)
         spin = 3.0 if clockwise else -3.0
         n = max(6, int(count * ctx.scale))
         for i in range(n):

@@ -28,6 +28,7 @@ from .particles import (
     ring_burst,
     shaped_burst,
 )
+from .shapes import ColorSplash, GiantShape
 
 Factory = Callable[[EffectContext, Action], list[Effect]]
 
@@ -64,6 +65,16 @@ def celebration(ctx: EffectContext, big: bool = False) -> list[Effect]:
 
 def _number(ctx: EffectContext, action: Action) -> list[Effect]:
     return [CountAlong(ctx, action.count)]
+
+
+def _shape(ctx: EffectContext, action: Action) -> list[Effect]:
+    """One shape, random colour — the shape is the constant to learn from."""
+    return [GiantShape(ctx, action.letter)]
+
+
+def _color(ctx: EffectContext, action: Action) -> list[Effect]:
+    """Many shapes, one colour — now the colour is the constant instead."""
+    return [ColorSplash(ctx, action.letter)]
 
 
 def _space(ctx: EffectContext, action: Action) -> list[Effect]:
@@ -133,6 +144,8 @@ def _special(ctx: EffectContext, action: Action) -> list[Effect]:
 _KIND_FACTORIES: dict[str, Factory] = {
     "letter": _letter,
     "number": _number,
+    "shape": _shape,
+    "color": _color,
     "space": _space,
     "enter": _enter,
     "chord": _chord,

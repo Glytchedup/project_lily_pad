@@ -75,8 +75,26 @@ def test_effects_new_toggles_from_toml(tmp_path):
 def test_music_defaults():
     cfg = load(None)
     assert cfg.music.key_notes is True
-    assert cfg.music.tunes == "idle"
+    # Off by default: an unattended playground goes quiet rather than playing
+    # backing music to an empty room.
+    assert cfg.music.tunes == "off"
     assert cfg.music.tune_volume == 0.45
+    # The celebration flourish is an event cue, not background music, so it
+    # ships on — it only ever sounds when somebody just did something.
+    assert cfg.music.flourish is True
+
+
+def test_flourish_can_be_toggled_off(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[music]\nflourish = false\n")
+    assert load(p).music.flourish is False
+
+
+def test_idle_tunes_still_available(tmp_path):
+    """Off is the default, not the only option — the tunes still work."""
+    p = tmp_path / "config.toml"
+    p.write_text('[music]\ntunes = "idle"\n', encoding="utf-8")
+    assert load(p).music.tunes == "idle"
 
 
 def test_music_from_toml(tmp_path):
