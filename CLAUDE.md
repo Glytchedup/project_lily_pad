@@ -120,8 +120,9 @@ cannot ship without a spoken word.
 **Pip the frog** (`effects/critter.py`) is cel-shaded — flat colour, hard-edged
 shadow/highlight bands, one heavy keyline stamped around the *union* of head
 and body so no seam crosses his face — and sits on his own lily pad. His sprite
-is cached by `(radius, pose)`; only the squash is continuous, applied as a
-cheap `scale` at draw time. `Frog.floor_y` is his resting height and is
+is cached by `(radius, pose)`; only the squash **and the tongue** are
+continuous, both applied at draw time (squash as a cheap `scale`, the tongue as
+four vector strokes). `Frog.floor_y` is his resting height and is
 deliberately well above the bottom of the screen: that gap is what the pad
 occupies. Anything that needs to know where he lands must ask `floor_y` rather
 than assume `h - r`. **His resting test is frame-rate relative** — a landing
@@ -129,6 +130,19 @@ counts as a bounce only if it beats `h * GRAVITY * dt * REST_FACTOR`. The old
 fixed threshold made a *stationary* frog register an impact every frame below
 ~37 fps, squashing and spawning ripples forever; never reintroduce a constant
 there. He rides the pad's bob only while `resting`.
+
+**Pip is also reactive**: the engine's `spawn()` calls `Frog.notice(pos, kind)`
+with the position of every registry spawn (`_spawn_pos` reads the `pos` the
+effects already carry, falling back to `x`/`y`; effects with no single "where",
+like full-width confetti, honestly return nothing). He gazes at the newest
+spawn — **quantised into eight `look_*` poses** so gaze stays inside the sprite
+cache; don't smooth it into a continuous pupil offset, that's a per-frame
+sprite build — flicks his tongue at it (0.7 s cooldown; the hop only fires
+from rest so arrow-key physics stay untouched), and cheers at milestones and
+mash storms (`celebrate()` launches once, `keep_celebrating()` extends without
+re-launching — the engine calls the latter every frame while chaos is live).
+Arrows deliberately do *not* notify: he is the action there, not the audience.
+`critter.prewarm()` builds all 12 poses at boot next to the other prewarms.
 
 **Screen sleep**: after `display.sleep_timeout` (default 300 s) with no keypresses
 the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
@@ -159,7 +173,7 @@ pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
 python -m lilypad --doctor    # on-device diagnostics (safe to run anywhere)
-pytest                        # 1009 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, shapes, doctor, hdmi_audio)
+pytest                        # 1163 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, shapes, doctor, hdmi_audio)
 ```
 
 ## Status / gotchas

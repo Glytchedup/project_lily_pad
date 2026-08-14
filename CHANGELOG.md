@@ -6,6 +6,34 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added — Reactive Pip: the frog is a co-player, not scenery (2026-08-13)
+- **Pip now reacts to what the child spawns.** The engine tells him where every
+  new effect appeared (`Frog.notice(pos, kind)`, fed by a small `_spawn_pos`
+  helper that reads the position effects already carry), and he answers three
+  ways. *Gaze-follow*: his pupils steer toward the most recent spawn and relax
+  back to neutral after ~2 s — quantised into eight `look_*` poses so gaze
+  stays inside the `(radius, pose)` sprite cache rather than becoming a
+  per-frame rebuild. *Tongue-catch*: a flick toward the spawn (a cached
+  open-mouth `tongue` pose; the stretch itself is four vector strokes, the one
+  continuous thing besides squash) plus a happy hop whose landing is a real
+  bounce — squash and splash ripples come for free. Flicks are rationed by a
+  0.7 s cooldown because a toddler mashes several keys a second; the gaze
+  tracks every one of them. *Celebration*: milestones and mash storms put him
+  in a `cheer` pose (arms up, happy-shut ∩ eyes, open mouth) with one launch
+  visibly bigger than any joy-hop; during a mash storm the engine rolls the
+  party forward every frame so he cheers exactly as long as the storm rages.
+- Effects that had no single "where" grew an honest one for his gaze:
+  `ParticleSystem` bursts record their origin, `CountAlong` and `ColorSplash`
+  the crown of their arc/row, `Fireworks` the patch of sky it bursts in.
+  Full-width confetti stays `None` — there is nothing to look *at*.
+- `critter.prewarm()` builds all 12 poses at boot alongside the animal and
+  shape prewarms, so his first glance doesn't hitch on a child's first key.
+- The sacred bits are untouched: poses cached by `(radius, pose)`, the
+  frame-rate-relative rest test, `floor_y`, and the union keyline. Arrows
+  still shove rather than notify — he *is* the action there, not the audience.
+- 40 new tests (gaze directions, flick rationing, hop-from-rest-only, tongue
+  reach cap, party lifecycle, per-kind notify coverage); 1,163 total.
+
 ### Added — SWAP.md, the test-Pi → Pi 5 migration protocol (2026-08-13)
 - A standalone procedure for moving the SD card from a test Pi to the Pi 5:
   finalise the software (overlay off → `git pull` → `install.sh` → `poweroff`),
