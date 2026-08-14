@@ -47,6 +47,9 @@ class CountAlong:
             x = ctx.width * (0.12 + 0.76 * frac)
             y = ctx.height * (0.55 - 0.18 * math.sin(frac * math.pi))
             self.spots.append({"pos": (x, y), "born": i * self.POP_INTERVAL})
+        # Where the count-along visually *is* — the crown of the arc. This is
+        # what Pip's gaze latches onto when a number key spawns one.
+        self.pos = self.spots[self.count // 2]["pos"]
         self.last_born = (self.count - 1) * self.POP_INTERVAL
         self.total = self.last_born + self.HOLD_AFTER_LAST + self.FADE_TIME
         # Stretch the digit's hold so symbol and quantity stay up TOGETHER:

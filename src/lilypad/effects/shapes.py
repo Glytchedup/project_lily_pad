@@ -321,6 +321,8 @@ class ColorSplash:
                 "born": i * self.POP_INTERVAL,
                 "phase": rng.uniform(0, math.tau),
             })
+        # The middle of the row — where Pip looks when a colour key fires.
+        self.pos = self.items[len(self.items) // 2]["pos"]
         self.last_born = (len(kinds) - 1) * self.POP_INTERVAL
         self.total = self.last_born + self.HOLD_AFTER_LAST + self.FADE_TIME
         # Confetti in the same colour: the background agrees with the lesson.

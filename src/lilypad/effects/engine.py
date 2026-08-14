@@ -40,6 +40,28 @@ ALPHABET = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _PRESS_KINDS = {"letter", "number", "space", "enter", "special", "sparkle", "arrow"}
 
 
+def _spawn_pos(spawned: list[Effect]) -> tuple[float, float] | None:
+    """Where a batch of just-spawned effects visually *is* — Pip's gaze target.
+
+    Two passes on purpose: ``pos`` (letters, shapes, bursts, ring centres) is
+    where the thing appears, while ``x``/``y`` (the animals) is where it merely
+    starts — usually just off-screen — so a letter that brings its animal along
+    resolves to the letter, not to a point past the screen edge. The x/y
+    fallback still matters alone: watching the edge an animal is about to
+    enter from is anticipation, which is half the fun of a reaction.
+    """
+    for e in spawned:
+        pos = getattr(e, "pos", None)
+        if pos is not None:
+            return (float(pos[0]), float(pos[1]))
+    for e in spawned:
+        x = getattr(e, "x", None)
+        y = getattr(e, "y", None)
+        if x is not None and y is not None:
+            return (float(x), float(y))
+    return None
+
+
 class EffectEngine:
     def __init__(self, size: tuple[int, int], max_particles: int = 900,
                  idle_timeout: float = 60.0, fps: int = 60,
@@ -115,6 +137,9 @@ class EffectEngine:
                 self.chaos = ChaosOverlay(self.ctx)
             else:
                 self.chaos.ending = False
+            # A mash storm is a party: Pip launches when it breaks out, and
+            # update() keeps him cheering for as long as the overlay lives.
+            self.frog.celebrate(1.5)
             return
         if action.kind == "mash_end":
             if self.chaos is not None:
@@ -147,6 +172,14 @@ class EffectEngine:
                 # is dropped, so the key still visibly does something.
                 spawned = [e for e in spawned if not isinstance(e, ANIMAL_TYPES)]
             self.effects.extend(spawned)
+            # Tell Pip where the new thing is, so he can look at it and flick
+            # his tongue toward it — the frog plays along instead of ignoring
+            # everything that isn't an arrow key. Deliberately absent from the
+            # saturated-budget fallback below: when the engine is shedding
+            # work, bonus charm is the first thing to go.
+            target = _spawn_pos(spawned)
+            if target is not None:
+                self.frog.notice(target, action.kind)
         else:
             # The product invariant is that EVERY key visibly does something.
             # Sustained fast play can saturate the budget with ordinary
@@ -274,6 +307,10 @@ class EffectEngine:
             if not self.chaos.update(dt):
                 self.chaos = None
             else:
+                if not self.chaos.ending:
+                    # Pip parties for exactly as long as the storm rages —
+                    # a rolling extension, never a fresh launch.
+                    self.frog.keep_celebrating(0.6)
                 # Chaos mode keeps popping random bursts on its own.
                 self._chaos_spawn_accum += dt
                 if self._chaos_spawn_accum >= 0.15 and not self.chaos.ending:

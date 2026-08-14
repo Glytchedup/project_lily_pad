@@ -20,6 +20,23 @@ Two rules shape the code:
   character a child is shoving with arrow keys should never get caught on
   scenery.
 
+He is also a co-player, not scenery: the engine tells him where every new
+effect appeared (``notice``) and he reacts —
+
+* **Gaze-follow.** His pupils steer toward the most recent spawn, then relax
+  back to neutral. Gaze is *quantised* into eight ``look_*`` poses so it stays
+  inside the (radius, pose) cache — a continuous pupil offset would mean a
+  per-frame sprite build, which is exactly what the cache exists to forbid.
+  Cartoon eyes darting in steps read as charm, not cheapness.
+* **Tongue-catch.** A spawn gets a tongue flick toward it (cooldown-rationed)
+  and a happy hop. The open ``tongue`` mouth is a cached pose; the tongue
+  itself is the one other continuous thing besides squash, drawn as four
+  vector strokes for a handful of frames because a cached pose cannot stretch
+  toward an arbitrary point.
+* **Celebration.** Milestones and mash storms put him in the ``cheer`` pose
+  (arms up, happy-shut eyes, open mouth) with one huge launch and joy-hops
+  while the party lasts.
+
 No licensed characters; every pixel comes from pygame primitives.
 """
 
@@ -41,12 +58,55 @@ EYE_WHITE = (255, 255, 255)
 PUPIL = (28, 30, 34)
 NOSTRIL = (44, 92, 44)
 
+TONGUE = (244, 108, 128)   # sticky cartoon pink, deliberately not the cheeks'
+MOUTH_OPEN = (46, 22, 30)  # the inside of an open mouth
+
 PAD = (44, 120, 62)
 PAD_LIGHT = (70, 158, 84)
 PAD_DARK = (26, 82, 48)
 PAD_OUTLINE = (14, 40, 26)
 
-POSES = ("idle", "blink")
+POSES = (
+    "idle", "blink", "tongue", "cheer",
+    "look_l", "look_r", "look_u", "look_d",
+    "look_ul", "look_ur", "look_dl", "look_dr",
+)
+
+# Quantised gaze direction → pose name, and back again for the sprite builder.
+# (0, 0) is deliberately absent: looking straight ahead IS "idle".
+_GAZE_POSES: dict[tuple[int, int], str] = {
+    (-1, 0): "look_l", (1, 0): "look_r", (0, -1): "look_u", (0, 1): "look_d",
+    (-1, -1): "look_ul", (1, -1): "look_ur", (-1, 1): "look_dl", (1, 1): "look_dr",
+}
+_POSE_PUPILS = {name: d for d, name in _GAZE_POSES.items()}
+
+#: How long a spawn holds his attention before the pupils relax to neutral.
+GAZE_HOLD = 2.2
+#: Normalised direction components smaller than this read as "straight ahead".
+_GAZE_DEADZONE = 0.38
+
+# The tongue flick: fast out, a beat at full stretch, a slower slurp back.
+TONGUE_OUT = 0.10
+TONGUE_HOLD = 0.06
+TONGUE_IN = 0.16
+TONGUE_TOTAL = TONGUE_OUT + TONGUE_HOLD + TONGUE_IN
+#: Max stretch, as a fraction of screen height. Long enough to be a cartoon
+#: gag, short enough that a far-corner spawn gets a reach *toward* it.
+TONGUE_REACH = 0.45
+#: Seconds between flicks. A toddler mashes several keys a second; the gaze
+#: tracks every one of them, the tongue only the ones it can savour.
+FLICK_COOLDOWN = 0.7
+#: The mouth's centre as a fraction of the sprite box's height, so the tongue
+#: stays rooted to his face even mid-squash (the box scales, the fraction
+#: doesn't). Must agree with where frog_sprite draws the mouth.
+_MOUTH_FRAC = 0.52
+
+#: Happy-hop launch for a tongue-catch, as a fraction of hop_impulse. Small,
+#: but a real launch — so the landing is a real bounce with squash and ripples.
+HAPPY_HOP = 0.34
+#: The milestone-party launch. Joy-hops while excited are 0.8; the first one
+#: is visibly bigger than anything an ordinary catch produces.
+MEGA_HOP = 1.15
 
 _sprite_cache: dict[tuple[int, str], pygame.Surface] = {}
 _pad_cache: dict[int, pygame.Surface] = {}
@@ -183,10 +243,16 @@ def frog_sprite(r: int, pose: str = "idle") -> pygame.Surface:
     _ellipse(s, OUTLINE, cx, cy + r * 0.34, r * 1.44, r * 0.94, max(1, line - 1))
 
     # ---- arms, in front of the body --------------------------------------
-    for side in (-1, 1):
-        limb(BODY, cx + side * r * 0.92, cy + r * 0.10, r * 0.48, r * 0.84)
+    if pose == "cheer":
+        # Both arms thrown up beside the head — the universal "hooray!".
+        for side in (-1, 1):
+            limb(BODY, cx + side * r * 1.22, head_cy - r * 0.35, r * 0.46, r * 0.92)
+    else:
+        for side in (-1, 1):
+            limb(BODY, cx + side * r * 0.92, cy + r * 0.10, r * 0.48, r * 0.84)
 
     # ---- eyes -------------------------------------------------------------
+    gaze = _POSE_PUPILS.get(pose)
     for side in (-1, 1):
         ex = cx + side * r * 0.60
         if pose == "blink":
@@ -196,12 +262,28 @@ def frog_sprite(r: int, pose: str = "idle") -> pygame.Surface:
             rect.center = (int(ex), int(eye_y))
             pygame.draw.arc(s, OUTLINE, rect, math.pi * 1.10, math.pi * 1.90,
                             max(2, line))
+        elif pose == "cheer":
+            # Happy-shut eyes: the blink arc flipped — ∩ reads as "so happy",
+            # ∪ as "asleep". Same square rect, so arc stays reliable.
+            rect = pygame.Rect(0, 0, int(eye_r * 1.8), int(eye_r * 1.8))
+            rect.center = (int(ex), int(eye_y))
+            pygame.draw.arc(s, OUTLINE, rect, math.pi * 0.15, math.pi * 0.85,
+                            max(2, line))
         else:
             _ellipse(s, EYE_WHITE, ex, eye_y, eye_r * 1.66, eye_r * 1.66)
             _ellipse(s, OUTLINE, ex, eye_y, eye_r * 1.66, eye_r * 1.66,
                      max(1, line - 1))
-            _ellipse(s, PUPIL, ex + side * eye_r * 0.10, eye_y + eye_r * 0.12,
-                     eye_r * 0.94, eye_r * 1.04)
+            if gaze is not None:
+                # Both pupils steer the same way: opposite offsets read as
+                # cross-eyed, not as looking at something.
+                px_ = ex + gaze[0] * eye_r * 0.34
+                py_ = eye_y + gaze[1] * eye_r * 0.28
+            else:
+                px_ = ex + side * eye_r * 0.10
+                py_ = eye_y + eye_r * 0.12
+            _ellipse(s, PUPIL, px_, py_, eye_r * 0.94, eye_r * 1.04)
+            # The highlight stays with the light source, not the pupil —
+            # that is what keeps a steered eye reading as wet and alive.
             _ellipse(s, EYE_WHITE, ex + side * eye_r * 0.30, eye_y - eye_r * 0.36,
                      eye_r * 0.40, eye_r * 0.40)
 
@@ -214,7 +296,21 @@ def frog_sprite(r: int, pose: str = "idle") -> pygame.Surface:
     # different animal entirely. Drawn as an explicit curve rather than
     # ``draw.arc``: arc is unreliable on a wide, flat rect with a thick stroke
     # and rendered nothing at all here.
-    _smile(s, cx, head_cy + r * 0.16, r * 1.56, r * 0.42, max(2, int(r * 0.11)))
+    if pose == "cheer":
+        # A wide-open cheer with the tongue showing — the mouth doing jazz hands.
+        _ellipse(s, MOUTH_OPEN, cx, head_cy + r * 0.36, r * 1.06, r * 0.70)
+        _ellipse(s, TONGUE, cx, head_cy + r * 0.52, r * 0.60, r * 0.30)
+        _ellipse(s, OUTLINE, cx, head_cy + r * 0.36, r * 1.06, r * 0.70,
+                 max(2, int(r * 0.11)))
+    elif pose == "tongue":
+        # A round little "o" for the tongue to shoot out of. The tongue itself
+        # is drawn at draw time (its length is continuous); its root must land
+        # on this mouth, which is what _MOUTH_FRAC records.
+        _ellipse(s, MOUTH_OPEN, cx, head_cy + r * 0.30, r * 0.62, r * 0.50)
+        _ellipse(s, OUTLINE, cx, head_cy + r * 0.30, r * 0.62, r * 0.50,
+                 max(2, int(r * 0.11)))
+    else:
+        _smile(s, cx, head_cy + r * 0.16, r * 1.56, r * 0.42, max(2, int(r * 0.11)))
 
     for side in (-1, 1):
         _ellipse(s, CHEEK, cx + side * r * 0.78, head_cy + r * 0.40,
@@ -294,6 +390,33 @@ def pad_reach(r: int) -> float:
     return lily_pad_sprite(r).get_height() * (_PAD_SINK + 0.5) + r * _PAD_BOB
 
 
+def _radius_for(screen_h: int) -> int:
+    """The physics radius a Frog on a screen this tall is built around.
+
+    Shared with :func:`prewarm` so the poses built at boot are the poses the
+    live Frog will actually ask for — a prewarm at the wrong radius is worse
+    than none, it doubles the work and still hitches.
+    """
+    return max(30, int(screen_h * 0.06))
+
+
+def prewarm(screen_height: int) -> int:
+    """Build every pose now, before anyone presses a key.
+
+    Pip used to have two poses, both built on the first frame. He now has a
+    dozen — gaze directions, the tongue mouth, the cheer — and each is a few
+    milliseconds of shading passes and outline stamps. Paid lazily that lands
+    as a hiccup the first time he glances at something, which is the exact
+    moment he is supposed to look alive. Paid here it is part of a boot nobody
+    is watching. Returns how many sprites were touched.
+    """
+    r = _radius_for(screen_height)
+    for pose in POSES:
+        frog_sprite(r, pose)
+    lily_pad_sprite(r)
+    return len(POSES)
+
+
 class _Pad:
     """The pad drifts under Pip instead of being nailed to one spot.
 
@@ -338,7 +461,7 @@ class Frog:
 
     def __init__(self, size: tuple[int, int]) -> None:
         self.w, self.h = size
-        self.r = max(30, int(self.h * 0.06))
+        self.r = _radius_for(self.h)
         self.x = self.w * 0.5
         self.y = self.h * 0.82
         self.vx = 0.0
@@ -351,6 +474,16 @@ class Frog:
         self.hop_impulse = self.h * 0.9
         self.just_bounced = False    # set each update; engine spawns ripples
         self._excited_until = 0.0    # celebration joy-hops while age < this
+        # --- reactions: gaze, tongue, party -------------------------------
+        self._gaze_target = (self.x, 0.0)
+        self._gaze_until = 0.0       # gaze relaxes once age passes this
+        self._gaze = (0, 0)          # quantised look direction; (0,0) = ahead
+        self._tongue_target = (self.x, 0.0)
+        self._tongue_t = TONGUE_TOTAL    # >= TONGUE_TOTAL means fully retracted
+        self._next_flick = 0.0
+        #: Kind of the last spawn he was told about ("letter", "number", …).
+        #: Purely observational — for tests and future flavour, never logic.
+        self.last_noticed: str | None = None
 
         #: Vertical gap from his centre to the soles of his feet.
         self._feet = self.r * 0.62
@@ -370,9 +503,49 @@ class Frog:
         if dy == 0:
             self.vy -= self.hop_impulse * 0.25
 
+    def notice(self, pos: tuple[float, float], kind: str = "effect") -> None:
+        """Something (letter / number / animal / shape) just appeared at ``pos``.
+
+        The engine calls this once per spawn. Pip looks at it, and — cooldown
+        permitting — flicks his tongue toward it with a happy little hop, like
+        he is catching it. During a party the cheer wins instead: the tongue
+        and the cheer share the mouth, and an excited frog is already reacting
+        as hard as he can.
+        """
+        self._gaze_target = (float(pos[0]), float(pos[1]))
+        self._gaze_until = self.age + GAZE_HOLD
+        self.last_noticed = kind
+        if self.age < self._excited_until:
+            return
+        if self.age >= self._next_flick:
+            self._next_flick = self.age + FLICK_COOLDOWN
+            self._tongue_t = 0.0
+            self._tongue_target = self._gaze_target
+            if self.resting:
+                # A real launch, so the landing is a real bounce: squash and
+                # the engine's splash ripple come for free. Only from rest —
+                # boosting him mid-flight would fight the arrow-key physics.
+                self.vy = -self.hop_impulse * HAPPY_HOP
+
     def celebrate(self, seconds: float = 3.0) -> None:
-        """Milestone joy: keep hopping on its own for a few seconds."""
+        """Milestone joy: one huge launch right now, then joy-hops while excited.
+
+        ``min`` keeps whichever upward speed is faster, so a party that lands
+        mid-flight never *cancels* motion. The tongue retracts because the
+        cheer pose owns the mouth.
+        """
         self._excited_until = self.age + seconds
+        self._tongue_t = TONGUE_TOTAL
+        self.vy = min(self.vy, -self.hop_impulse * MEGA_HOP)
+
+    def keep_celebrating(self, seconds: float = 0.6) -> None:
+        """Extend a running party without re-firing the launch.
+
+        The engine calls this every frame while the mash-storm overlay is
+        live, so Pip parties for exactly as long as the storm does — however
+        long the toddler keeps drumming.
+        """
+        self._excited_until = max(self._excited_until, self.age + seconds)
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -424,11 +597,38 @@ class Frog:
         self.resting = (self.vy == 0.0 and self.vx == 0.0
                         and self.y >= self.floor_y - 0.5)
         self.pad.update(dt, self.x)
+        # --- reactions ----------------------------------------------------
+        if self._tongue_t < TONGUE_TOTAL:
+            self._tongue_t = min(TONGUE_TOTAL, self._tongue_t + dt)
+        if self.age >= self._gaze_until:
+            self._gaze = (0, 0)
+        else:
+            tx, ty = self._gaze_target
+            dx_, dy_ = tx - self.x, ty - (self.y - self.r)   # from his eyes
+            dist = math.hypot(dx_, dy_)
+            if dist < self.r * 1.6:
+                # Right on top of him: "looking at" that is cross-eyed.
+                self._gaze = (0, 0)
+            else:
+                nx, ny = dx_ / dist, dy_ / dist
+                self._gaze = (
+                    -1 if nx < -_GAZE_DEADZONE else (1 if nx > _GAZE_DEADZONE else 0),
+                    -1 if ny < -_GAZE_DEADZONE else (1 if ny > _GAZE_DEADZONE else 0),
+                )
         return True
 
     @property
     def pose(self) -> str:
-        return "blink" if (self.age % 4.0) > 3.85 else "idle"
+        # Priority: the tongue owns the mouth mid-flick, a party owns
+        # everything, a blink closes even a steered eye, and only then does
+        # the gaze pick which way the pupils point.
+        if self._tongue_t < TONGUE_TOTAL:
+            return "tongue"
+        if self.age < self._excited_until:
+            return "cheer"
+        if (self.age % 4.0) > 3.85:
+            return "blink"
+        return _GAZE_POSES.get(self._gaze, "idle")
 
     def draw(self, surface: pygame.Surface) -> None:
         self.pad.draw(surface)
@@ -450,6 +650,43 @@ class Frog:
         # shrinking toward his own middle.
         rect = sprite.get_rect(midbottom=(int(self.x), int(y + self._feet)))
         surface.blit(sprite, rect)
+        if self._tongue_t < TONGUE_TOTAL:
+            self._draw_tongue(surface, rect)
+
+    def _draw_tongue(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """The flick itself — the one continuous thing besides squash.
+
+        Length is a tween and direction tracks the mouth as he hops, so it
+        cannot be a cached pose; it is four vector strokes (keyline pass, then
+        pink) for a handful of frames per flick. No surfaces are built.
+        """
+        t = self._tongue_t
+        if t < TONGUE_OUT:
+            ext = t / TONGUE_OUT
+        elif t < TONGUE_OUT + TONGUE_HOLD:
+            ext = 1.0
+        else:
+            ext = max(0.0, 1.0 - (t - TONGUE_OUT - TONGUE_HOLD) / TONGUE_IN)
+        if ext <= 0.02:
+            return
+        # The mouth as a fraction of the (possibly squashed) sprite box, so
+        # the tongue stays rooted to his face mid-bounce.
+        mx = rect.centerx
+        my = rect.top + rect.height * _MOUTH_FRAC
+        dx_ = self._tongue_target[0] - mx
+        dy_ = self._tongue_target[1] - my
+        dist = math.hypot(dx_, dy_) or 1.0
+        reach = min(dist, self.h * TONGUE_REACH) * ext
+        tip = (mx + dx_ / dist * reach, my + dy_ / dist * reach)
+        line = max(2, int(self.r * 0.10))
+        thick = max(3, int(self.r * 0.20))
+        tip_r = max(4, int(self.r * 0.28))
+        # Keyline first, pink on top: the same one-heavy-outline look as the
+        # rest of him, without stamping anything.
+        pygame.draw.line(surface, OUTLINE, (mx, my), tip, thick + line * 2)
+        pygame.draw.circle(surface, OUTLINE, (int(tip[0]), int(tip[1])), tip_r + line)
+        pygame.draw.line(surface, TONGUE, (mx, my), tip, thick)
+        pygame.draw.circle(surface, TONGUE, (int(tip[0]), int(tip[1])), tip_r)
 
     def __len__(self) -> int:
         return 8
