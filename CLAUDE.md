@@ -62,7 +62,14 @@ Python 3.11+ package `lilypad/`, src-layout:
   simultaneous keypress combination is consonant *by construction* — don't "fix" a
   clash by filtering, keep the mapping pentatonic. `synth.py` renders `Voice`
   instruments (per-harmonic decay, chorus, brightness rolloff, reverb) plus the
-  character cues (animals, whoosh, boom — deliberately not musical). `tunes.py` holds
+  character cues (animals, whoosh, boom — deliberately not musical). The
+  **celebration flourish** (~1.9 s: a crescendo run up the pentatonic on the felt
+  piano, resolving to a rolled C chord) is the sound of Pip's parties — fired from
+  the same signals that launch his cheer (the `consume_celebration()` poll for
+  milestones, the `mash_start` dispatch for storms), debounced by a 2.5 s cooldown
+  on a reserved mixer channel so mash-cycling can never stack it; the legacy
+  cadence fanfare is only the fallback (old sound dirs, `music.flourish = false`)
+  because layering the two puts a B natural against a C. `tunes.py` holds
   four original anthemic-pop instrumental loops, rendered to seamless WAVs and played
   as idle background music via `pygame.mixer.music`. Letter/number names come from
   espeak-ng.
@@ -74,8 +81,8 @@ Python 3.11+ package `lilypad/`, src-layout:
   install, because the card index is a property of the board and this SD card is
   expected to move between a test Pi and the Pi 5.
 - `escape.py` — parent escape hatch state machine.
-- `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
-  escape combo, effect toggles, idle/sleep timeouts).
+- `config.py` — TOML config (volume/mute, key notes + tune mode/volume, celebration
+  flourish toggle, brightness, escape combo, effect toggles, idle/sleep timeouts).
 
 **Traced outlines (`effects/animal_stencil.py`)**: the old drawn cast failed on
 *proportion*, not detail — a giraffe reads as a giraffe because of its
@@ -173,7 +180,7 @@ pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
 python -m lilypad --doctor    # on-device diagnostics (safe to run anywhere)
-pytest                        # 1163 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, shapes, doctor, hdmi_audio)
+pytest                        # 1171 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, shapes, doctor, hdmi_audio)
 ```
 
 ## Status / gotchas

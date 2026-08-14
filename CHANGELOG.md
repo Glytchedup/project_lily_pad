@@ -6,6 +6,37 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added — a piano flourish when Pip celebrates (2026-08-13)
+- **Celebrations sound like celebrations now.** A new `flourish` cue in
+  `audio/synth.py` (~1.9 s, rendered to WAV at build time like everything
+  else): a quick run up the C pentatonic on the felt `PIANO` voice —
+  C5 D5 E5 G5 A5, crescendo — landing on a warm rolled C major chord with one
+  quiet C6 grace note on top. Strictly pentatonic pitch classes throughout, so
+  it can land on whatever key notes the child is holding; built for heavy
+  repeat (piano attacks only, a gesture rather than a melody, peak measured at
+  the chord bloom with a 0.06 onset — nothing startles). `CUE_VERSION` → 5, so
+  devices with an older sound set regenerate on next launch.
+- **It fires from the same signals that launch Pip's cheer**, so the hop and
+  the music land together: the milestone path via the existing
+  `consume_celebration()` poll, and mash storms via the same `mash_start`
+  dispatch (where it rides on top of the add9 swell — every flourish pitch
+  class over the swell's {C D G} is consonant by construction).
+- **Debounced.** `AudioEngine._play_flourish` carries a 2.5 s cooldown —
+  longer than the cue, so two can never sound at once even when a toddler
+  cycles in and out of mash mode — and plays on a reserved mixer channel, so
+  a retrigger *replaces* the flourish still ringing instead of stacking, and
+  a hail of key notes can never steal its channel mid-party.
+- **The flourish is the milestone sound now**; the old I–V–vi–IV cadence
+  fanfare survives as the fallback (pre-upgrade sound dirs, or
+  `music.flourish = false` in config — the new toggle, default on). Never
+  both at once: the cadence walks through G and F while the flourish holds C,
+  and layering them puts a B natural against a C. Still a discrete event cue
+  — the tunes stay off by default and the playground still goes quiet when
+  nobody is playing.
+- 8 new tests (cue length/onset/pentatonic material, cooldown debounce,
+  mash + milestone triggers, toggle + missing-cue fallbacks, config);
+  1,171 total.
+
 ### Added — Reactive Pip: the frog is a co-player, not scenery (2026-08-13)
 - **Pip now reacts to what the child spawns.** The engine tells him where every
   new effect appeared (`Frog.notice(pos, kind)`, fed by a small `_spawn_pos`
