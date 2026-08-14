@@ -79,6 +79,15 @@ def test_music_defaults():
     # backing music to an empty room.
     assert cfg.music.tunes == "off"
     assert cfg.music.tune_volume == 0.45
+    # The celebration flourish is an event cue, not background music, so it
+    # ships on — it only ever sounds when somebody just did something.
+    assert cfg.music.flourish is True
+
+
+def test_flourish_can_be_toggled_off(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[music]\nflourish = false\n")
+    assert load(p).music.flourish is False
 
 
 def test_idle_tunes_still_available(tmp_path):

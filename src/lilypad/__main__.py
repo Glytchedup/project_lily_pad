@@ -214,7 +214,8 @@ def main(argv: list[str] | None = None) -> int:
                         mute=cfg.audio.mute, volume=cfg.audio.volume,
                         key_notes=cfg.music.key_notes,
                         tunes=cfg.music.tunes,
-                        tune_volume=cfg.music.tune_volume)
+                        tune_volume=cfg.music.tune_volume,
+                        flourish=cfg.music.flourish)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,

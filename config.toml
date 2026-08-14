@@ -25,6 +25,12 @@ tunes = "off"
 # Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
 # the level of the keypress cues.
 tune_volume = 0.45
+# The short piano flourish that plays when Pip celebrates — the count-along
+# milestones and mash storms. This is a discrete event cue, not background
+# music: the playground still goes quiet when nobody is playing. false swaps
+# milestones back to the older cadence fanfare and leaves mash storms with
+# just their chord swell.
+flourish = true
 
 [display]
 # Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.
