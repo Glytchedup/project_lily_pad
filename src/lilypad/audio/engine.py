@@ -12,6 +12,7 @@ short-circuits everything.
 from __future__ import annotations
 
 import logging
+import random
 from pathlib import Path
 
 from ..input.mapper import Action
@@ -31,7 +32,14 @@ from ..effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES  # noqa: E402
 #: press that produced them has already played its note.
 _NOTE_KINDS = frozenset({"letter", "space", "arrow", "enter", "special", "sparkle"})
 
-_TUNE_MODES = ("idle", "always", "off")
+_TUNE_MODES = ("idle", "always", "off", "active")
+
+#: Extensions scanned in the "active" mode's background_folder. WAV is
+#: included so it also matches a folder of the generated tunes.
+_MUSIC_EXTS = (".mp3", ".ogg", ".oga", ".flac", ".wav")
+
+_PLAYLIST_FADE_IN_MS = 1200
+_PLAYLIST_FADE_OUT_MS = 1500
 
 #: Relative level per cue family. Key notes sit *under* the spoken letter name
 #: rather than masking it — the voice is the part with teaching value.
@@ -47,12 +55,16 @@ class AudioEngine:
     def __init__(self, sounds_dir: str | Path, *, mute: bool = False,
                  volume: float = 0.8, autogen: bool = True,
                  key_notes: bool = True, tunes: str = "idle",
-                 tune_volume: float = 0.45) -> None:
+                 tune_volume: float = 0.45,
+                 background_folder: str | Path = "music",
+                 fade_after: float = 30.0) -> None:
         self.mute = mute
         self.volume = volume
         self.key_notes = key_notes
         self.tunes = tunes if tunes in _TUNE_MODES else "idle"
         self.tune_volume = tune_volume
+        self.background_folder = Path(background_folder)
+        self.fade_after = max(0.0, fade_after)
         self.sounds_dir = Path(sounds_dir)
         self._sounds: dict[str, object] = {}
         self._chime_cycle = 0
@@ -60,6 +72,16 @@ class AudioEngine:
         self._tune_playing = False
         self._idle = False
         self._enabled = False
+        # "active" mode — a shuffled playlist, distinct from the idle-tune
+        # rotation above (see _playlist_* methods).
+        self._playlist: list[Path] = []
+        self._playlist_from_folder = False
+        self._playlist_index = -1
+        self._track_offset = 0.0
+        self._track_loaded = False
+        self._track_started_at: float | None = None
+        self._music_on = False
+        self._last_activity: float | None = None
         if mute:
             log.info("audio: muted by config")
             return
@@ -83,6 +105,8 @@ class AudioEngine:
                     log.warning("audio: cue regeneration failed (%s)", exc)
         if self.tunes == "always":
             self._start_tune()
+        elif self.tunes == "active":
+            self._playlist, self._playlist_from_folder = self._build_playlist()
 
     # ------------------------------------------------------------- cue play
 
@@ -176,6 +200,128 @@ class AudioEngine:
         else:
             self._stop_tune()
 
+    # ------------------------------------------------ background (active mode)
+    #
+    # "active" is the mirror image of "idle": background music plays while
+    # the child is at the keyboard and fades out once they wander off,
+    # rather than the other way round. It draws from background_folder (a
+    # personal, git-ignored library of real songs) and, only when that
+    # folder is empty or missing, falls back to looping the generated tunes
+    # via the exact _start_tune/_stop_tune machinery above — so a stock
+    # checkout with no personal music still plays something.
+
+    def _build_playlist(self) -> tuple[list[Path], bool]:
+        files: list[Path] = []
+        if self.background_folder.is_dir():
+            files = sorted(
+                p for p in self.background_folder.iterdir()
+                if p.is_file() and p.suffix.lower() in _MUSIC_EXTS
+            )
+        if files:
+            random.shuffle(files)
+            return files, True
+        fallback = [self._tune_path(i) for i in range(len(TUNE_NAMES))]
+        fallback = [p for p in fallback if p.is_file()]
+        random.shuffle(fallback)
+        return fallback, False
+
+    def _playlist_advance(self, now: float) -> None:
+        """Load and play the next shuffled track from the top."""
+        if not self._playlist:
+            return
+        self._playlist_index = (self._playlist_index + 1) % len(self._playlist)
+        path = self._playlist[self._playlist_index]
+        self._track_offset = 0.0
+        self._track_loaded = True
+        self._track_started_at = now
+        try:
+            import pygame
+            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.set_volume(self.tune_volume)
+            pygame.mixer.music.play(loops=0, fade_ms=_PLAYLIST_FADE_IN_MS)
+        except Exception as exc:              # noqa: BLE001 — music is optional
+            log.warning("background track %s failed to play (%s)", path.name, exc)
+
+    def _playlist_play(self, now: float) -> None:
+        if self._music_on or not self._playlist:
+            return
+        self._music_on = True
+        if not self._playlist_from_folder:
+            # Generated tunes are seamless infinite loops — reuse the idle
+            # rotation as-is, there's no "partway through" to resume.
+            self._start_tune()
+            return
+        if not self._track_loaded:
+            self._playlist_advance(now)
+            return
+        # Resume the same track where the fade caught it.
+        path = self._playlist[self._playlist_index]
+        self._track_started_at = now
+        try:
+            import pygame
+            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.set_volume(self.tune_volume)
+            pygame.mixer.music.play(loops=0, start=self._track_offset,
+                                    fade_ms=_PLAYLIST_FADE_IN_MS)
+        except Exception as exc:              # noqa: BLE001
+            # SDL_mixer doesn't support seeking every format (WAV, notably)
+            # — rather than silently stay "on" but mute, fall back to
+            # restarting this track from the top.
+            log.info("background track seek unsupported (%s) — restarting it", exc)
+            self._track_offset = 0.0
+            try:
+                import pygame
+                pygame.mixer.music.play(loops=0, fade_ms=_PLAYLIST_FADE_IN_MS)
+            except Exception as exc2:          # noqa: BLE001
+                log.warning("background track resume failed (%s)", exc2)
+
+    def _playlist_pause(self, now: float) -> None:
+        if not self._music_on:
+            return
+        self._music_on = False
+        if not self._playlist_from_folder:
+            self._stop_tune()
+            return
+        if self._track_started_at is not None:
+            self._track_offset += now - self._track_started_at
+            self._track_started_at = None
+        try:
+            import pygame
+            pygame.mixer.music.fadeout(_PLAYLIST_FADE_OUT_MS)
+        except Exception:                     # noqa: BLE001
+            pass
+
+    def _playlist_advance_if_finished(self, now: float) -> None:
+        """A finite track (real song) that finished on its own moves on to
+        the next shuffled pick. Generated tunes loop forever, so this is a
+        no-op for the fallback playlist."""
+        if not self._music_on or not self._playlist_from_folder:
+            return
+        try:
+            import pygame
+            if not pygame.mixer.music.get_busy():
+                self._playlist_advance(now)
+        except Exception:                     # noqa: BLE001
+            pass
+
+    def notify_activity(self, now: float) -> None:
+        """Called on every raw keypress — the same signal that wakes the
+        screen. Only meaningful in "active" tune mode."""
+        self._last_activity = now
+
+    def tick(self, now: float) -> None:
+        """Call once per frame. Drives the "active" mode's fade in/out and
+        playlist advance; a no-op in every other tune mode."""
+        if not self._enabled or self.mute or self.tunes != "active":
+            return
+        if self._last_activity is None:
+            return  # never touched the keyboard yet — stay silent
+        if now - self._last_activity < self.fade_after:
+            self._playlist_play(now)
+        else:
+            self._playlist_pause(now)
+        self._playlist_advance_if_finished(now)
+
     # -------------------------------------------------------------- actions
 
     def on_action(self, action: Action) -> None:
@@ -250,3 +396,4 @@ class AudioEngine:
                 pass
             self._enabled = False
         self._tune_playing = False
+        self._music_on = False

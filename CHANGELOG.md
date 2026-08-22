@@ -6,6 +6,23 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### feat: background music that plays while active, fading out when the toddler wanders off (2026-08-22)
+New `music.tunes = "active"` mode (now the default): plays a shuffled personal
+music library while keys are being pressed and fades it out after
+`music.fade_after` seconds (default 30 s) of no activity, resuming the same
+track — not the top — the next time a key is touched. This is the mirror
+image of the existing `"idle"` attract-mode soundtrack, which is unchanged
+and still available.
+
+The library lives in `music.background_folder` (default `music/`, resolved
+against the repo root in dev and `/opt/lilypad` in kiosk mode) and is scanned
+for `.mp3`/`.ogg`/`.oga`/`.flac`/`.wav` files. It's git-ignored on purpose —
+this project's no-copyrighted-assets rule covers what ships in the repo, not
+what a parent drops onto their own SD card — so an empty or missing folder
+falls back to looping the existing generated tunes, keeping a stock checkout
+fully functional with zero copyrighted content. `install.sh` now copies a
+`music/` folder next to it onto `/opt/lilypad/music` if one exists.
+
 ### Verified on real hardware — first full on-device bring-up (2026-08-12)
 Installed and run end-to-end on the actual Pi 5 (1 GB, Rev 1.1) with the
 BlackWidow attached. Everything below is measured, not inferred. Four faults

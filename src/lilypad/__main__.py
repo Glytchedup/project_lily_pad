@@ -199,7 +199,10 @@ def main(argv: list[str] | None = None) -> int:
                         mute=cfg.audio.mute, volume=cfg.audio.volume,
                         key_notes=cfg.music.key_notes,
                         tunes=cfg.music.tunes,
-                        tune_volume=cfg.music.tune_volume)
+                        tune_volume=cfg.music.tune_volume,
+                        background_folder=Path(cfg.music.background_folder) if not kiosk
+                                          else Path("/opt/lilypad") / cfg.music.background_folder,
+                        fade_after=cfg.music.fade_after)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,
@@ -251,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
                     # this key means anything: a key that produces no action
                     # (a lone Shift) still means somebody is at the keyboard.
                     engine.wake(now)
+                    audio.notify_activity(now)
                     lighting.key_pressed(ev.name, now)
                 for action in mapper.feed(ev):
                     handle(action)
@@ -269,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             # Background tunes are the soundtrack to an empty room: attract
             # mode fades them in, the next keypress fades them straight out.
             audio.set_idle(engine.attract is not None)
+            audio.tick(now)
             # Dark screen, dark keyboard.
             lighting.set_sleep(engine.asleep)
             engine.draw(screen)
