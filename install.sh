@@ -9,7 +9,8 @@
 #   1. apt packages: venv/toolchain, Mesa KMSDRM/EGL runtime, ALSA, espeak-ng
 #   2. venv at /opt/lilypad/venv with this checkout installed (pygame-ce,
 #      evdev, pyusb)
-#   3. sound generation (synth cues + espeak-ng voice) into /opt/lilypad/sounds
+#   3. sound generation (synth cues + espeak-ng voice) into /opt/lilypad/sounds,
+#      plus a copy of any personal music/ folder next to this script
 #   4. /etc/lilypad/config.toml (kept if it already exists)
 #   5. systemd units + udev replug rule + sysrq-off sysctl
 #   6. console hardening: getty@tty1 off, quiet boot cmdline
@@ -49,6 +50,17 @@ fi
 # synthesized in pure Python — a minute or so on a Pi, then never again.
 say "3/6 Generating sounds (notes, chords, tunes + espeak-ng voice) — takes a minute"
 "$APP_DIR/venv/bin/python" -m lilypad.audio.synth "$APP_DIR/sounds"
+
+# Optional personal background-music library for "active" mode. Never in
+# git (see .gitignore) — copied in only if you've dropped files next to
+# this script, in a music/ folder alongside it.
+if [ -d "$REPO_DIR/music" ] && [ -n "$(ls -A "$REPO_DIR/music" 2>/dev/null)" ]; then
+    echo "found $REPO_DIR/music — copying to $APP_DIR/music"
+    mkdir -p "$APP_DIR/music"
+    cp -r "$REPO_DIR/music/." "$APP_DIR/music/"
+else
+    echo "no music/ folder next to install.sh — active mode will use the built-in generated tunes"
+fi
 
 say "4/6 Config"
 mkdir -p "$CONFIG_DIR"

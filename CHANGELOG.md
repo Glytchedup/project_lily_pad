@@ -6,6 +6,36 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### fix: Pip settles from a landing bounce instead of shaking for seconds (2026-08-22)
+A hard hop's bounce decayed slowly (0.7 restitution): up to 8 re-triggering
+landings over ~2.5s for a single shove, each one re-flashing his squash and
+spawning another splash ring — so after a toddler stopped pushing him around
+he kept visibly juddering, with rings piling on top of each other well after
+he'd actually landed. Restitution dropped to 0.45; the same hop now settles
+in ~4 bounces inside a second. Found during on-device Pi 3 testing.
+
+### tune: background music louder, keypress cues softer (2026-08-22)
+`audio.volume` 0.8 → 0.65 (keypress/character cues), `music.tune_volume`
+0.45 → 0.6 (background tunes and the active playlist). Requested after
+on-device Pi 3 testing.
+
+### feat: background music that plays while active, fading out when the toddler wanders off (2026-08-22)
+New `music.tunes = "active"` mode (now the default): plays a shuffled personal
+music library while keys are being pressed and fades it out after
+`music.fade_after` seconds (default 30 s) of no activity, resuming the same
+track — not the top — the next time a key is touched. This is the mirror
+image of the existing `"idle"` attract-mode soundtrack, which is unchanged
+and still available.
+
+The library lives in `music.background_folder` (default `music/`, resolved
+against the repo root in dev and `/opt/lilypad` in kiosk mode) and is scanned
+for `.mp3`/`.ogg`/`.oga`/`.flac`/`.wav` files. It's git-ignored on purpose —
+this project's no-copyrighted-assets rule covers what ships in the repo, not
+what a parent drops onto their own SD card — so an empty or missing folder
+falls back to looping the existing generated tunes, keeping a stock checkout
+fully functional with zero copyrighted content. `install.sh` now copies a
+`music/` folder next to it onto `/opt/lilypad/music` if one exists.
+
 ### Verified on real hardware — first full on-device bring-up (2026-08-12)
 Installed and run end-to-end on the actual Pi 5 (1 GB, Rev 1.1) with the
 BlackWidow attached. Everything below is measured, not inferred. Four faults

@@ -351,6 +351,135 @@ def test_engine_muted_is_silent_and_harmless(tmp_path):
     engine.close()
 
 
+# --------------------------------------------- audio engine ("active" mode)
+
+def _silent_wav(path, seconds=1.0):
+    """A tiny real WAV so pygame.mixer.music.load()/play() succeed for real
+    (SDL_AUDIODRIVER=dummy makes it inaudible but fully functional)."""
+    frames = int(SAMPLE_RATE * seconds)
+    with wave.open(str(path), "w") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(SAMPLE_RATE)
+        f.writeframes(b"\x00\x00" * frames)
+
+
+def test_active_mode_stays_silent_until_the_first_keypress(tmp_path):
+    folder = tmp_path / "music"
+    folder.mkdir()
+    _silent_wav(folder / "song.wav")
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="active",
+                         background_folder=folder, fade_after=30.0)
+    engine.tick(100.0)
+    assert engine._music_on is False
+    engine.close()
+
+
+def test_active_mode_plays_within_the_window_and_fades_after(tmp_path):
+    folder = tmp_path / "music"
+    folder.mkdir()
+    _silent_wav(folder / "song.wav")
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="active",
+                         background_folder=folder, fade_after=30.0)
+    engine.notify_activity(0.0)
+    engine.tick(5.0)
+    assert engine._music_on is True
+    engine.tick(31.0)
+    assert engine._music_on is False
+    engine.close()
+
+
+def test_active_mode_resume_seeks_when_the_format_supports_it(tmp_path, monkeypatch):
+    """WAV can't seek in SDL_mixer, so this fixture exercises the graceful
+    restart-from-zero fallback (test below) rather than a real seek — this
+    test instead checks the *call*, mocking play() so no real format
+    limitation gets in the way of asserting the intent: resume asks for
+    ``start=<the tracked offset>``, not a blind restart."""
+    folder = tmp_path / "music"
+    folder.mkdir()
+    _silent_wav(folder / "song.wav")
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="active",
+                         background_folder=folder, fade_after=30.0)
+    engine.notify_activity(0.0)
+    engine.tick(5.0)
+    playing_index = engine._playlist_index
+    engine.tick(40.0)                     # fades out
+    assert engine._track_offset > 0.0
+    offset = engine._track_offset
+
+    import pygame
+    calls = []
+    monkeypatch.setattr(pygame.mixer.music, "load", lambda *a, **k: None)
+    monkeypatch.setattr(pygame.mixer.music, "play",
+                        lambda *a, **k: calls.append(k))
+
+    engine.notify_activity(41.0)
+    engine.tick(41.0)                     # resumes
+    assert engine._music_on is True
+    assert engine._playlist_index == playing_index   # same track, not the next one
+    assert calls[-1].get("start") == pytest.approx(offset)
+    engine.close()
+
+
+def test_active_mode_resume_falls_back_to_restart_if_seek_unsupported(tmp_path, caplog):
+    """WAV genuinely can't seek in SDL_mixer — a real-world case, since WAV
+    is one of the extensions background_folder scans for. The engine must
+    not end up believing it's playing while actually silent."""
+    folder = tmp_path / "music"
+    folder.mkdir()
+    _silent_wav(folder / "song.wav")
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="active",
+                         background_folder=folder, fade_after=30.0)
+    with caplog.at_level("INFO"):
+        engine.notify_activity(0.0)
+        engine.tick(5.0)
+        engine.tick(40.0)                 # fades out
+        assert engine._track_offset > 0.0
+        engine.notify_activity(41.0)
+        engine.tick(41.0)                 # resumes — seek unsupported for WAV
+    assert engine._music_on is True
+    assert engine._track_offset == 0.0    # fell back to restarting from the top
+    assert not any("resume failed" in r.message for r in caplog.records)
+    engine.close()
+
+
+def test_active_mode_falls_back_to_generated_tunes_when_folder_is_empty(tmp_path):
+    for name in TUNE_NAMES:
+        _silent_wav(tmp_path / f"tune_{name}.wav")
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="active",
+                         background_folder=tmp_path / "does-not-exist",
+                         fade_after=30.0)
+    assert engine._playlist_from_folder is False
+    assert len(engine._playlist) == len(TUNE_NAMES)
+    engine.notify_activity(0.0)
+    engine.tick(1.0)
+    assert engine._tune_playing is True
+    engine.close()
+
+
+def test_active_mode_with_nothing_on_disk_is_silent_not_fatal(tmp_path):
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes="active",
+                         background_folder=tmp_path / "does-not-exist",
+                         fade_after=30.0)
+    engine.notify_activity(0.0)
+    engine.tick(1.0)          # must not raise
+    assert engine._music_on is False
+    engine.close()
+
+
+@pytest.mark.parametrize("mode", ["idle", "off", "always"])
+def test_non_active_tune_modes_ignore_notify_and_tick(tmp_path, mode):
+    folder = tmp_path / "music"
+    folder.mkdir()
+    _silent_wav(folder / "song.wav")
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes=mode,
+                         background_folder=folder, fade_after=30.0)
+    engine.notify_activity(0.0)
+    engine.tick(1.0)          # must not raise or start the playlist
+    assert engine._music_on is False
+    engine.close()
+
+
 def test_animal_letters_cover_the_expected_cast():
     """Every letter summons a creature — that is the product promise."""
     import inspect

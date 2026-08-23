@@ -75,23 +75,34 @@ def test_effects_new_toggles_from_toml(tmp_path):
 def test_music_defaults():
     cfg = load(None)
     assert cfg.music.key_notes is True
-    assert cfg.music.tunes == "idle"
-    assert cfg.music.tune_volume == 0.45
+    assert cfg.music.tunes == "active"
+    assert cfg.music.tune_volume == 0.6
+    assert cfg.music.background_folder == "music"
+    assert cfg.music.fade_after == 30.0
 
 
 def test_music_from_toml(tmp_path):
     p = tmp_path / "c.toml"
-    p.write_text('[music]\nkey_notes = false\ntunes = "always"\ntune_volume = 0.2\n')
+    p.write_text('[music]\nkey_notes = false\ntunes = "always"\ntune_volume = 0.2\n'
+                  'background_folder = "songs"\nfade_after = 15.0\n')
     cfg = load(p)
     assert cfg.music.key_notes is False
     assert cfg.music.tunes == "always"
     assert cfg.music.tune_volume == 0.2
+    assert cfg.music.background_folder == "songs"
+    assert cfg.music.fade_after == 15.0
 
 
 def test_music_tune_volume_is_clamped(tmp_path):
     p = tmp_path / "c.toml"
     p.write_text("[music]\ntune_volume = 4.0\n")
     assert load(p).music.tune_volume == 1.0
+
+
+def test_music_fade_after_cannot_go_negative(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[music]\nfade_after = -5.0\n")
+    assert load(p).music.fade_after == 0.0
 
 
 def test_invalid_tune_mode_rejected(tmp_path):
@@ -101,7 +112,13 @@ def test_invalid_tune_mode_rejected(tmp_path):
         load(p)
 
 
+def test_active_tune_mode_accepted(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[music]\ntunes = "active"\n')
+    assert load(p).music.tunes == "active"
+
+
 def test_repo_config_declares_the_music_section():
     cfg = load("config.toml")
-    assert cfg.music.tunes in ("idle", "always", "off")
+    assert cfg.music.tunes in ("idle", "always", "off", "active")
     assert cfg.music.key_notes is True

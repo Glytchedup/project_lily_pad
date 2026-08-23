@@ -10,14 +10,17 @@ from pathlib import Path
 @dataclass(frozen=True)
 class AudioConfig:
     mute: bool = False
-    volume: float = 0.8
+    volume: float = 0.65
 
 
 @dataclass(frozen=True)
 class MusicConfig:
     key_notes: bool = True       # every key plays a musical note
-    tunes: str = "idle"          # idle | always | off
-    tune_volume: float = 0.45    # background music level, independent of cues
+    tunes: str = "active"        # idle | always | off | active
+    tune_volume: float = 0.6     # background music level, independent of cues
+    background_folder: str = "music"  # personal MP3s for "active" mode; empty
+                                       # or missing falls back to generated tunes
+    fade_after: float = 30.0     # seconds of no keypress before "active" fades out
 
 
 @dataclass(frozen=True)
@@ -61,7 +64,7 @@ class Config:
 
 
 _VALID_BACKENDS = {"auto", "razer_hid", "openrazer", "mock"}
-_VALID_TUNE_MODES = {"idle", "always", "off"}
+_VALID_TUNE_MODES = {"idle", "always", "off", "active"}
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -90,7 +93,7 @@ def load(path: str | Path | None = None) -> Config:
             f"lighting.backend must be one of {sorted(_VALID_BACKENDS)}, got {backend!r}"
         )
 
-    tune_mode = str(music.get("tunes", "idle"))
+    tune_mode = str(music.get("tunes", "active"))
     if tune_mode not in _VALID_TUNE_MODES:
         raise ValueError(
             f"music.tunes must be one of {sorted(_VALID_TUNE_MODES)}, got {tune_mode!r}"
@@ -107,12 +110,14 @@ def load(path: str | Path | None = None) -> Config:
     return Config(
         audio=AudioConfig(
             mute=bool(audio.get("mute", False)),
-            volume=_clamp(float(audio.get("volume", 0.8)), 0.0, 1.0),
+            volume=_clamp(float(audio.get("volume", 0.65)), 0.0, 1.0),
         ),
         music=MusicConfig(
             key_notes=bool(music.get("key_notes", True)),
             tunes=tune_mode,
-            tune_volume=_clamp(float(music.get("tune_volume", 0.45)), 0.0, 1.0),
+            tune_volume=_clamp(float(music.get("tune_volume", 0.6)), 0.0, 1.0),
+            background_folder=str(music.get("background_folder", "music")),
+            fade_after=max(0.0, float(music.get("fade_after", 30.0))),
         ),
         display=DisplayConfig(
             dev_window=(int(dev_window[0]), int(dev_window[1])),

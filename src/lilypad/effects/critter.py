@@ -378,12 +378,32 @@ class Frog:
             # A resting frog re-enters the floor by a sub-pixel every frame
             # (gravity), so only a real impact counts as a bounce — otherwise
             # he'd stay squashed forever and rain ripples while sitting still.
+            # That "sub-pixel" only stays sub-40px/s at ~60fps though — the
+            # velocity gravity adds in one frame is dt * h * 1.4, so a fixed
+            # 40 threshold reads plain resting gravity as a real landing on
+            # any frame that runs under ~38fps. On hardware that dips below
+            # that under load (confirmed on the Pi 3 test board), *every*
+            # frame while sitting still crossed it — a permanent phantom
+            # bounce, not a decaying tail, so he never actually stopped
+            # shaking or throwing off ripples. Scale the cutoff with dt so it
+            # stays ahead of gravity alone at whatever frame rate is actually
+            # happening; a real hop's impulse (``hop_impulse``, in the
+            # hundreds) is nowhere near this even at very low fps, so genuine
+            # landings still register.
             impact = abs(self.vy)
             self.y = self.floor_y
-            if impact < 40:
+            settle_threshold = max(40.0, self.h * 1.4 * dt * 1.5)
+            if impact < settle_threshold:
                 self.vy = 0.0
             else:
-                self.vy = -impact * 0.7
+                # 0.7 restitution used to take up to 8 decaying bounces (~2.5s)
+                # to fall back under the settle threshold above — each one
+                # re-triggering squash and a fresh ripple, so a single hop
+                # left him visibly shaking with rings piling on top of each
+                # other well after he'd actually stopped moving. 0.45 settles
+                # the same hop in ~4 bounces inside a second: still springy,
+                # not a lingering shudder.
+                self.vy = -impact * 0.45
                 bounced = True
             # Joy-hop: while excited and touching the floor, launch again.
             if self.age < self._excited_until:

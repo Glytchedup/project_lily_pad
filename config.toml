@@ -6,7 +6,7 @@
 # Master mute. true = no sound at all, regardless of volume.
 mute = false
 # 0.0 .. 1.0
-volume = 0.8
+volume = 0.65
 
 [music]
 # Every key plays a note of the C major pentatonic scale, laid out like a piano
@@ -15,14 +15,25 @@ volume = 0.8
 # chord. false = no key notes (character cues and chimes only).
 key_notes = true
 # Background instrumental tunes:
+#   "active" — play while keys are being pressed, fading out after
+#              `fade_after` seconds of no activity (see below). Uses whatever
+#              audio files are in `background_folder`; falls back to the
+#              built-in generated tunes if that folder is empty or missing.
 #   "idle"   — play only during the attract animation, fading out on the next
 #              keypress, so playing is never competing with backing music
 #   "always" — loop continuously
 #   "off"    — never
-tunes = "idle"
+tunes = "active"
 # Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
 # the level of the keypress cues.
-tune_volume = 0.45
+tune_volume = 0.6
+# Folder of personal MP3/OGG/WAV files to shuffle through in "active" mode —
+# never checked into git (see .gitignore), so this is safe for real songs.
+# Resolved relative to the repo root in dev mode, /opt/lilypad in kiosk mode.
+background_folder = "music"
+# "active" mode only: seconds of no keypress before the music fades out. A
+# fade caught mid-track resumes from the same spot, not the top, next time.
+fade_after = 30.0
 
 [display]
 # Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.

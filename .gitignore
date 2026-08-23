@@ -18,6 +18,11 @@ htmlcov/
 # Generated audio assets (rebuilt by scripts/build_sounds.py / install.sh)
 assets/sounds/generated/
 
+# Personal background-music library (real, possibly copyrighted tracks) —
+# local to this machine only, never committed. See music.background_folder
+# in config.toml / CLAUDE.md.
+/music/
+
 # OS noise
 .DS_Store
 Thumbs.db

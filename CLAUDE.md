@@ -46,17 +46,29 @@ Python 3.11+ package `lilypad/`, src-layout:
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
-- `audio/` — pygame.mixer cues, all procedurally generated (zero copyrighted assets).
-  `music.py` is the theory core: every key maps to a **C major pentatonic** note,
-  derived from `lighting/keymap.py`'s matrix (lower rows = lower notes, left→right
-  climbs). That scale has no minor 2nd / tritone / major 7th in any inversion, so any
-  simultaneous keypress combination is consonant *by construction* — don't "fix" a
-  clash by filtering, keep the mapping pentatonic. `synth.py` renders `Voice`
-  instruments (per-harmonic decay, chorus, brightness rolloff, reverb) plus the
-  character cues (animals, whoosh, boom — deliberately not musical). `tunes.py` holds
-  four original anthemic-pop instrumental loops, rendered to seamless WAVs and played
-  as idle background music via `pygame.mixer.music`. Letter/number names come from
-  espeak-ng.
+- `audio/` — pygame.mixer cues, all procedurally generated (zero copyrighted assets
+  *in the repo* — see `background_folder` below for the one deliberate, git-ignored
+  exception). `music.py` is the theory core: every key maps to a **C major
+  pentatonic** note, derived from `lighting/keymap.py`'s matrix (lower rows = lower
+  notes, left→right climbs). That scale has no minor 2nd / tritone / major 7th in any
+  inversion, so any simultaneous keypress combination is consonant *by construction*
+  — don't "fix" a clash by filtering, keep the mapping pentatonic. `synth.py` renders
+  `Voice` instruments (per-harmonic decay, chorus, brightness rolloff, reverb) plus
+  the character cues (animals, whoosh, boom — deliberately not musical). `tunes.py`
+  holds four original anthemic-pop instrumental loops, rendered to seamless WAVs.
+  Letter/number names come from espeak-ng.
+
+  **Background music** is driven by `AudioEngine`'s `_start_tune`/`_stop_tune` (the
+  four generated tunes) and, in the default `music.tunes = "active"` mode, a parallel
+  `_playlist_*` state machine (`notify_activity()` + a per-frame `tick()`) that plays
+  a shuffled `music.background_folder` while keys are being pressed and fades out
+  after `music.fade_after` seconds idle, resuming mid-track rather than restarting.
+  `background_folder` (default `music/`) is **git-ignored** — it's meant for a
+  parent's own MP3s and is the one place this project's "no copyrighted assets"
+  rule is deliberately scoped to *the repo*, not the device; an empty/missing folder
+  falls back to looping the generated tunes, so a stock checkout still has music.
+  `music.tunes = "idle"` is the older, opposite-trigger mode (soundtrack to an empty
+  room, fades out on the next keypress) and is unchanged.
 - `escape.py` — parent escape hatch state machine.
 - `config.py` — TOML config (volume/mute, key notes + tune mode/volume, brightness,
   escape combo, effect toggles, idle/sleep timeouts).
@@ -117,7 +129,11 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 - Everything hardware-touching sits behind an interface with a mock, so the full app runs
   and tests on a desktop with `--dev`.
 - Update `CHANGELOG.md` and this file with every meaningful change.
-- No copyrighted characters/assets anywhere — original visuals, generated audio.
+- No copyrighted characters/assets anywhere **in the repo** — original visuals,
+  generated audio. The one deliberate exception is `music.background_folder`
+  (default `music/`, git-ignored): a parent's own songs for background music,
+  local to their device only. Never remove it from `.gitignore` or commit its
+  contents.
 
 ## Dev quickstart
 
@@ -125,7 +141,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 880 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter)
+pytest                        # 891 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter)
 ```
 
 ## Status / gotchas
