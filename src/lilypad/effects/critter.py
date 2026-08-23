@@ -383,7 +383,14 @@ class Frog:
             if impact < 40:
                 self.vy = 0.0
             else:
-                self.vy = -impact * 0.7
+                # 0.7 restitution used to take up to 8 decaying bounces (~2.5s)
+                # to fall back under the settle threshold above — each one
+                # re-triggering squash and a fresh ripple, so a single hop
+                # left him visibly shaking with rings piling on top of each
+                # other well after he'd actually stopped moving. 0.45 settles
+                # the same hop in ~4 bounces inside a second: still springy,
+                # not a lingering shudder.
+                self.vy = -impact * 0.45
                 bounced = True
             # Joy-hop: while excited and touching the floor, launch again.
             if self.age < self._excited_until:

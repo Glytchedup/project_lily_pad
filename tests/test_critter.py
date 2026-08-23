@@ -197,6 +197,32 @@ def test_a_landing_squashes_him_and_a_rest_does_not():
     assert landed, "he never came down"
 
 
+def test_a_big_hop_settles_quickly_instead_of_shaking_for_seconds():
+    """A high-restitution bounce decays slowly — 8 re-triggering landings over
+    2.5s for a single shove, each one re-flashing squash and spawning another
+    ripple, so he visibly kept shaking with rings piling up well after he'd
+    actually stopped moving. He should be done settling in well under a
+    second and a handful of bounces, not a dozen."""
+    frog = Frog(SIZE)
+    for _ in range(120):
+        frog.update(1 / 60)
+    frog.shove((1, -1))
+
+    bounces = []
+    t = 0.0
+    dt = 1 / 60
+    for _ in range(400):
+        frog.update(dt)
+        t += dt
+        if frog.just_bounced:
+            bounces.append(t)
+
+    assert bounces, "he never came down"
+    settle_span = bounces[-1] - bounces[0]
+    assert settle_span < 1.5, f"took {settle_span:.2f}s from first landing to rest"
+    assert len(bounces) <= 5, f"{len(bounces)} separate landings for one hop"
+
+
 def test_drawing_paints_both_him_and_his_pad():
     frog = Frog(SIZE)
     for _ in range(240):
