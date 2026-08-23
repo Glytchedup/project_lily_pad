@@ -6,6 +6,19 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### fix: Pip settles from a landing bounce instead of shaking for seconds (2026-08-22)
+A hard hop's bounce decayed slowly (0.7 restitution): up to 8 re-triggering
+landings over ~2.5s for a single shove, each one re-flashing his squash and
+spawning another splash ring — so after a toddler stopped pushing him around
+he kept visibly juddering, with rings piling on top of each other well after
+he'd actually landed. Restitution dropped to 0.45; the same hop now settles
+in ~4 bounces inside a second. Found during on-device Pi 3 testing.
+
+### tune: background music louder, keypress cues softer (2026-08-22)
+`audio.volume` 0.8 → 0.65 (keypress/character cues), `music.tune_volume`
+0.45 → 0.6 (background tunes and the active playlist). Requested after
+on-device Pi 3 testing.
+
 ### feat: background music that plays while active, fading out when the toddler wanders off (2026-08-22)
 New `music.tunes = "active"` mode (now the default): plays a shuffled personal
 music library while keys are being pressed and fades it out after
