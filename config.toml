@@ -6,7 +6,7 @@
 # Master mute. true = no sound at all, regardless of volume.
 mute = false
 # 0.0 .. 1.0
-volume = 0.8
+volume = 0.65
 
 [music]
 # Every key plays a note of the C major pentatonic scale, laid out like a piano
@@ -26,7 +26,7 @@ key_notes = true
 tunes = "active"
 # Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
 # the level of the keypress cues.
-tune_volume = 0.45
+tune_volume = 0.6
 # Folder of personal MP3/OGG/WAV files to shuffle through in "active" mode —
 # never checked into git (see .gitignore), so this is safe for real songs.
 # Resolved relative to the repo root in dev mode, /opt/lilypad in kiosk mode.

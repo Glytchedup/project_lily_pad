@@ -76,7 +76,7 @@ def test_music_defaults():
     cfg = load(None)
     assert cfg.music.key_notes is True
     assert cfg.music.tunes == "active"
-    assert cfg.music.tune_volume == 0.45
+    assert cfg.music.tune_volume == 0.6
     assert cfg.music.background_folder == "music"
     assert cfg.music.fade_after == 30.0
 

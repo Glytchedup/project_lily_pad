@@ -10,14 +10,14 @@ from pathlib import Path
 @dataclass(frozen=True)
 class AudioConfig:
     mute: bool = False
-    volume: float = 0.8
+    volume: float = 0.65
 
 
 @dataclass(frozen=True)
 class MusicConfig:
     key_notes: bool = True       # every key plays a musical note
     tunes: str = "active"        # idle | always | off | active
-    tune_volume: float = 0.45    # background music level, independent of cues
+    tune_volume: float = 0.6     # background music level, independent of cues
     background_folder: str = "music"  # personal MP3s for "active" mode; empty
                                        # or missing falls back to generated tunes
     fade_after: float = 30.0     # seconds of no keypress before "active" fades out
@@ -110,12 +110,12 @@ def load(path: str | Path | None = None) -> Config:
     return Config(
         audio=AudioConfig(
             mute=bool(audio.get("mute", False)),
-            volume=_clamp(float(audio.get("volume", 0.8)), 0.0, 1.0),
+            volume=_clamp(float(audio.get("volume", 0.65)), 0.0, 1.0),
         ),
         music=MusicConfig(
             key_notes=bool(music.get("key_notes", True)),
             tunes=tune_mode,
-            tune_volume=_clamp(float(music.get("tune_volume", 0.45)), 0.0, 1.0),
+            tune_volume=_clamp(float(music.get("tune_volume", 0.6)), 0.0, 1.0),
             background_folder=str(music.get("background_folder", "music")),
             fade_after=max(0.0, float(music.get("fade_after", 30.0))),
         ),
