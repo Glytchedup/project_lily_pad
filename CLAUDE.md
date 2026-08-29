@@ -41,7 +41,9 @@ Python 3.11+ package `lilypad/`, src-layout:
   farm animals keep their peekaboo. Sprite construction is arbitrarily expensive
   because everything is cached by (name, height, pose) — only the per-frame blit
   budget is sacred, which is also why concurrent animals are capped at
-  `MAX_ANIMALS`. **All 26 side-on creatures get their *shape* from a traced
+  `MAX_ANIMALS` — and giant letters/count-alongs at `MAX_GLYPHS` (6), which
+  retires the *oldest* glyph into its fade rather than dropping the newest,
+  so the key just pressed is always the visible one. **All 26 side-on creatures get their *shape* from a traced
   public-domain outline** (`animal_stencil.py`) — see below.
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
@@ -58,8 +60,26 @@ Python 3.11+ package `lilypad/`, src-layout:
   holds four original anthemic-pop instrumental loops, rendered to seamless WAVs.
   Letter/number names come from espeak-ng.
 
-  **Background music** is driven by `AudioEngine`'s `_start_tune`/`_stop_tune` (the
-  four generated tunes) and, in the default `music.tunes = "active"` mode, a parallel
+  **Background music.** The default is `music.tunes = "reward"`: the room is
+  quiet while the child plays, an `AudioEngine`-owned meter fills with
+  *engaged* play (`reward_seconds` OR `reward_presses`, whichever first;
+  gaps longer than `reward_window` don't count), and filling it buys
+  fireworks over silence for `PARTY_FANFARE_SECONDS`, then one whole track
+  while `Frog.dance()` keeps Pip hopping. The audio engine owns the meter
+  because it owns the music; the effect engine owns what a party *looks*
+  like. The main loop is the only thing that joins them —
+  `audio.consume_party_started()` -> `engine.start_party()`, and
+  `not audio.party_active` -> `engine.end_party()`. While `engine.party` is
+  set, attract mode, screen sleep and milestone celebrations are all
+  suppressed: a child watching the frog dance presses nothing, and a
+  three-minute track outlasts both timeouts. `_start_tune` grew a `loops`
+  argument for this — a reward track must END, so it plays once; every other
+  mode still loops forever. `PARTY_MAX_SECONDS` is the failsafe: every mixer
+  call in there swallows its exceptions, so a wedged mixer would otherwise
+  latch the party — and the sleep suppression riding on it — on forever.
+
+  The older modes are unchanged: `_start_tune`/`_stop_tune` (the
+  four generated tunes) and, in `music.tunes = "active"` mode, a parallel
   `_playlist_*` state machine (`notify_activity()` + a per-frame `tick()`) that plays
   a shuffled `music.background_folder` while keys are being pressed and fades out
   after `music.fade_after` seconds idle, resuming mid-track rather than restarting.
@@ -141,7 +161,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 891 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter)
+pytest                        # 924 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, reward)
 ```
 
 ## Status / gotchas

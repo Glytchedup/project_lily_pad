@@ -6,6 +6,51 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### feat: music is earned — a reward track, fireworks, and a frog dance party (2026-08-29)
+New `music.tunes = "reward"` mode, now the default. The playground starts
+quiet (key notes and letter voices only). A meter fills as the child plays,
+and when it fills — `music.reward_seconds` (60) of *engaged* play or
+`music.reward_presses` (100) keypresses, whichever lands first — the screen
+throws full fireworks over silence for three seconds, then plays a whole
+track from `music.background_folder` while Pip throws a dance party on his
+lily pad. The track ending ends the party; the next one has to be earned
+again.
+
+"Engaged" is the point of `music.reward_window` (10 s): a gap longer than
+that stops counting, so a key touched once a minute never earns a track,
+while a toddler who wanders off and comes back picks up their banked
+progress rather than starting from zero. Presses during a party don't bank
+the next one.
+
+Details that matter to the feel:
+- Key notes and character cues duck to 45% under the reward track, so the
+  music is the event and the keys still answer.
+- The attract animation and the 5-minute screen sleep are both suppressed
+  during a party — nobody presses a key while watching the frog dance, and a
+  three-minute track is far longer than either timeout.
+- Milestone celebrations are suppressed during a party; the party already is
+  the celebration.
+- A 10-minute hard cap ends a party whose track never reports finishing (a
+  wedged mixer would otherwise latch the party, and the sleep suppression
+  riding on it, on forever).
+- `mute = true` or no audio device means no reward cycle at all, logged once
+  at startup.
+- With `background_folder` empty or missing it falls back to the generated
+  tunes, played once rather than looped, so the party can still end. The
+  `idle`/`always`/`active` modes keep looping them forever, unchanged.
+
+`music.tunes = "active"` (the previous default) is unchanged and still
+available for constant background music.
+
+### feat: at most six giant letters on screen at once (2026-08-29)
+A two-handed run along the keyboard used to stack a dozen screen-sized
+glyphs into an unreadable pile — the opposite of "this key made THAT
+happen". `MAX_GLYPHS = 6` concurrent giant letters / count-alongs; over the
+cap the *oldest* glyph is retired into its fade rather than the newest one
+dropped, so the key you just pressed is always the one you can see. The
+existing `MAX_ANIMALS` cap, particle budget and degradation ladder are
+unchanged.
+
 ### fix: Pip settles from a landing bounce instead of shaking for seconds (2026-08-22)
 A hard hop's bounce decayed slowly (0.7 restitution): up to 8 re-triggering
 landings over ~2.5s for a single shove, each one re-flashing his squash and

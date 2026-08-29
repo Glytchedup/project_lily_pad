@@ -113,6 +113,11 @@ class GiantLetter:
         self.age += dt
         return self.age < self.total
 
+    def retire(self) -> None:
+        """Skip straight to the fade — the engine sheds the oldest glyphs when
+        the screen gets crowded. Idempotent, and never *extends* a life."""
+        self.age = max(self.age, self.total - self.FADE_TIME)
+
     def _wobble(self) -> tuple[int, int]:
         if self.age < self.POP_TIME:
             return (0, 0)

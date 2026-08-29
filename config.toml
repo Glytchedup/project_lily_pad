@@ -15,6 +15,11 @@ volume = 0.65
 # chord. false = no key notes (character cues and chimes only).
 key_notes = true
 # Background instrumental tunes:
+#   "reward" — silence while playing, then a whole track has to be EARNED:
+#              `reward_seconds` of engaged play or `reward_presses` keys,
+#              whichever lands first, buys fireworks and then a full track
+#              with Pip throwing a dance party. The track ending ends the
+#              party, and the next one has to be earned again.
 #   "active" — play while keys are being pressed, fading out after
 #              `fade_after` seconds of no activity (see below). Uses whatever
 #              audio files are in `background_folder`; falls back to the
@@ -23,17 +28,25 @@ key_notes = true
 #              keypress, so playing is never competing with backing music
 #   "always" — loop continuously
 #   "off"    — never
-tunes = "active"
+tunes = "reward"
 # Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
 # the level of the keypress cues.
 tune_volume = 0.6
-# Folder of personal MP3/OGG/WAV files to shuffle through in "active" mode —
-# never checked into git (see .gitignore), so this is safe for real songs.
+# Folder of personal MP3/OGG/WAV files to shuffle through in "reward" and
+# "active" modes — never checked into git (see .gitignore), so this is safe
+# for real songs.
 # Resolved relative to the repo root in dev mode, /opt/lilypad in kiosk mode.
 background_folder = "music"
 # "active" mode only: seconds of no keypress before the music fades out. A
 # fade caught mid-track resumes from the same spot, not the top, next time.
 fade_after = 30.0
+# "reward" mode only. A track is earned by whichever of these lands first.
+# reward_window is what makes the seconds mean *play* rather than wall clock:
+# a gap longer than this stops counting, so a key touched once a minute never
+# earns anything. Progress survives a break; only a party spends it.
+reward_seconds = 60.0
+reward_presses = 100
+reward_window = 10.0
 
 [display]
 # Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.

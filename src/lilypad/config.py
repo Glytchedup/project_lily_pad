@@ -16,11 +16,15 @@ class AudioConfig:
 @dataclass(frozen=True)
 class MusicConfig:
     key_notes: bool = True       # every key plays a musical note
-    tunes: str = "active"        # idle | always | off | active
+    tunes: str = "reward"        # idle | always | off | active | reward
     tune_volume: float = 0.6     # background music level, independent of cues
-    background_folder: str = "music"  # personal MP3s for "active" mode; empty
-                                       # or missing falls back to generated tunes
+    background_folder: str = "music"  # personal MP3s for "active"/"reward";
+                                       # empty or missing falls back to tunes
     fade_after: float = 30.0     # seconds of no keypress before "active" fades out
+    # "reward" mode: a track is earned by whichever lands first.
+    reward_seconds: float = 60.0   # cumulative seconds of engaged play
+    reward_presses: int = 100      # keypresses
+    reward_window: float = 10.0    # gap over which play stops counting as engaged
 
 
 @dataclass(frozen=True)
@@ -64,7 +68,7 @@ class Config:
 
 
 _VALID_BACKENDS = {"auto", "razer_hid", "openrazer", "mock"}
-_VALID_TUNE_MODES = {"idle", "always", "off", "active"}
+_VALID_TUNE_MODES = {"idle", "always", "off", "active", "reward"}
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -93,7 +97,7 @@ def load(path: str | Path | None = None) -> Config:
             f"lighting.backend must be one of {sorted(_VALID_BACKENDS)}, got {backend!r}"
         )
 
-    tune_mode = str(music.get("tunes", "active"))
+    tune_mode = str(music.get("tunes", "reward"))
     if tune_mode not in _VALID_TUNE_MODES:
         raise ValueError(
             f"music.tunes must be one of {sorted(_VALID_TUNE_MODES)}, got {tune_mode!r}"
@@ -118,6 +122,9 @@ def load(path: str | Path | None = None) -> Config:
             tune_volume=_clamp(float(music.get("tune_volume", 0.6)), 0.0, 1.0),
             background_folder=str(music.get("background_folder", "music")),
             fade_after=max(0.0, float(music.get("fade_after", 30.0))),
+            reward_seconds=max(1.0, float(music.get("reward_seconds", 60.0))),
+            reward_presses=max(1, int(music.get("reward_presses", 100))),
+            reward_window=max(0.5, float(music.get("reward_window", 10.0))),
         ),
         display=DisplayConfig(
             dev_window=(int(dev_window[0]), int(dev_window[1])),

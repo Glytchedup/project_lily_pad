@@ -335,6 +335,7 @@ class Frog:
         self.hop_impulse = self.h * 0.9
         self.just_bounced = False    # set each update; engine spawns ripples
         self._excited_until = 0.0    # celebration joy-hops while age < this
+        self.dancing = False         # reward dance party — hops until told to stop
 
         #: Vertical gap from his centre to the soles of his feet.
         self._feet = self.r * 0.62
@@ -357,6 +358,15 @@ class Frog:
     def celebrate(self, seconds: float = 3.0) -> None:
         """Milestone joy: keep hopping on its own for a few seconds."""
         self._excited_until = self.age + seconds
+
+    def dance(self, on: bool = True) -> None:
+        """Dance party: joy-hop for as long as the music lasts.
+
+        Same mechanism as ``celebrate`` — a hop relaunched on every landing —
+        but open-ended rather than timed, because the reward track decides
+        when the party is over, not a countdown here.
+        """
+        self.dancing = bool(on)
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -406,7 +416,15 @@ class Frog:
                 self.vy = -impact * 0.45
                 bounced = True
             # Joy-hop: while excited and touching the floor, launch again.
-            if self.age < self._excited_until:
+            if self.dancing:
+                # Dance party. Hop height breathes on a slow sine so a
+                # two-minute track reads as dancing rather than one hop on
+                # repeat, and the sway is wider than a joy-hop's — he works
+                # his way across the pond and back.
+                beat = 0.75 + 0.25 * math.sin(self.age * 1.7)
+                self.vy = -self.hop_impulse * 0.8 * beat
+                self.vx += (1 if (int(self.age * 3.5) % 2) else -1) * self.hop_impulse * 0.45
+            elif self.age < self._excited_until:
                 self.vy = -self.hop_impulse * 0.8
                 self.vx += (1 if (int(self.age * 7) % 2) else -1) * self.hop_impulse * 0.3
         if bounced:

@@ -75,7 +75,7 @@ def test_effects_new_toggles_from_toml(tmp_path):
 def test_music_defaults():
     cfg = load(None)
     assert cfg.music.key_notes is True
-    assert cfg.music.tunes == "active"
+    assert cfg.music.tunes == "reward"
     assert cfg.music.tune_volume == 0.6
     assert cfg.music.background_folder == "music"
     assert cfg.music.fade_after == 30.0
@@ -120,5 +120,5 @@ def test_active_tune_mode_accepted(tmp_path):
 
 def test_repo_config_declares_the_music_section():
     cfg = load("config.toml")
-    assert cfg.music.tunes in ("idle", "always", "off", "active")
+    assert cfg.music.tunes in ("idle", "always", "off", "active", "reward")
     assert cfg.music.key_notes is True

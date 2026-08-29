@@ -53,6 +53,7 @@ From your PC (the Pi needs internet on first install):
 
 ```bash
 ssh pi@lilypad.local
+sudo apt install -y git      # Pi OS Lite ships without it
 git clone https://github.com/Glytchedup/project_lily_pad.git
 cd project_lily_pad
 sudo ./install.sh
@@ -153,8 +154,12 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | `audio.mute` | `false` | `true` = fully silent |
 | `audio.volume` | `0.8` | keypress cue level, 0–1 |
 | `music.key_notes` | `true` | every key plays a musical note |
-| `music.tunes` | `"idle"` | background tunes: `idle` \| `always` \| `off` |
-| `music.tune_volume` | `0.45` | background music level, 0–1 |
+| `music.tunes` | `"reward"` | background music: `reward` \| `active` \| `idle` \| `always` \| `off` |
+| `music.tune_volume` | `0.6` | background music level, 0–1 |
+| `music.background_folder` | `"music"` | your own MP3s for `reward`/`active`; git-ignored |
+| `music.reward_seconds` | `60` | `reward`: engaged seconds that earn a track |
+| `music.reward_presses` | `100` | `reward`: keypresses that earn a track |
+| `music.reward_window` | `10` | `reward`: gap over which play stops counting as engaged |
 | `lighting.backend` | `"auto"` | `razer_hid` → `openrazer` → `mock` fallback chain |
 | `lighting.brightness` | `0.9` | keyboard LEDs, 0–1 |
 | `escape.combo` | both Shifts + Backspace | evdev key names |
@@ -172,7 +177,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 880 unit tests
+pytest                         # 924 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 

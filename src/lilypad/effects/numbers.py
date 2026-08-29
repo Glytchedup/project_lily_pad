@@ -77,6 +77,11 @@ class CountAlong:
         self.fanfare.update(dt)
         return self.age < self.total or len(self.fanfare) > 0
 
+    def retire(self) -> None:
+        """Skip to the fade, digit included (see GiantLetter.retire)."""
+        self.age = max(self.age, self.total - self.FADE_TIME)
+        self.digit.retire()
+
     def draw(self, surface: pygame.Surface) -> None:
         fade_start = self.total - self.FADE_TIME
         alpha = 1.0
