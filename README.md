@@ -176,7 +176,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 880 unit tests
+pytest                         # 924 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 

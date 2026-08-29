@@ -283,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
             if audio.consume_party_started():
                 engine.start_party(now)
             elif engine.party and not audio.party_active:
-                engine.end_party()
+                engine.end_party(now)
             # Dark screen, dark keyboard.
             lighting.set_sleep(engine.asleep)
             engine.draw(screen)

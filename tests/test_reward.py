@@ -153,9 +153,14 @@ def test_key_cues_duck_under_the_track_and_recover(tmp_path):
     try:
         assert engine._duck == 1.0
         press(engine, 20, gap=0.05)
+        # Still unducked through the fanfare — that cue plays into silence,
+        # and it is the moment the whole reward is about.
+        assert engine._duck == 1.0
+        started = engine._party_at
+        engine.tick(started + PARTY_FANFARE_SECONDS + 0.1)
         assert engine._duck == PARTY_DUCK
         engine._music_playing = lambda: False
-        engine.tick(engine._party_at + PARTY_FANFARE_SECONDS + 0.1)
+        engine.tick(started + PARTY_FANFARE_SECONDS + 5.0)
         assert engine._duck == 1.0
     finally:
         engine.close()
@@ -283,7 +288,7 @@ def test_start_party_throws_fireworks_and_makes_pip_dance():
     assert eng.frog.dancing is True
     assert eng.consume_celebration() is True     # the fanfare cue fires
     assert len(eng.effects) > 0
-    eng.end_party()
+    eng.end_party(now=100.0)
     assert eng.frog.dancing is False
 
 
@@ -303,12 +308,32 @@ def test_a_dance_party_keeps_the_room_awake():
 def test_the_room_still_sleeps_once_the_party_is_over():
     eng = _engine()
     eng.start_party(now=100.0)
-    eng.end_party()
+    eng.end_party(now=100.0)
     now = 100.0
     for _ in range(300):
         now += 1 / 30
         eng.update(1 / 30, now)
     assert eng.asleep is True
+
+
+def test_a_long_track_does_not_end_in_an_instant_blackout():
+    """A five-minute track outlasts BOTH timeouts while nobody presses a key.
+    If the idle clock isn't restarted when the party ends, the celebration
+    cuts straight to attract mode — or to a black screen."""
+    eng = _engine()          # idle_timeout 1 s, sleep_timeout 5 s
+    eng.start_party(now=100.0)
+    now = 100.0
+    for _ in range(12_000):                 # 400 s of dancing
+        now += 1 / 30
+        eng.update(1 / 30, now)
+    eng.end_party(now)
+    eng.update(1 / 30, now + 1 / 30)
+    assert eng.asleep is False
+    assert eng.attract is None              # not attract-mode the same frame
+    for _ in range(60):                     # 2 s later it may attract again
+        now += 1 / 30
+        eng.update(1 / 30, now)
+    assert eng.attract is not None
 
 
 def test_milestone_parties_stay_out_of_the_way_during_a_dance_party():
@@ -356,7 +381,7 @@ def test_a_dancing_frog_actually_keeps_hopping():
             airborne += 1
     assert airborne > 300                      # off his pad most of the time
     assert max(xs) - min(xs) > eng.frog.r      # and working the room
-    eng.end_party()
+    eng.end_party(now=100.0)
     for _ in range(120):
         eng.frog.update(1 / 30)
     assert eng.frog.y >= eng.frog.floor_y - 1  # settles once the music stops

@@ -382,7 +382,6 @@ class AudioEngine:
         self._party = "starting"
         self._party_at = now
         self._party_pending = True
-        self._duck = PARTY_DUCK
         log.info("reward earned — fireworks, then the dance party track")
 
     def consume_party_started(self) -> bool:
@@ -431,6 +430,10 @@ class AudioEngine:
                 return
             self._party = "playing"
             self._party_at = now
+            # Duck only now: the fanfare cue plays into three seconds of
+            # silence, so ducking it under music that hasn't started yet
+            # would quieten the one moment the whole reward is about.
+            self._duck = PARTY_DUCK
             self._party_track(now)
             if not self._music_playing():
                 # Nothing playable on disk. End it rather than leaving the

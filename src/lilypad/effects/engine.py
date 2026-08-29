@@ -207,8 +207,17 @@ class EffectEngine:
         self.frog.dance(True)
         self._celebration_pending = True
 
-    def end_party(self) -> None:
+    def end_party(self, now: float) -> None:
+        """The track finished. Restart the idle clocks from *here*.
+
+        Nobody presses a key while watching the frog dance, so
+        ``last_action_time`` is still sitting at the moment the party began.
+        Without this the attract animation fires the same frame the music
+        stops — and on a five-minute track the screen goes straight to black,
+        turning a celebration into a blackout.
+        """
         self.party = False
+        self.last_action_time = now
         self.frog.dance(False)
 
     def _note_press(self, action: Action, now: float) -> None:
