@@ -53,6 +53,7 @@ From your PC (the Pi needs internet on first install):
 
 ```bash
 ssh pi@lilypad.local
+sudo apt install -y git      # Pi OS Lite ships without it
 git clone https://github.com/Glytchedup/project_lily_pad.git
 cd project_lily_pad
 sudo ./install.sh
