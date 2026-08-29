@@ -17,6 +17,8 @@ from .base import Effect, EffectContext
 from .bubbles import BubbleField
 from .comet import Comet
 from .critter import Frog
+from .letters import GiantLetter
+from .numbers import CountAlong
 from .particles import Rings, burst
 from .registry import celebration, effects_for
 from .scenery import PondBackground
@@ -30,8 +32,17 @@ TRAILS_ON_ABOVE = 0.6    # ...and restores them above this one (hysteresis)
 log = logging.getLogger(__name__)
 
 CELEBRATION_COOLDOWN = 10.0  # s between milestone parties (mash-proofing)
+PARTY_PULSE = 4.0        # s of rainbow border when a reward track is earned
 MAX_ANIMALS = 5          # concurrent creatures; see the note in spawn()
 ANIMAL_TYPES = (PeekabooAnimal, AnimalCrossing)
+#: Concurrent giant letters / count-alongs. Each one is screen-sized, so a
+#: two-handed run along the keyboard used to stack a dozen of them into an
+#: unreadable pile — the opposite of "this key made THAT happen". Over the cap
+#: the OLDEST glyph is retired into its fade rather than the newest dropped:
+#: every key must still visibly do something, and the thing it does has to be
+#: the thing you can see.
+MAX_GLYPHS = 6
+GLYPH_TYPES = (GiantLetter, CountAlong)
 RIPPLE_COLOR = (150, 200, 255)
 ALPHABET = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -59,6 +70,7 @@ class EffectEngine:
         self.trails = trails
         self.milestone_every = milestone_every
         self.chaos: ChaosOverlay | None = None
+        self.party = False       # reward dance party (see start_party)
         self.attract: AttractMode | None = None
         self.comets: dict[str, Comet] = {}
         self.press_count = 0
@@ -137,6 +149,7 @@ class EffectEngine:
 
         if self.particle_count() < self.max_particles * 1.5:
             spawned = effects_for(self.ctx, action)
+            self._cap_glyphs(spawned)
             if self.animal_count() >= MAX_ANIMALS:
                 # Every letter has its own creature now, so a two-handed run
                 # along the keyboard used to put a dozen big sprites on screen
@@ -155,6 +168,48 @@ class EffectEngine:
             # that always fits instead of nothing.
             self.effects.append(burst(self.ctx, self.ctx.random_pos(),
                                       count=14, speed=280, size=5, life=0.6))
+
+    def _cap_glyphs(self, incoming: list[Effect]) -> None:
+        """Retire the oldest glyphs so at most MAX_GLYPHS are on screen."""
+        new = sum(1 for e in incoming if isinstance(e, GLYPH_TYPES))
+        if not new:
+            return
+        live = [e for e in self.effects
+                if isinstance(e, GLYPH_TYPES) and not self._retired(e)]
+        for glyph in live[:max(0, len(live) + new - MAX_GLYPHS)]:
+            glyph.retire()
+
+    @staticmethod
+    def _retired(glyph) -> bool:
+        return glyph.age >= glyph.total - glyph.FADE_TIME
+
+    def glyph_count(self) -> int:
+        return sum(1 for e in self.effects if isinstance(e, GLYPH_TYPES))
+
+    # ------------------------------------------------------- reward party
+
+    def start_party(self, now: float | None = None) -> None:
+        """The reward track has been earned: fireworks, then Pip dances.
+
+        Driven by the audio engine's meter (it owns the music, so it owns
+        when the music is due). Deliberately bypasses the celebration
+        cooldown and the particle-budget gate — this one is *earned*, and a
+        busy screen is not a reason to withhold it.
+        """
+        now = time.monotonic() if now is None else now
+        self.party = True
+        self.last_action_time = now
+        self.asleep = False
+        self.attract = None
+        self._last_celebration = now
+        self.effects.extend(celebration(self.ctx, big=True))
+        self.effects.append(CelebrationPulse(self.ctx, duration=PARTY_PULSE))
+        self.frog.dance(True)
+        self._celebration_pending = True
+
+    def end_party(self) -> None:
+        self.party = False
+        self.frog.dance(False)
 
     def _note_press(self, action: Action, now: float) -> None:
         """Milestone bookkeeping: every Nth press parties, and completing the
@@ -182,6 +237,10 @@ class EffectEngine:
         once-per-alphabet earned reward, so it bypasses both.
         """
         if not big:
+            if self.party:
+                # The dance party already IS the celebration; stacking a
+                # milestone party on top of it is just noise.
+                return False
             if now - self._last_celebration < CELEBRATION_COOLDOWN:
                 return False
             if self.particle_count() >= self.max_particles * 1.5:
@@ -239,7 +298,11 @@ class EffectEngine:
 
     def update(self, dt: float, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
-        if self.sleep_timeout > 0 and                 now - self.last_action_time >= self.sleep_timeout:
+        # A dance party keeps the room awake: nobody presses a key while
+        # watching the frog dance, and a 3-minute track is far longer than
+        # either the attract or the sleep timeout.
+        if (self.sleep_timeout > 0 and not self.party
+                and now - self.last_action_time >= self.sleep_timeout):
             self._fall_asleep()
             return
         self.pond.update(dt)
@@ -288,6 +351,7 @@ class EffectEngine:
         # means the child is actively pressing — that's not "idle" even
         # though no new actions arrive.
         if (self.attract is None and self.chaos is None and not self.comets
+                and not self.party
                 and now - self.last_action_time >= self.idle_timeout):
             self.attract = AttractMode(self.ctx)
         if self.attract is not None:

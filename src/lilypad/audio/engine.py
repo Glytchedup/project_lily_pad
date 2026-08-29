@@ -32,7 +32,7 @@ from ..effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES  # noqa: E402
 #: press that produced them has already played its note.
 _NOTE_KINDS = frozenset({"letter", "space", "arrow", "enter", "special", "sparkle"})
 
-_TUNE_MODES = ("idle", "always", "off", "active")
+_TUNE_MODES = ("idle", "always", "off", "active", "reward")
 
 #: Extensions scanned in the "active" mode's background_folder. WAV is
 #: included so it also matches a folder of the generated tunes.
@@ -40,6 +40,18 @@ _MUSIC_EXTS = (".mp3", ".ogg", ".oga", ".flac", ".wav")
 
 _PLAYLIST_FADE_IN_MS = 1200
 _PLAYLIST_FADE_OUT_MS = 1500
+
+#: "reward" mode. Fireworks play over silence for this long before the track
+#: starts, so the celebration reads as *earning* the music rather than as a
+#: jingle that happened to coincide with it.
+PARTY_FANFARE_SECONDS = 3.0
+#: Failsafe. Every mixer call in here swallows its exceptions (music is
+#: optional, never fatal), so a mixer that dies mid-track would otherwise
+#: leave the party — and the sleep/attract suppression that rides on it —
+#: latched on forever.
+PARTY_MAX_SECONDS = 600.0
+#: Key notes and voices duck under the reward track while it plays.
+PARTY_DUCK = 0.45
 
 #: Relative level per cue family. Key notes sit *under* the spoken letter name
 #: rather than masking it — the voice is the part with teaching value.
@@ -57,7 +69,10 @@ class AudioEngine:
                  key_notes: bool = True, tunes: str = "idle",
                  tune_volume: float = 0.45,
                  background_folder: str | Path = "music",
-                 fade_after: float = 30.0) -> None:
+                 fade_after: float = 30.0,
+                 reward_seconds: float = 60.0,
+                 reward_presses: int = 100,
+                 reward_window: float = 10.0) -> None:
         self.mute = mute
         self.volume = volume
         self.key_notes = key_notes
@@ -65,6 +80,9 @@ class AudioEngine:
         self.tune_volume = tune_volume
         self.background_folder = Path(background_folder)
         self.fade_after = max(0.0, fade_after)
+        self.reward_seconds = max(1.0, reward_seconds)
+        self.reward_presses = max(1, reward_presses)
+        self.reward_window = max(0.5, reward_window)
         self.sounds_dir = Path(sounds_dir)
         self._sounds: dict[str, object] = {}
         self._chime_cycle = 0
@@ -82,8 +100,18 @@ class AudioEngine:
         self._track_started_at: float | None = None
         self._music_on = False
         self._last_activity: float | None = None
+        # "reward" mode — a play meter that buys a fireworks-then-dance-party
+        # track (see the _tick_reward block).
+        self._party = "idle"          # idle | starting | playing
+        self._party_at = 0.0
+        self._party_pending = False
+        self._active_seconds = 0.0
+        self._press_count = 0
+        self._duck = 1.0
         if mute:
             log.info("audio: muted by config")
+            if self.tunes == "reward":
+                log.info("audio: muted, so no reward parties either")
             return
         try:
             import pygame
@@ -92,6 +120,8 @@ class AudioEngine:
             self._enabled = True
         except Exception as exc:              # noqa: BLE001 — silence, never crash
             log.warning("audio unavailable (%s) — running silent", exc)
+            if self.tunes == "reward":
+                log.warning("no audio device — reward parties are disabled")
             return
         if autogen:
             from .synth import build_cues, cues_stale
@@ -105,7 +135,7 @@ class AudioEngine:
                     log.warning("audio: cue regeneration failed (%s)", exc)
         if self.tunes == "always":
             self._start_tune()
-        elif self.tunes == "active":
+        elif self.tunes in ("active", "reward"):
             self._playlist, self._playlist_from_folder = self._build_playlist()
 
     # ------------------------------------------------------------- cue play
@@ -137,6 +167,10 @@ class AudioEngine:
         for name in names:
             sound = self._get(name)
             if sound is not None:
+                # Volume is set per play, not once at load: the reward party
+                # ducks every cue under the music, and _get caches the Sound
+                # object, so a level baked in at load time could never move.
+                sound.set_volume(self.volume * self._gain(name) * self._duck)
                 sound.play()
                 return
 
@@ -154,8 +188,13 @@ class AudioEngine:
     def _tune_path(self, index: int) -> Path:
         return self.sounds_dir / f"tune_{TUNE_NAMES[index]}.wav"
 
-    def _start_tune(self) -> None:
-        """Load and loop the next tune. Silent no-op if none are on disk."""
+    def _start_tune(self, loops: int = -1) -> None:
+        """Load and play the next tune. Silent no-op if none are on disk.
+
+        Loops forever by default (idle/always/active are background beds).
+        The reward party passes ``loops=0``: the party ends when the track
+        does, so it must actually end.
+        """
         if not self._enabled or self.mute or self.tunes == "off":
             return
         for _ in range(len(TUNE_NAMES)):
@@ -167,7 +206,7 @@ class AudioEngine:
                 import pygame
                 pygame.mixer.music.load(str(path))
                 pygame.mixer.music.set_volume(self.tune_volume)
-                pygame.mixer.music.play(loops=-1, fade_ms=1200)
+                pygame.mixer.music.play(loops=loops, fade_ms=1200)
                 self._tune_playing = True
             except Exception as exc:          # noqa: BLE001 — music is optional
                 log.warning("tune %s failed to play (%s)", path.name, exc)
@@ -306,13 +345,121 @@ class AudioEngine:
 
     def notify_activity(self, now: float) -> None:
         """Called on every raw keypress — the same signal that wakes the
-        screen. Only meaningful in "active" tune mode."""
+        screen. Only meaningful in the "active" and "reward" tune modes."""
+        last, self._last_activity = self._last_activity, now
+        if self.tunes != "reward" or not self._enabled or self.mute:
+            return
+        if self._party != "idle":
+            return  # the party IS the reward; the meter restarts once it ends
+        # Engaged play, not wall clock: a gap longer than reward_window means
+        # the child wandered off, and that time must not count toward the next
+        # track. Progress itself survives the gap — a toddler who comes back
+        # picks up where they left off rather than starting from zero.
+        if last is not None and now - last <= self.reward_window:
+            self._active_seconds += now - last
+        self._press_count += 1
+        if (self._active_seconds >= self.reward_seconds
+                or self._press_count >= self.reward_presses):
+            self._start_party(now)
+
+    # ----------------------------------------------- background (reward mode)
+    #
+    # "reward" turns the music into something the child earns. Play quietly
+    # (key notes only) until the meter fills — a minute of engaged play, or a
+    # hundred presses, whichever lands first — then: fireworks over silence,
+    # then a whole track while the frog throws a dance party. When the track
+    # ends the party ends, the meter is empty, and the next one has to be
+    # earned again.
+
+    @property
+    def party_active(self) -> bool:
+        """True from the fireworks until the reward track finishes."""
+        return self._party != "idle"
+
+    def _start_party(self, now: float) -> None:
+        self._active_seconds = 0.0
+        self._press_count = 0
+        self._party = "starting"
+        self._party_at = now
+        self._party_pending = True
+        self._duck = PARTY_DUCK
+        log.info("reward earned — fireworks, then the dance party track")
+
+    def consume_party_started(self) -> bool:
+        """Main loop polls this to kick off the visual party (mirrors the
+        effect engine's ``consume_celebration``)."""
+        pending, self._party_pending = self._party_pending, False
+        return pending
+
+    def _end_party(self, now: float) -> None:
+        if self._party == "idle":
+            return
+        self._party = "idle"
+        self._duck = 1.0
+        # The party is not an idle gap: without this the first press after it
+        # would be measured against a press from minutes ago.
         self._last_activity = now
+        if self._playlist_from_folder:
+            try:
+                import pygame
+                pygame.mixer.music.fadeout(_PLAYLIST_FADE_OUT_MS)
+            except Exception:             # noqa: BLE001
+                pass
+        else:
+            self._stop_tune()
+
+    def _party_track(self, now: float) -> None:
+        if not self._playlist:
+            return
+        if self._playlist_from_folder:
+            self._playlist_advance(now)   # already finite (loops=0)
+        else:
+            # Generated tunes are seamless infinite loops. The party has to
+            # end when the track does, so this one plays exactly once.
+            self._start_tune(loops=0)
+
+    def _music_playing(self) -> bool:
+        try:
+            import pygame
+            return bool(pygame.mixer.music.get_busy())
+        except Exception:                 # noqa: BLE001
+            return False
+
+    def _tick_reward(self, now: float) -> None:
+        if self._party == "starting":
+            if now - self._party_at < PARTY_FANFARE_SECONDS:
+                return
+            self._party = "playing"
+            self._party_at = now
+            self._party_track(now)
+            if not self._music_playing():
+                # Nothing playable on disk. End it rather than leaving the
+                # frog dancing in silence to a track that never started.
+                log.info("no reward track available — ending the party early")
+                self._end_party(now)
+            return
+        if self._party == "playing":
+            # get_busy() is only meaningful HERE: during "starting" the mixer
+            # is legitimately idle for the fanfare gap, and reading that as
+            # "track finished" would end every party the instant it began.
+            if not self._music_playing():
+                log.info("reward track finished — dance party over")
+                self._end_party(now)
+            elif now - self._party_at >= PARTY_MAX_SECONDS:
+                log.warning("reward party hit the %.0fs cap — ending it",
+                            PARTY_MAX_SECONDS)
+                self._end_party(now)
 
     def tick(self, now: float) -> None:
         """Call once per frame. Drives the "active" mode's fade in/out and
-        playlist advance; a no-op in every other tune mode."""
-        if not self._enabled or self.mute or self.tunes != "active":
+        playlist advance, and the "reward" mode's party state machine; a
+        no-op in every other tune mode."""
+        if not self._enabled or self.mute:
+            return
+        if self.tunes == "reward":
+            self._tick_reward(now)
+            return
+        if self.tunes != "active":
             return
         if self._last_activity is None:
             return  # never touched the keyboard yet — stay silent
@@ -397,3 +544,5 @@ class AudioEngine:
             self._enabled = False
         self._tune_playing = False
         self._music_on = False
+        self._party = "idle"
+        self._duck = 1.0

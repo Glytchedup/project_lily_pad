@@ -202,7 +202,10 @@ def main(argv: list[str] | None = None) -> int:
                         tune_volume=cfg.music.tune_volume,
                         background_folder=Path(cfg.music.background_folder) if not kiosk
                                           else Path("/opt/lilypad") / cfg.music.background_folder,
-                        fade_after=cfg.music.fade_after)
+                        fade_after=cfg.music.fade_after,
+                        reward_seconds=cfg.music.reward_seconds,
+                        reward_presses=cfg.music.reward_presses,
+                        reward_window=cfg.music.reward_window)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,
@@ -274,6 +277,13 @@ def main(argv: list[str] | None = None) -> int:
             # mode fades them in, the next keypress fades them straight out.
             audio.set_idle(engine.attract is not None)
             audio.tick(now)
+            # The audio engine owns the reward meter (it owns the music), so
+            # it says when the party starts; the effect engine says what a
+            # party looks like. The party ends when the track does.
+            if audio.consume_party_started():
+                engine.start_party(now)
+            elif engine.party and not audio.party_active:
+                engine.end_party()
             # Dark screen, dark keyboard.
             lighting.set_sleep(engine.asleep)
             engine.draw(screen)
