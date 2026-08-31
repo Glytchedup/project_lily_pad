@@ -76,7 +76,7 @@ class AudioEngine:
                  background_folder: str | Path = "music",
                  fade_after: float = 30.0,
                  reward_seconds: float = 60.0,
-                 reward_presses: int = 100,
+                 reward_presses: int = 50,
                  reward_window: float = 10.0,
                  party_volume: float = PARTY_VOLUME,
                  party_duck: float = PARTY_DUCK) -> None:
@@ -384,6 +384,23 @@ class AudioEngine:
     def party_active(self) -> bool:
         """True from the fireworks until the reward track finishes."""
         return self._party != "idle"
+
+    @property
+    def reward_progress(self) -> float:
+        """How full the meter is, 0..1 — what the on-screen party bar shows.
+
+        Either threshold can fire the party, so progress is whichever is
+        further along. Returns 0.0 when there is nothing to show: reward mode
+        off, no audio, or a party already running (the party is its own
+        feedback — a full bar sitting there during the fireworks would be
+        telling the child something they can already see).
+        """
+        if self.tunes != "reward" or not self._enabled or self.mute:
+            return 0.0
+        if self._party != "idle":
+            return 0.0
+        return min(1.0, max(self._active_seconds / self.reward_seconds,
+                            self._press_count / self.reward_presses))
 
     def _start_party(self, now: float) -> None:
         self._active_seconds = 0.0

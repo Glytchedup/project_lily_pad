@@ -51,6 +51,40 @@ def _draw_escape_cue(surface, progress: float) -> None:
                      (x, y, int(bar_w * progress), bar_h), border_radius=5)
 
 
+#: Party meter: a bar in the top-right that fills as the next reward track is
+#: earned. Deliberately small and off to the side — it is a hint, not a scoreboard,
+#: and the playground itself has to stay the thing worth looking at.
+PARTY_METER_EMPTY = (0, 199, 190)     # teal, just started
+PARTY_METER_FULL = (255, 214, 10)     # gold, about to fire
+PARTY_METER_TRACK = (28, 32, 42)
+
+
+def _draw_party_meter(surface, progress: float) -> None:
+    """Fills left-to-right and warms teal -> gold as the party nears."""
+    import pygame
+    if progress <= 0.0:
+        return
+    w, h = surface.get_size()
+    bar_w = int(w * 0.16)
+    bar_h = max(10, int(h * 0.018))
+    x, y = w - bar_w - int(w * 0.025), int(h * 0.035)
+    radius = bar_h // 2
+    pygame.draw.rect(surface, PARTY_METER_TRACK, (x, y, bar_w, bar_h),
+                     border_radius=radius)
+    fill_w = int(bar_w * min(1.0, progress))
+    if fill_w > 0:
+        colour = tuple(
+            int(a + (b - a) * progress)
+            for a, b in zip(PARTY_METER_EMPTY, PARTY_METER_FULL)
+        )
+        # Never narrower than the rounded cap, or the border_radius clips the
+        # fill into nothing and the first few presses look like they did zero.
+        pygame.draw.rect(surface, colour, (x, y, max(bar_h, fill_w), bar_h),
+                         border_radius=radius)
+    pygame.draw.rect(surface, (210, 220, 240), (x, y, bar_w, bar_h),
+                     width=max(2, bar_h // 5), border_radius=radius)
+
+
 DISPLAY_RETRY_SECONDS = 3.0
 DISPLAY_LOG_EVERY = 10          # log once per this many attempts (~30 s)
 
@@ -289,6 +323,10 @@ def main(argv: list[str] | None = None) -> int:
             # Dark screen, dark keyboard.
             lighting.set_sleep(engine.asleep)
             engine.draw(screen)
+            # Both overlays go on top of the scene, and neither may paint over
+            # a sleeping screen — the whole point of sleep is a dark room.
+            if not engine.asleep:
+                _draw_party_meter(screen, audio.reward_progress)
             _draw_escape_cue(screen, escape.hold_progress(now))
             pygame.display.flip()
             lighting.tick(now)

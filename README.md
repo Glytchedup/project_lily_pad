@@ -158,7 +158,7 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | `music.tune_volume` | `0.6` | background music level, 0–1 |
 | `music.background_folder` | `"music"` | your own MP3s for `reward`/`active`; git-ignored |
 | `music.reward_seconds` | `60` | `reward`: engaged seconds that earn a track |
-| `music.reward_presses` | `100` | `reward`: keypresses that earn a track |
+| `music.reward_presses` | `50` | `reward`: keypresses that earn a track |
 | `music.reward_window` | `10` | `reward`: gap over which play stops counting as engaged |
 | `lighting.backend` | `"auto"` | `razer_hid` → `openrazer` → `mock` fallback chain |
 | `lighting.brightness` | `0.9` | keyboard LEDs, 0–1 |

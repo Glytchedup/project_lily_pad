@@ -6,6 +6,20 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### feat: a party meter in the top-right, and parties come twice as fast (2026-08-30)
+`music.reward_presses` 100 → 50, so a party is earned in about half the
+playing. The 60-second engaged-play threshold is unchanged; whichever lands
+first still wins.
+
+A small bar in the top corner now fills as the meter does, warming from teal
+to gold, so a child can see the party coming instead of being surprised by
+it. It shows whichever threshold is further along, and hides itself when
+there is nothing to say — reward mode off, no audio device, or a party
+already running (the fireworks are their own feedback). It never paints over
+a sleeping screen. Progress comes from `AudioEngine.reward_progress`; the
+audio engine already owned the meter, so the bar is a read of existing state
+rather than a second copy of it.
+
 ### tune: the reward track is the loudest thing in the room (2026-08-30)
 During a party the music now plays at `music.party_volume` (0.95) instead of
 the `tune_volume` background-bed level, and key cues duck to

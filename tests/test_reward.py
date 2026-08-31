@@ -10,6 +10,8 @@ not over), and everything that must NOT happen while the frog is dancing.
 import random
 import wave
 
+import pygame
+
 import pytest
 
 from lilypad.audio.engine import (PARTY_DUCK, PARTY_FANFARE_SECONDS,
@@ -412,3 +414,66 @@ def test_party_mix_is_configurable(tmp_path):
                         encoding="utf-8")
     cfg = load_config(cfg_file)
     assert (cfg.music.party_volume, cfg.music.party_duck) == (0.8, 0.1)
+
+
+# ------------------------------------------------------------- the party bar
+
+def test_the_meter_tracks_whichever_threshold_is_further_along(tmp_path):
+    engine = reward_engine(tmp_path, reward_seconds=10.0, reward_presses=50)
+    try:
+        assert engine.reward_progress == 0.0
+        press(engine, 10, gap=0.05)          # 10/50 presses, ~0.5s of play
+        assert engine.reward_progress == pytest.approx(10 / 50)
+        engine2 = reward_engine(tmp_path, reward_seconds=10.0,
+                                reward_presses=10_000)
+        press(engine2, 11, gap=0.5)          # 5s of play beats the press count
+        assert engine2.reward_progress == pytest.approx(0.5, abs=0.05)
+        engine2.close()
+    finally:
+        engine.close()
+
+
+def test_the_meter_is_hidden_during_a_party_and_when_silent(tmp_path):
+    """The party is its own feedback; a full bar during the fireworks tells a
+    child nothing they can't already see."""
+    engine = reward_engine(tmp_path)
+    try:
+        press(engine, 20, gap=0.05)
+        assert engine.party_active is True
+        assert engine.reward_progress == 0.0
+    finally:
+        engine.close()
+    muted = AudioEngine(tmp_path, mute=True, autogen=False, tunes="reward")
+    assert muted.reward_progress == 0.0
+    muted.close()
+
+
+@pytest.mark.parametrize("mode", ["idle", "off", "always", "active"])
+def test_no_meter_outside_reward_mode(tmp_path, mode):
+    engine = AudioEngine(tmp_path, mute=False, autogen=False, tunes=mode)
+    try:
+        press(engine, 30, gap=0.05)
+        assert engine.reward_progress == 0.0
+    finally:
+        engine.close()
+
+
+def test_the_meter_never_exceeds_one(tmp_path):
+    engine = reward_engine(tmp_path, reward_seconds=1.0, reward_presses=10_000)
+    try:
+        press(engine, 40, gap=0.5)
+        assert 0.0 <= engine.reward_progress <= 1.0
+    finally:
+        engine.close()
+
+
+def test_party_bar_draws_without_error_and_only_when_earned():
+    """The bar is drawn straight onto the display surface every frame."""
+    from lilypad.__main__ import _draw_party_meter
+    surface = pygame.Surface((1280, 720))
+    surface.fill((0, 0, 0))
+    _draw_party_meter(surface, 0.0)
+    assert surface.get_at((1180, 30))[:3] == (0, 0, 0)   # nothing at zero
+    for p in (0.01, 0.5, 1.0):
+        _draw_party_meter(surface, p)
+    assert surface.get_at((1180, 30))[:3] != (0, 0, 0)   # something is there

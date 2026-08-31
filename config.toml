@@ -45,7 +45,7 @@ fade_after = 30.0
 # a gap longer than this stops counting, so a key touched once a minute never
 # earns anything. Progress survives a break; only a party spends it.
 reward_seconds = 60.0
-reward_presses = 100
+reward_presses = 50
 reward_window = 10.0
 # Party mix. The reward track is the event, so it plays near full while the
 # key cues drop under it — loud music, soft typing. Both 0.0 .. 1.0.
