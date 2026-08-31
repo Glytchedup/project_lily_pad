@@ -25,6 +25,8 @@ class MusicConfig:
     reward_seconds: float = 60.0   # cumulative seconds of engaged play
     reward_presses: int = 100      # keypresses
     reward_window: float = 10.0    # gap over which play stops counting as engaged
+    party_volume: float = 0.95     # reward track level — the party's whole point
+    party_duck: float = 0.25       # key cues drop to this fraction during a party
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,8 @@ def load(path: str | Path | None = None) -> Config:
             reward_seconds=max(1.0, float(music.get("reward_seconds", 60.0))),
             reward_presses=max(1, int(music.get("reward_presses", 100))),
             reward_window=max(0.5, float(music.get("reward_window", 10.0))),
+            party_volume=_clamp(float(music.get("party_volume", 0.95)), 0.0, 1.0),
+            party_duck=_clamp(float(music.get("party_duck", 0.25)), 0.0, 1.0),
         ),
         display=DisplayConfig(
             dev_window=(int(dev_window[0]), int(dev_window[1])),

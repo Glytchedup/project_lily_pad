@@ -47,6 +47,10 @@ fade_after = 30.0
 reward_seconds = 60.0
 reward_presses = 100
 reward_window = 10.0
+# Party mix. The reward track is the event, so it plays near full while the
+# key cues drop under it — loud music, soft typing. Both 0.0 .. 1.0.
+party_volume = 0.95
+party_duck = 0.25
 
 [display]
 # Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.

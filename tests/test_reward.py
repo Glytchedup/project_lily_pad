@@ -385,3 +385,30 @@ def test_a_dancing_frog_actually_keeps_hopping():
     for _ in range(120):
         eng.frog.update(1 / 30)
     assert eng.frog.y >= eng.frog.floor_y - 1  # settles once the music stops
+
+
+def test_the_party_track_is_louder_than_a_background_bed(tmp_path, monkeypatch):
+    """The reward track is the event, not a bed under the keys: it must be
+    lifted off tune_volume once it starts, and the cues ducked under it."""
+    engine = reward_engine(tmp_path, party_volume=0.95, party_duck=0.25)
+    import pygame
+    vols = []
+    monkeypatch.setattr(pygame.mixer.music, "set_volume", lambda v: vols.append(v))
+    monkeypatch.setattr(pygame.mixer.music, "load", lambda *a, **k: None)
+    monkeypatch.setattr(pygame.mixer.music, "play", lambda *a, **k: None)
+    engine._music_playing = lambda: True
+    try:
+        press(engine, 20, gap=0.05)
+        engine.tick(engine._party_at + PARTY_FANFARE_SECONDS + 0.1)
+        assert vols[-1] == pytest.approx(0.95)   # last word is the party level
+        assert engine._duck == pytest.approx(0.25)
+    finally:
+        engine.close()
+
+
+def test_party_mix_is_configurable(tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[music]\nparty_volume = 0.8\nparty_duck = 0.1\n',
+                        encoding="utf-8")
+    cfg = load_config(cfg_file)
+    assert (cfg.music.party_volume, cfg.music.party_duck) == (0.8, 0.1)

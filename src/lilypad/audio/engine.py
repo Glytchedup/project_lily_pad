@@ -50,8 +50,13 @@ PARTY_FANFARE_SECONDS = 3.0
 #: leave the party — and the sleep/attract suppression that rides on it —
 #: latched on forever.
 PARTY_MAX_SECONDS = 600.0
-#: Key notes and voices duck under the reward track while it plays.
-PARTY_DUCK = 0.45
+#: Key notes and voices duck under the reward track while it plays. The party
+#: is the music's moment — the keys still have to answer, but quietly enough
+#: that a child hears the song and not their own typing over it.
+PARTY_DUCK = 0.25
+#: The reward track plays louder than an ordinary background bed: `tune_volume`
+#: is a level chosen to sit UNDER play, and the party is the opposite of that.
+PARTY_VOLUME = 0.95
 
 #: Relative level per cue family. Key notes sit *under* the spoken letter name
 #: rather than masking it — the voice is the part with teaching value.
@@ -72,7 +77,9 @@ class AudioEngine:
                  fade_after: float = 30.0,
                  reward_seconds: float = 60.0,
                  reward_presses: int = 100,
-                 reward_window: float = 10.0) -> None:
+                 reward_window: float = 10.0,
+                 party_volume: float = PARTY_VOLUME,
+                 party_duck: float = PARTY_DUCK) -> None:
         self.mute = mute
         self.volume = volume
         self.key_notes = key_notes
@@ -83,6 +90,8 @@ class AudioEngine:
         self.reward_seconds = max(1.0, reward_seconds)
         self.reward_presses = max(1, reward_presses)
         self.reward_window = max(0.5, reward_window)
+        self.party_volume = max(0.0, min(1.0, party_volume))
+        self.party_duck = max(0.0, min(1.0, party_duck))
         self.sounds_dir = Path(sounds_dir)
         self._sounds: dict[str, object] = {}
         self._chime_cycle = 0
@@ -416,6 +425,14 @@ class AudioEngine:
             # Generated tunes are seamless infinite loops. The party has to
             # end when the track does, so this one plays exactly once.
             self._start_tune(loops=0)
+        # Both paths above load at `tune_volume` (the background-bed level).
+        # Lift to the party level AFTER starting, so the reward track is the
+        # loudest thing in the room rather than something under the keys.
+        try:
+            import pygame
+            pygame.mixer.music.set_volume(self.party_volume)
+        except Exception:                 # noqa: BLE001 — music is optional
+            pass
 
     def _music_playing(self) -> bool:
         try:
@@ -433,7 +450,7 @@ class AudioEngine:
             # Duck only now: the fanfare cue plays into three seconds of
             # silence, so ducking it under music that hasn't started yet
             # would quieten the one moment the whole reward is about.
-            self._duck = PARTY_DUCK
+            self._duck = self.party_duck
             self._party_track(now)
             if not self._music_playing():
                 # Nothing playable on disk. End it rather than leaving the

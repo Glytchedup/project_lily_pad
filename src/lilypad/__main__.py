@@ -205,7 +205,9 @@ def main(argv: list[str] | None = None) -> int:
                         fade_after=cfg.music.fade_after,
                         reward_seconds=cfg.music.reward_seconds,
                         reward_presses=cfg.music.reward_presses,
-                        reward_window=cfg.music.reward_window)
+                        reward_window=cfg.music.reward_window,
+                        party_volume=cfg.music.party_volume,
+                        party_duck=cfg.music.party_duck)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,

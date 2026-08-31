@@ -6,6 +6,15 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### tune: the reward track is the loudest thing in the room (2026-08-30)
+During a party the music now plays at `music.party_volume` (0.95) instead of
+the `tune_volume` background-bed level, and key cues duck to
+`music.party_duck` (0.25, was a hardcoded 0.45). `tune_volume` is chosen to
+sit *under* play; a party is the opposite of that, so it needed its own
+level. Both are config knobs — the balance is a matter of taste and of the
+room, and tuning it should not need a code change. Requested after the first
+on-device party on the Pi 5.
+
 ### feat: music is earned — a reward track, fireworks, and a frog dance party (2026-08-29)
 New `music.tunes = "reward"` mode, now the default. The playground starts
 quiet (key notes and letter voices only). A meter fills as the child plays,
