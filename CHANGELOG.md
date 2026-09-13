@@ -22,6 +22,61 @@ in `video=<connector>:1920x1080@60D` is what makes the pin force the port
 rather than merely pick a mode; the live card lacked it, and `install.sh`
 now adds it to an existing pin. Docs no longer hardcode `HDMI-A-1`.
 
+### Changed (device notes from the same incident — Pi 5, live card, 2026-09-13)
+What was done to the physical appliance, as distinct from the repo. The card
+is the `lilypad` Pi 5 card locked with `overlayroot`; none of this is in git.
+
+- **Symptom.** After two idle weeks the app "stopped starting": black screen,
+  keyboard lights off. The Pi was in fact booted and on the network, the
+  service was running, and the log said `no display yet (kmsdrm not
+  available)` every 30 s. Both `/sys/class/drm/card1-HDMI-*/status` read
+  `disconnected` with a 0-byte EDID and dmesg said `Cannot find any crtc or
+  sizes`. `throttled=0x50000`, kernel 6.18.34, bootloader Aug 2025.
+- **Card exonerated first, on the PC.** Imaged the whole card with elevated
+  Python (`wsl --mount` refuses the USB reader), then in WSL Debian:
+  `fsck.vfat -n` and `e2fsck -n -f` both clean, zero read errors over
+  15.6 GB, offline debsums clean bar the two known false positives
+  (`g_ether.conf`, `EXTERNALLY-MANAGED`), `kernel_2712.img`/`initramfs_2712`
+  byte-identical to their `/boot` copies, installed venv identical to
+  `main` at 4b43ca6, `cmdline.txt` unchanged since the Aug 30 relock. The
+  journal is volatile under the overlay, so the failed boots left no log.
+- **Root cause, found live.** `echo on > /sys/class/drm/card1-HDMI-A-2/status`
+  made the connector `connected` with a 256-byte EDID (ASUS VE276, ELD
+  populated) and the app took the screen within a second. The monitor had
+  stopped asserting hot-plug detect after deep sleep while still answering
+  over DDC. The cmdline pin `video=HDMI-A-2:1920x1080@60` had no force
+  suffix, so it only chose a mode and the port stayed gated on hot-plug.
+- **Fix applied to the card.** `/boot/firmware/cmdline.txt` now ends the pin
+  with `D`: `video=HDMI-A-2:1920x1080@60D`. Done over SSH with
+  `mount -o remount,rw /boot/firmware`, `sed`, remount `ro`; verified after a
+  reboot: `HDMI-A-2` reads `connected` at boot with no help, the app logs
+  `display=1920x1080` two seconds after the service starts, audio ELD shows
+  the monitor. Root overlay and boot partition both still `ro`.
+- **Debugfs `force` is the wrong knob on this kernel.** Writing `on` to
+  `/sys/kernel/debug/dri/1/<conn>/force` sets the flag without re-probing,
+  and it rejects both `detect` and `unspecified` with EIO, so a port forced
+  there stays forced. The sysfs `status` node re-probes synchronously and
+  takes `detect` as its revert; a forced-on *empty* port grows five default
+  modes and SDL would drive it blind, hence the EDID gate in the runtime
+  fix above. The empty port (`HDMI-A-1`) was returned to `unspecified`.
+- **Bootloader EEPROM updated in place**, Aug 28 2025 → May 26 2026, on the
+  locked card: remount `/boot/firmware` rw, `rpi-eeprom-update -a`, remount
+  ro, reboot. Confirmed `BOOTLOADER: up to date`. The bootloader leaves
+  `pieeprom.upd`, `pieeprom.sig` and `RECOVERY.000` behind; they were
+  deleted so the partition does not read as a pending update. Unrelated to
+  the display fault; done because the machine was open.
+- **Power is fine.** The Pi negotiated 5 V / 5 A (`max_current` 5000 mA,
+  `usb_max_current_enable=1`), i.e. the 27 W supply from the BOM. The
+  `0x50000` flag is a two-second undervoltage blip during USB enumeration at
+  every boot (`Undervoltage detected!` then `Voltage normalised` two seconds
+  later), never during play, never during a party. Historical bits only.
+  Act on it only if `get_throttled` ever shows the low nibble set; then a
+  shorter USB-C cable first, a powered hub for the keyboard second.
+- **Not deployed:** the runtime self-heal in this release. The `D` pin makes
+  the code path unreachable on this card, and unlocking it costs two reboots
+  on a card with a corruption history. It ships with the next real update.
+  The Pi runs `main` at 4b43ca6 plus the cmdline edit above.
+
 ### feat: a party meter in the top-right, and parties come twice as fast (2026-08-30)
 `music.reward_presses` 100 → 50, so a party is earned in about half the
 playing. The 60-second engaged-play threshold is unchanged; whichever lands
