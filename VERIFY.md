@@ -21,9 +21,10 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
   it says: the connector reads `disconnected`. A sleeping monitor often drops
   hot-plug detect, and then nothing can wake it because there's no signal to
   wake it with. Fix that permanently by appending
-  `video=HDMI-A-1:1920x1080@60D` to the single line in
-  `/boot/firmware/cmdline.txt` and rebooting — the Pi then drives HDMI0
-  unconditionally. Verified on a Pi 5: connector flips to `connected`, the app
+  `video=<connector>:1920x1080@60D` (the `D` is the part that forces the port on) to the single line in
+  `/boot/firmware/cmdline.txt` and rebooting — the Pi then drives that port
+  unconditionally. (The app now also forces a port on by itself when the
+  monitor still answers over DDC, so a card without the pin recovers too.) Verified on a Pi 5: connector flips to `connected`, the app
   acquires the screen on boot with zero waiting. **Do this before overlayfs.**
 
 ## 2. Every key does something (visuals)

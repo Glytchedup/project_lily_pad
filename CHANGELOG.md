@@ -6,6 +6,22 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### fix: a monitor that drops hot-plug detect no longer leaves the Pi blind (2026-09-13)
+After two idle weeks the Pi 5 booted with both HDMI connectors
+`disconnected`, dmesg saying `Cannot find any crtc or sizes`, and the app
+waiting on "kmsdrm not available" forever. The card imaged and checked
+flawless; the monitor (ASUS VE276) had simply stopped asserting hot-plug
+detect after deep sleep while still answering over DDC. Forcing the
+connector on via debugfs brought the display up within a second.
+
+Two layers now cover it. At runtime, every failed display attempt forces
+each `disconnected` HDMI connector on and keeps it only if an EDID appears,
+reverting an empty port to real hot-plug detection — so a fresh card with
+no `video=` pin at all still recovers. On a configured card, the `D` suffix
+in `video=<connector>:1920x1080@60D` is what makes the pin force the port
+rather than merely pick a mode; the live card lacked it, and `install.sh`
+now adds it to an existing pin. Docs no longer hardcode `HDMI-A-1`.
+
 ### feat: a party meter in the top-right, and parties come twice as fast (2026-08-30)
 `music.reward_presses` 100 → 50, so a party is earned in about half the
 playing. The 60-second engaged-play threshold is unchanged; whichever lands

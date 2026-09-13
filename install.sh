@@ -90,6 +90,12 @@ if [ -f "$CMDLINE" ]; then
             sed -i "1s/\$/ $param/" "$CMDLINE"
         fi
     done
+    # A video= pin without a force suffix only picks a mode; the port is still
+    # gated on hot-plug detect, which a monitor can stop asserting after deep
+    # sleep (Pi 5 + ASUS VE276, 2026-09-13: booted blind for two weeks). The
+    # D suffix drives the port regardless. The app also self-heals at runtime,
+    # but a configured card should not need it.
+    sed -E -i 's/(video=HDMI-A-[0-9]+:[0-9]+x[0-9]+@[0-9]+)( |$)/\1D\2/' "$CMDLINE"
     echo "cmdline: $(cat "$CMDLINE")"
 else
     warn "$CMDLINE not found — skipping quiet-boot params (not a Pi?)"

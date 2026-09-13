@@ -177,7 +177,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 924 unit tests
+pytest                         # 934 unit tests
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 
@@ -188,7 +188,7 @@ python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = heal
 | Black screen at boot | `journalctl -u lilypad -e` over SSH. `EGL not initialized` → re-run `install.sh` (installs Mesa/EGL). Two displays/cards: set `SDL_KMSDRM_DEVICE_INDEX=1` in the unit. |
 | Keyboard RGB dead but app fine | `journalctl -u lilypad | grep lighting` — if `razer_hid` failed, try the OpenRazer fallback: install per [openrazer.github.io](https://openrazer.github.io/) (use `--no-install-recommends` on Pi OS), set `lighting.backend = "openrazer"`. |
 | Keyboard lights flicker / disconnect | Underpowered USB. Confirm the official 27 W PSU (Pi 5); lower `lighting.brightness`; last resort: powered hub (BOM contingency). |
-| Screen black; log says `no display yet` | The monitor is off, asleep, or on another input — the Pi genuinely can't see it, because a sleeping monitor often drops HDMI hot-plug detect. Wake the monitor and the app takes the screen within ~3 s on its own. To stop it happening at all, force a mode: append `video=HDMI-A-1:1920x1080@60D` to the single line in `/boot/firmware/cmdline.txt` and reboot. The Pi then always drives HDMI0, so the monitor wakes by itself whenever it's powered. **Recommended before enabling overlayfs.** |
+| Screen black; log says `no display yet` | The monitor is off, asleep, or on another input — the Pi genuinely can't see it, because a sleeping monitor often drops HDMI hot-plug detect. Wake the monitor and the app takes the screen within ~3 s on its own. The app also forces any port whose monitor still answers over DDC, which covers a monitor that has dropped hot-plug detect after a long sleep. To stop it happening at all, force a mode: append `video=<connector>:1920x1080@60D` to the single line in `/boot/firmware/cmdline.txt` and reboot — the `D` is what makes the Pi drive the port regardless of hot-plug; without it the line only picks a resolution. Use the connector the monitor is really on (`/sys/class/drm/card*-HDMI-*/status`; on a Pi 5 the two micro-HDMI sockets are `HDMI-A-1` and `HDMI-A-2`). `install.sh` adds the `D` to an existing pin if it is missing. **Recommended before enabling overlayfs.** |
 | No sound | Monitor may need HDMI audio selected; test `speaker-test -t wav` over SSH. Or set `audio.mute = true` and enjoy the silence. |
 | Keys leak to a console after escape | They shouldn't — getty@tty1 is disabled. Get a shell via SSH, not the console. |
 | Forgot the escape combo | It's in `/etc/lilypad/config.toml` — or just pull power; the app restarts on boot (enable overlayfs and the card doesn't care). |

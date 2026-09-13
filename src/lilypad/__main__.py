@@ -118,6 +118,46 @@ def _install_signal_handlers() -> None:
     signal.signal(signal.SIGINT, _request_stop)
 
 
+DRM_SYS = Path("/sys/class/drm")
+
+
+def _nudge_connectors(sys_root: Path = DRM_SYS) -> list[str]:
+    """Force every HDMI connector that reports *disconnected* on, and keep it
+    forced only if a monitor answers over DDC.
+
+    A monitor that has sat in deep sleep can stop asserting hot-plug detect
+    while its EDID still reads fine. Seen on the Pi 5 with the ASUS VE276
+    after two idle weeks: both connectors ``disconnected``, dmesg saying
+    "Cannot find any crtc or sizes", the app waiting on "kmsdrm not
+    available" forever, and a card that checked out flawless. ``video=...@60D``
+    in cmdline.txt is the cure on a configured card; this is the same cure
+    for a card nobody has configured yet.
+
+    The sysfs ``status`` node is the interface, not debugfs ``force``:
+    writing ``on`` there re-probes synchronously (verified on the Pi: status
+    flips before the write returns), so the EDID check right after is real,
+    and ``detect`` is its documented revert. An empty port forced on grows
+    the kernel's default modes and SDL would happily drive it blind, which
+    is why a port with no EDID is put straight back to real hot-plug
+    detection. Root only; a no-op where the tree doesn't exist (dev box,
+    tests). Returns the connectors left forced, for the log.
+    """
+    forced = []
+    for conn in sorted(sys_root.glob("card*-HDMI-*")):
+        status = conn / "status"
+        try:
+            if status.read_text().strip() != "disconnected":
+                continue
+            status.write_text("on")
+            if (conn / "edid").read_bytes():
+                forced.append(conn.name.partition("-")[2])  # card1-HDMI-A-2
+            else:
+                status.write_text("detect")
+        except OSError:
+            continue
+    return forced
+
+
 def _wait_for_display(retry: float = DISPLAY_RETRY_SECONDS):
     """Take over the screen, waiting for one to exist if necessary.
 
@@ -144,6 +184,10 @@ def _wait_for_display(retry: float = DISPLAY_RETRY_SECONDS):
             if attempt % DISPLAY_LOG_EVERY == 0:
                 log.warning("no display yet (%s) — waiting; is the monitor on?", exc)
             attempt += 1
+            forced = _nudge_connectors()
+            if forced:
+                log.info("forced %s on: monitor answers over DDC but not hot-plug",
+                         ", ".join(forced))
             # Short sleeps so a SIGTERM lands promptly rather than up to
             # `retry` seconds later.
             waited = 0.0

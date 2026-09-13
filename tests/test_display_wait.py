@@ -146,3 +146,69 @@ def test_stop_flag_is_reset_when_handlers_are_installed(monkeypatch):
     monkeypatch.setattr(entry.signal, "signal", lambda *a: None)
     entry._install_signal_handlers()
     assert entry._stop_requested is False
+
+
+# --- hot-plug lost, EDID fine --------------------------------------------
+# Found on the Pi 5 after two idle weeks: the monitor stopped asserting
+# hot-plug detect, both connectors read `disconnected`, and the app waited
+# forever on "kmsdrm not available". Forcing the connector on brought the
+# display up within a second, because DDC still worked.
+
+EDID = bytes([0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00]) * 16
+
+
+def _fake_drm(tmp_path, monitors):
+    """Build a /sys/class/drm look-alike whose `status` node behaves like the
+    kernel's: writing "on" re-probes synchronously, so the EDID of whatever
+    is on the other end of the cable appears at once (b"" = empty port).
+    """
+    sys_root = tmp_path / "sys"
+    for name in monitors:
+        conn = sys_root / name
+        conn.mkdir(parents=True)
+        (conn / "status").write_text("disconnected" + chr(10))
+        (conn / "edid").write_bytes(b"")
+
+    real_write = entry.Path.write_text
+
+    def kernel_write(self, text, *a, **k):
+        real_write(self, text, *a, **k)
+        if self.name == "status" and self.parent.parent == sys_root:
+            (self.parent / "edid").write_bytes(monitors[self.parent.name] if text == "on" else b"")
+
+    return sys_root, kernel_write
+
+
+def test_nudge_keeps_a_port_whose_monitor_answers_and_reverts_an_empty_one(tmp_path, monkeypatch):
+    sys_root, kernel_write = _fake_drm(tmp_path, {"card1-HDMI-A-1": b"", "card1-HDMI-A-2": EDID})
+    monkeypatch.setattr(entry.Path, "write_text", kernel_write)
+
+    assert entry._nudge_connectors(sys_root) == ["HDMI-A-2"]
+    assert (sys_root / "card1-HDMI-A-2" / "status").read_text() == "on"
+    assert (sys_root / "card1-HDMI-A-1" / "status").read_text() == "detect", \
+        "an empty port must go back to real hot-plug detection"
+
+
+def test_nudge_leaves_connected_ports_alone(tmp_path, monkeypatch):
+    sys_root, kernel_write = _fake_drm(tmp_path, {"card1-HDMI-A-2": EDID})
+    (sys_root / "card1-HDMI-A-2" / "status").write_text("connected")
+    monkeypatch.setattr(entry.Path, "write_text", kernel_write)
+
+    assert entry._nudge_connectors(sys_root) == []
+    assert (sys_root / "card1-HDMI-A-2" / "status").read_text() == "connected"
+
+
+def test_nudge_is_a_no_op_without_the_sysfs_tree(tmp_path):
+    assert entry._nudge_connectors(tmp_path / "nope") == []
+
+
+def test_wait_nudges_connectors_between_attempts(monkeypatch):
+    sentinel = object()
+    fake, calls = _failing_set_mode(1, sentinel)
+    monkeypatch.setattr(pygame.display, "set_mode", fake)
+    monkeypatch.setattr(entry.time, "sleep", lambda _: None)
+    nudged = []
+    monkeypatch.setattr(entry, "_nudge_connectors", lambda: nudged.append(1) or ["HDMI-A-2"])
+
+    assert entry._wait_for_display(retry=0) is sentinel
+    assert nudged == [1], "one failed attempt, one nudge"
