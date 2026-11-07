@@ -175,3 +175,14 @@ pytest                        # 934 unit tests (mapper, registry, config, escape
   files in `deploy/` and the installer in sync.
 - Windows dev box: line endings are handled by `.gitattributes` (LF forced for
   `.sh`/`.py`/`.service`/`.rules`/`.toml`/`.conf`) — don't fight it.
+
+## Portfolio registry (Ground-Zero) — part of the definition of done
+This repo is tracked as `project-lily-pad` in Glytchedup/Ground-Zero (`registry/projects/project-lily-pad.yaml`).
+A change is not done until the registry matches reality when the change does any of these:
+- deploys, renames, recreates or deletes a Fabric item, semantic model, report, Copilot Studio agent,
+  Power Automate flow, Dataverse table or Snowflake task/table;
+- changes a refresh or run schedule (update `monitor.success_sla_hours`);
+- moves something between environments (use asset `state: planned | active | retiring | retired`);
+- changes the project's lifecycle, next steps or blockers.
+How: attach Glytchedup/Ground-Zero, edit the YAML on a branch, run `python -m gz validate && python -m gz build`,
+open a PR. Never put secrets, row-level data or user lists in the registry.
