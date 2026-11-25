@@ -30,6 +30,7 @@ order = 2
 
 [moods.mist]
 plate = "mist/plate.jpg"
+plate_shift = 0.039815  # Shift the plate down 43/1080 of its display height to register the bank.
 far_shore = "shared/clear.png"
 near_water = "mist/water.png"
 order = 3

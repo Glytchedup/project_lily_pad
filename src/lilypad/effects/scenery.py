@@ -2,7 +2,7 @@
 
 The classic pond caches three gradients sharing a moon and starfield.
 Painted moods each supply an opaque plate and two scrolling strips. Their
-registered skies share one twinkle field, and the foreground water can
+skies dip between moons beneath one twinkle field, and the foreground water can
 also be drawn over swimming animals.
 """
 
@@ -47,6 +47,8 @@ _TWINKLE_COUNT = 10
 _LILY_COUNT = 3
 _VARIANT_PERIOD_S = 300.0
 _CROSSFADE_S = 4.0
+_MOON_BAND = 0.40  # Upper fraction of a plate containing the painted moons.
+_SKY_RAMP = 3 / 8  # Fraction of a painted transition spent fading each sky.
 _log = logging.getLogger(__name__)
 
 
@@ -181,6 +183,7 @@ class _MoodFiles:
     plate: Path
     far_shore: Path
     near_water: Path
+    plate_shift: float
 
 
 def _mood_files(root: Path) -> list[_MoodFiles]:
@@ -202,13 +205,16 @@ def _mood_files(root: Path) -> list[_MoodFiles]:
             order = row["order"]
             if type(order) is not int:
                 raise ValueError("order must be an integer")
+            shift = row.get("plate_shift", 0.0)
+            if type(shift) not in (int, float) or not 0 <= shift < 1:
+                raise ValueError("plate_shift must be a downward fraction of the display height")
             paths = []
             for key in ("plate", "far_shore", "near_water"):
                 path = Path(row[key])
                 if path.anchor or ".." in path.parts:
                     raise ValueError(f"{key} must be relative to the manifest")
                 paths.append(directory / path)
-            files.append(_MoodFiles(order, name, *paths))
+            files.append(_MoodFiles(order, name, *paths, plate_shift=shift))
         except (KeyError, TypeError, ValueError) as exc:
             _log.warning("Ignoring pond mood %s: %s", name, exc)
     return sorted(files, key=lambda mood: (mood.order, mood.name))
@@ -243,6 +249,13 @@ class _Mood:
         w, h = size
         self.files = files
         self.plate = _opaque_plate(assets.load_image(files.plate), size)
+        shift = round(h * files.plate_shift)
+        if shift:
+            # Reflect the top rows into the exposed sky and crop the same depth of water.
+            sky = pygame.transform.flip(self.plate.subsurface((0, 0, w, shift)), False, True)
+            self.plate.scroll(dy=shift)
+            self.plate.blit(sky, (0, 0))
+        self.sky_color = pygame.transform.average_color(self.plate, (0, 0, w, 1))[:3]
         strip_width = math.ceil(w * 1.04)
         far_height = max(1, round(h * 0.30))
         near_height = max(1, round(h * 0.22))
@@ -332,15 +345,31 @@ class _PaintedWorld:
         self.pending: Future[_Mood | None] | None = None
         self.card: pygame.Surface | None = None
         self.flat = False
-        # Reserve once, even if quality changes during a fade. One near-water
-        # band suffices for exact compositing in both render passes.
-        self.scratch = (pygame.Surface((size[0], self.next.near.get_height())).convert()
-                        if self.next is not None else None)
+        if self.next is not None:
+            w, h = size
+            self.dip = pygame.Surface((w, math.ceil(h * POND.sky[1])), pygame.SRCALPHA)
+            self._color_dip()
+            # Above the first strip the two scenes share either the fully covered sky
+            # or the same storybook card. Only the lower rows need a blend buffer.
+            self.scratch_top = max(0, min(self.current.far_y, self.current.near_y,
+                                          math.ceil(h * _MOON_BAND)))
+            self.scratch = pygame.Surface((w, h - self.scratch_top)).convert()
         self.parallax = scene.parallax
         self.drift_time = 0.0
         self.far_x = self.near_x = self.shake_x = 0
         self.shake_px = 0
         self.shake_duration = self.shake_left = 0.0
+
+    def _color_dip(self) -> None:
+        # Cache one shared sky per pair. Feather it out before the bank so standing
+        # figures keep their footing, including in the moonless middle of the fade.
+        color = _lerp_color(self.current.sky_color, self.next.sky_color, .5)
+        w, h = self.dip.get_size()
+        solid = math.ceil(self.size[1] * _MOON_BAND)
+        self.dip.fill(color)
+        for y in range(solid, h):
+            alpha = round(255 * (h - y - 1) / (h - solid))
+            self.dip.fill((*color, alpha), (0, y, w, 1))
 
     def _load_next(self, after: _MoodFiles | None) -> _Mood | None:
         # Only the loader touches the list until its result has been collected.
@@ -400,6 +429,7 @@ class _PaintedWorld:
             self.pending = None
             if self.next:
                 self.next.prepare(self.flat, self.card)
+                self._color_dip()
         if self.next is None:
             self.elapsed = min(self.period, self.elapsed + dt)
             return
@@ -415,11 +445,17 @@ class _PaintedWorld:
                 self.current, self.next = self.next, None
                 self._prefetch()
 
-    @property
-    def alpha(self) -> int:
+    def _fade_alphas(self) -> tuple[int, int]:
+        """Incoming landscape and sky-cover opacity, respectively."""
         if self.next is None or self.elapsed <= self.period:
-            return 0
-        return min(255, round(255 * (self.elapsed - self.period) / self.fade_time))
+            return 0, 0
+        t = min(1., (self.elapsed - self.period) / self.fade_time)
+        cover = 255 if self.card is None else 0
+        if t < _SKY_RAMP:
+            return 0, round(cover * t / _SKY_RAMP)
+        if t > 1 - _SKY_RAMP:
+            return 255, round(cover * (1 - t) / _SKY_RAMP)
+        return round(255 * (t - _SKY_RAMP) / (1 - 2 * _SKY_RAMP)), cover
 
     def _draw_mood(self, target: pygame.Surface, mood: _Mood, top: int = 0) -> None:
         base = mood.flat_card or self.card or mood.plate
@@ -428,30 +464,25 @@ class _PaintedWorld:
             mood.draw_strips(target, self.far_x + self.shake_x, self.near_x + self.shake_x, top)
 
     def draw(self, target: pygame.Surface) -> None:
-        self._draw_mood(target, self.current)
-        alpha = self.alpha
-        if not alpha:
-            return
-        if self.flat:
-            incoming = self.next.flat_card or self.next.plate
-            incoming.set_alpha(alpha)
-            _wrap_blit(target, incoming, self.shake_x, 0)
-            incoming.set_alpha(None)
-        else:
-            # Blend complete compositions a band at a time. The scratch space
-            # is only as tall as the near strip and also serves P3.
-            scratch = self.scratch
-            scratch.set_alpha(alpha)
-            for top in range(0, self.size[1], scratch.get_height()):
-                self._draw_mood(scratch, self.next, top)
-                target.blit(scratch, (0, top))
+        alpha, cover = self._fade_alphas()
+        self._draw_mood(target, self.next if alpha == 255 else self.current)
+        if 0 < alpha < 255:
+            self._draw_mood(self.scratch, self.next, self.scratch_top)
+            self.scratch.set_alpha(alpha)
+            target.blit(self.scratch, (0, self.scratch_top))
+        if cover:
+            self.dip.set_alpha(cover)
+            target.blit(self.dip, (0, 0))
 
     def draw_near_water(self, target: pygame.Surface) -> None:
         if self.flat:
             return
         x = self.current.center + self.near_x + self.shake_x
         y = self.current.near_y
-        alpha = self.alpha
+        alpha, _ = self._fade_alphas()
+        if alpha == 255:
+            _wrap_blit(target, self.next.near, x, y)
+            return
         if alpha:
             scratch = self.scratch
             band = (0, y, self.size[0], self.current.near.get_height())
@@ -460,7 +491,7 @@ class _PaintedWorld:
         _wrap_blit(target, self.current.near, x, y)
         if alpha:
             scratch.set_alpha(alpha)
-            target.blit(scratch, (0, y))
+            target.blit(scratch, (0, y), (0, 0, self.size[0], self.current.near.get_height()))
 
 
 class PondBackground:
