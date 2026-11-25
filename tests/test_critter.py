@@ -471,6 +471,23 @@ def test_cheer_during_the_party_dance_and_celebrations(painted_pip):
     assert tuple(surf.get_at((int(frog.x), int(top) + 20)))[:3] == PIP_COLOURS["cheer"]
 
 
+def test_the_engine_runs_a_party_with_painted_pip(painted_pip):
+    from lilypad.effects.engine import EffectEngine
+
+    eng = EffectEngine(SIZE, sleep_timeout=0.0)
+    assert critter.painted_pip_active()
+    surf = pygame.Surface(SIZE)
+    eng.start_party()
+    for i in range(120):
+        eng.update(1 / 60, now=float(i) / 60)
+        eng.draw(surf)
+    assert eng.frog.pose == "cheer"
+    eng.end_party(2.0)
+    for i in range(30):
+        eng.update(1 / 60, now=3.0 + i / 60)
+        eng.draw(surf)
+
+
 def test_drawn_pip_never_cheers_or_looks_around():
     frog = settled()
     frog.dance(True)
