@@ -484,10 +484,17 @@ def test_unknown_mode_is_rejected():
         Storybook(SIZE, "sometimes")
 
 
-def test_the_shipped_manifest_is_empty_and_inert():
-    assert SHIPPED.is_file()
-    assert load_manifest(SHIPPED) == {}
-    book = Storybook(SIZE, "both", pond=FakePond(), manifest=SHIPPED)
+def test_the_shipped_manifest_has_every_letter():
+    rows = load_manifest(SHIPPED)
+    assert sorted(rows) == [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+    assert all(row.path.is_file() for row in rows.values())
+
+
+def test_an_empty_manifest_is_inert(tmp_path):
+    empty = tmp_path / "manifest.toml"
+    empty.write_text("schema = 1\n", encoding="utf-8")
+    assert load_manifest(empty) == {}
+    book = Storybook(SIZE, "both", pond=FakePond(), manifest=empty)
     assert not book.enabled
     triple(book, "C")
     book.update(1.0, attract_active=True)

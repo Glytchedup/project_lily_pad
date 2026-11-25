@@ -8,3 +8,110 @@
 # animal = "alligator"      # cast name the narrator and animal sound use for this letter
 #
 # ... one [cards.<LETTER>] table per letter A-Z.
+
+schema = 1
+
+[cards.A]
+file = "A.jpg"
+animal = "alligator"
+
+[cards.B]
+file = "B.jpg"
+animal = "bear"
+
+[cards.C]
+file = "C.jpg"
+animal = "cow"
+
+[cards.D]
+file = "D.jpg"
+animal = "duck"
+
+[cards.E]
+file = "E.jpg"
+animal = "elephant"
+
+[cards.F]
+file = "F.jpg"
+animal = "fox"
+
+[cards.G]
+file = "G.jpg"
+animal = "giraffe"
+
+[cards.H]
+file = "H.jpg"
+animal = "horse"
+
+[cards.I]
+file = "I.jpg"
+animal = "iguana"
+
+[cards.J]
+file = "J.jpg"
+animal = "jellyfish"
+
+[cards.K]
+file = "K.jpg"
+animal = "koala"
+
+[cards.L]
+file = "L.jpg"
+animal = "lion"
+
+[cards.M]
+file = "M.jpg"
+animal = "monkey"
+
+[cards.N]
+file = "N.jpg"
+animal = "narwhal"
+
+[cards.O]
+file = "O.jpg"
+animal = "owl"
+
+[cards.P]
+file = "P.jpg"
+animal = "pig"
+
+[cards.Q]
+file = "Q.jpg"
+animal = "quail"
+
+[cards.R]
+file = "R.jpg"
+animal = "rabbit"
+
+[cards.S]
+file = "S.jpg"
+animal = "sheep"
+
+[cards.T]
+file = "T.jpg"
+animal = "trex"
+
+[cards.U]
+file = "U.jpg"
+animal = "unicorn"
+
+[cards.V]
+file = "V.jpg"
+animal = "velociraptor"
+
+[cards.W]
+file = "W.jpg"
+animal = "whale"
+
+[cards.X]
+file = "X.jpg"
+animal = "xrayfish"
+
+[cards.Y]
+file = "Y.jpg"
+animal = "yak"
+
+[cards.Z]
+file = "Z.jpg"
+animal = "zebra"
+
