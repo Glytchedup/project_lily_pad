@@ -130,7 +130,7 @@ class NarratorPolicy:
 #: Letter names spelled the way a TTS voice should say them.
 LETTER_NAMES: dict[str, str] = dict(zip(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-    ("Ay", "Bee", "See", "Dee", "Ee", "Eff", "Gee", "Aitch", "Eye", "Jay",
+    ("A", "Bee", "See", "Dee", "E", "Eff", "Gee", "Aitch", "Eye", "Jay",
      "Kay", "El", "Em", "En", "Oh", "Pee", "Cue", "Are", "Ess", "Tee", "You",
      "Vee", "Double-you", "Ex", "Why", "Zee"), strict=True))
 
