@@ -20,15 +20,18 @@ class Layout:
     peekaboo_edge: float = 1.00
 
 
+# Median far-bank/water boundary across the four 1920x1080 plates.
+_POND_BANK = 774 / 1080
+
 POND = Layout(
     name="pond",
     sky=(0.00, 0.52),
     far_shore=(0.52, 0.62),
-    water=(0.66, 0.88),
-    ground=0.66,
-    shockwave=0.66,
+    water=(_POND_BANK, 0.93),
+    ground=_POND_BANK,
+    shockwave=_POND_BANK,
     fly_band=(0.10, 0.40),
-    swim_band=(0.74, 0.84),
+    swim_band=(0.79, 0.86),
     swim_height=0.22,
 )
 

@@ -8,10 +8,15 @@ import logging
 import random
 import time
 from collections import defaultdict
+from functools import partial
+from pathlib import Path
 
 import pygame
 
+from ..config import SceneConfig
 from ..input.mapper import Action
+from ..lighting.keymap import COLS, ROWS, position
+from . import animals, critter, painted
 from .ambient import AttractMode, CelebrationPulse, ChaosOverlay
 from .animals import AnimalCrossing, PeekabooAnimal
 from .base import Effect, EffectContext
@@ -19,8 +24,11 @@ from .bubbles import BubbleField
 from .comet import Comet
 from .critter import Frog
 from .letters import GiantLetter
+from .layout import CLASSIC, layout_for
+from .lily import load_lily
 from .numbers import CountAlong
-from .particles import Rings, burst
+from .particles import Fireworks, Rings, burst
+from .reflection import ReflectionCache
 from .registry import celebration, effects_for
 from .scenery import PondBackground
 
@@ -57,7 +65,8 @@ _CLEAN_PASSES = (
     ("scene", ("pond",)),
     ("fx", ("backdrop", "particles", "comets", "bubbles", "rings", "attract")),
     ("screen", ("present",)),
-    ("screen", ("flyers", "ground", "swimmers", "frog", "peekaboo", "glyphs")),
+    ("screen", ("reflections", "lily", "flyers", "ground", "swimmers", "lip",
+                "frog", "peekaboo", "glyphs")),
     ("screen", ("pulses", "chaos")),
 )
 _CROSSING_LAYERS = {"fly": "flyers", "swim": "swimmers"}
@@ -76,12 +85,27 @@ def _layer(effect: Effect) -> str:
     return "particles"
 
 
+def _foot_margin(row: dict, idle: pygame.Surface) -> int:
+    """Pixels below the registered foot. Old manifests put 1.0 at the canvas edge."""
+    h = idle.get_height()
+    anchor = row.get("anchor")
+    y = anchor[1] if isinstance(anchor, (list, tuple)) and len(anchor) == 2 else 1
+    if not isinstance(y, (float, int)) or not 0 <= y <= 1:
+        y = 1
+    if y == 1:
+        return h - idle.get_bounding_rect().bottom
+    # pack.py stores the last visible pixel, whereas Rect.bottom is exclusive.
+    return max(0, h - 1 - round(y * h))
+
+
 class EffectEngine:
     def __init__(self, size: tuple[int, int], max_particles: int = 900,
                  idle_timeout: float = 60.0, fps: int = 60,
                  rng: random.Random | None = None,
                  trails: bool = True, milestone_every: int = 50,
-                 sleep_timeout: float = 300.0, clean_sprites: bool = False) -> None:
+                 sleep_timeout: float = 300.0, clean_sprites: bool = False,
+                 *, scene: SceneConfig | None = None, root: Path | None = None,
+                 lily_seed: int | None = None, mirror_animals: bool = False) -> None:
         self.size = size
         self.max_particles = max_particles
         self.idle_timeout = idle_timeout
@@ -91,7 +115,28 @@ class EffectEngine:
         self.ctx = EffectContext(size=size, rng=rng or random.Random())
         self.effects: list[Effect] = []
         self.frog = Frog(size)
-        self.pond = PondBackground(self.ctx)
+        if critter.painted_pip_active():
+            # The pad and physics already have their waterline. Register Pip's
+            # draw origin against that line after his display-size poses load.
+            self.frog._feet += _foot_margin(critter._manifest()["pip"],
+                                            critter.frog_sprite(self.frog.r))
+        self.pond = PondBackground(self.ctx, scene, root=root)
+        self.painted = self.pond.painted
+        self.layout = layout_for(scene.world) if scene else CLASSIC
+        self.lily = None
+        if self.painted and scene.lily:
+            self.lily = load_lily(root, size, self.layout, move_seconds=scene.lily_move_seconds,
+                                 seed=time.time_ns() if lily_seed is None else lily_seed)
+            if self.lily is not None:
+                self._register_lily_feet()
+        self.beat_clock = None
+        self.reflections = ReflectionCache(bool(self.painted and scene.reflections))
+        self._foot_margins = {}
+        if scene is not None:
+            self._prepare_cast()
+        self.mirror_animals = mirror_animals
+        self.blooms = []
+        self.praise = None
         self.trails = trails
         self.clean_sprites = clean_sprites
         self._fx: pygame.Surface | None = None
@@ -115,6 +160,53 @@ class EffectEngine:
         self._frame_ema = self.frame_budget
         self._chaos_spawn_accum = 0.0
 
+    def _register_lily_feet(self) -> None:
+        # A flush canvas anchor on an older Lily pack means "use idle alpha".
+        # Each spot already holds the final display-size surfaces and origins.
+        for spot in self.lily.spots:
+            idle, (_, top) = spot.poses[spot.base]
+            if top + idle.get_height() != spot.feet:
+                continue
+            margin = _foot_margin({}, idle) / idle.get_height()
+            if margin:
+                for pose, (art, (x, y)) in spot.poses.items():
+                    spot.poses[pose] = art, (x, y + round(margin * art.get_height()))
+
+    def _prepare_cast(self) -> None:
+        """Measure idle feet and prepare reflection poses at actual spawn sizes."""
+        for name in animals.animal_names():
+            peek = name in animals.PEEKABOO_CAST
+            gait = "peekaboo" if peek else animals.GAITS.get(name, "walk")
+            if gait not in ("walk", "hop", "peekaboo"):
+                continue
+            painted_cast = animals.resolved_mode(name) == "painted"
+            if not painted_cast and not self.reflections.enabled:
+                continue
+            height = animals._sprite_height(name, self.size, gait)
+            width = self.size[0]
+            if painted_cast:
+                idle = animals._scene_sprite(name, height, "idle", False, width)
+                self._foot_margins[name] = _foot_margin(painted._rows()[name], idle)
+            if self.reflections.enabled and not peek:
+                self.reflections.prewarm(
+                    ((name, pose, left), animals._scene_sprite(name, height, pose, left, width))
+                    for pose in ("idle", "step") for left in (False, True)
+                )
+
+    def tracked(self):
+        """Keyboard patches follow the centre and width of each crossing canvas."""
+        w, h = self.size
+        for e in self.effects:
+            if isinstance(e, AnimalCrossing):
+                y = e.y if e.airborne else e.y + self._foot_margins.get(e.name, 0) - e.height / 2
+                yield e, e.name, e.x / w, y / h, e._sprite_w / w
+
+    def attract_key(self, key: str) -> None:
+        if self.painted:
+            row, col = position(key)
+            self.pond.attract((col + 0.5) * self.ctx.width / COLS,
+                              (row + 0.5) * self.ctx.height / ROWS)
+
     # ------------------------------------------------------------------ input
 
     def wake(self, now: float | None = None) -> bool:
@@ -130,13 +222,14 @@ class EffectEngine:
         self.last_action_time = time.monotonic() if now is None else now
         was_asleep, self.asleep = self.asleep, False
         if was_asleep:
+            if self.lily:
+                self.lily.wake()
             log.info("screen woken by a keypress")
         return was_asleep
 
     def spawn(self, action: Action, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
-        self.last_action_time = now
-        self.asleep = False
+        self.wake(now)
         if self.attract is not None:      # any key kills attract mode instantly
             self.attract = None
 
@@ -175,7 +268,7 @@ class EffectEngine:
             return
 
         if self.particle_count() < self.max_particles * 1.5:
-            spawned = effects_for(self.ctx, action)
+            spawned = effects_for(self.ctx, action, self.layout)
             self._cap_glyphs(spawned)
             if self.animal_count() >= MAX_ANIMALS:
                 # Every letter has its own creature now, so a two-handed run
@@ -186,6 +279,14 @@ class EffectEngine:
                 # The letter and its burst still fire: only the surplus animal
                 # is dropped, so the key still visibly does something.
                 spawned = [e for e in spawned if not isinstance(e, ANIMAL_TYPES)]
+            for effect in spawned:
+                if isinstance(effect, ANIMAL_TYPES):
+                    if self.lily:
+                        self.lily.on_animal_start()
+                    if isinstance(effect, PeekabooAnimal):
+                        effect._y_rest += self._foot_margins.get(effect.name, 0)
+                    if action.kind == "special" and action.letter == "dino":
+                        self.pond.shake(6, 0.35)
             self.effects.extend(spawned)
         else:
             # The product invariant is that EVERY key visibly does something.
@@ -215,7 +316,7 @@ class EffectEngine:
 
     # ------------------------------------------------------- reward party
 
-    def start_party(self, now: float | None = None) -> None:
+    def start_party(self, now: float | None = None, beat_clock=None) -> None:
         """The reward track has been earned: fireworks, then Pip dances.
 
         Driven by the audio engine's meter (it owns the music, so it owns
@@ -225,13 +326,14 @@ class EffectEngine:
         """
         now = time.monotonic() if now is None else now
         self.party = True
-        self.last_action_time = now
-        self.asleep = False
+        self.wake(now)
         self.attract = None
         self._last_celebration = now
         self.effects.extend(celebration(self.ctx, big=True))
-        self.effects.append(CelebrationPulse(self.ctx, duration=PARTY_PULSE))
+        if not self.painted:
+            self.effects.append(CelebrationPulse(self.ctx, duration=PARTY_PULSE))
         self.frog.dance(True)
+        self.set_party_clock(beat_clock)
         self._celebration_pending = True
 
     def end_party(self, now: float) -> None:
@@ -246,6 +348,12 @@ class EffectEngine:
         self.party = False
         self.last_action_time = now
         self.frog.dance(False)
+        self.set_party_clock(None)
+
+    def set_party_clock(self, clock) -> None:
+        self.beat_clock = clock
+        if self.lily:
+            self.lily.set_party(self.party, clock)
 
     def _note_press(self, action: Action, now: float) -> None:
         """Milestone bookkeeping: every Nth press parties, and completing the
@@ -285,8 +393,12 @@ class EffectEngine:
                 return False
         self._last_celebration = now
         self.effects.extend(celebration(self.ctx, big=big))
-        self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
+        if not self.painted:
+            self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
         self.frog.celebrate()
+        if self.lily:
+            self.lily.cheer(2.5)
+        self.praise = "alphabet_complete" if big else "lily_great"
         self._celebration_pending = True
         return True
 
@@ -327,6 +439,9 @@ class EffectEngine:
         log.info("screen asleep after %.0fs with no keypresses — any key wakes it",
                  self.sleep_timeout)
         self.asleep = True
+        if self.lily:
+            self.lily.sleep()
+        self.blooms.clear()
         self._fx = None  # waking begins with the current pond, free of old trails
         self.attract = None
         self.chaos = None
@@ -343,6 +458,8 @@ class EffectEngine:
             self._fall_asleep()
             return
         self.pond.update(dt)
+        if self.lily:
+            self.lily.update(dt)
         self.frog.update(dt)
         # Frog splash-down → water ripples where he lands on his pad. Asks the
         # frog where its floor is rather than assuming the bottom of the screen:
@@ -364,7 +481,13 @@ class EffectEngine:
             self.effects.append(burst(self.ctx, pos, count=8, speed=160,
                                       size=4, life=0.5))
 
+        if self.mirror_animals:
+            rockets = [r for effect in self.effects if isinstance(effect, Fireworks)
+                       for r in effect.rockets if not r.exploded]
         self.effects = [e for e in self.effects if e.update(dt)]
+        if self.mirror_animals:
+            self.blooms = [(r.x / self.ctx.width, r.y / self.ctx.height, r.color)
+                           for r in rockets if r.exploded]
         # Drop bookkeeping for comets that finished dying on their own.
         if self.comets:
             live = set(id(e) for e in self.effects)
@@ -415,8 +538,8 @@ class EffectEngine:
         # re-blends the full-screen hue wash every frame, compounding it into
         # a solid saturated screen that swallows the pond and every effect.
         trails_live = self.trails and self._trails_live
-        if self.clean_sprites and trails_live:
-            self._draw_clean(surface)
+        if self.painted or (self.clean_sprites and trails_live):
+            self._draw_clean(surface, trails_live)
             return
 
         self._fx = None
@@ -434,6 +557,9 @@ class EffectEngine:
         for effect in self.effects:
             if isinstance(effect, CelebrationPulse):
                 pulses.append(effect)
+            elif (isinstance(effect, AnimalCrossing) and not effect.airborne
+                  and effect.name in self._foot_margins):
+                self._draw_ground(effect, surface)
             else:
                 effect.draw(surface)
         self.frog.draw(surface)
@@ -459,26 +585,90 @@ class EffectEngine:
     def _present_fx(self, screen: pygame.Surface) -> None:
         screen.blit(self._fx, (0, 0))
 
-    def _draw_clean(self, screen: pygame.Surface) -> None:
-        backdrop = self._draw_veil
-        if self._fx is None:
+    def _draw_reflections(self, screen: pygame.Surface) -> None:
+        bank = round(self.layout.ground * self.ctx.height)
+        for e in self.effects:
+            if not isinstance(e, AnimalCrossing) or e.airborne:
+                continue
+            pose = "step" if e.pose == "step" else "idle"
+            image = self.reflections.get((e.name, pose, e.going_left))
+            if image is not None:
+                # Mirror the lift of the feet across the bank, then remove
+                # the transparent bottom margin now at the top of the mirror.
+                y = bank + round((bank - e.y - self._foot_margins.get(e.name, 0)) * 0.55)
+                rect = image.get_rect(midtop=(int(e.x), y))
+                water_end = round(self.layout.water[1] * self.ctx.height)
+                top = max(0, bank - y)
+                height = min(rect.bottom, water_end) - (y + top)
+                if height > 0:
+                    screen.blit(image, (rect.x, y + top), (0, top, rect.width, height))
+
+    def _draw_ground(self, animal, screen):
+        animal._dust.draw(screen)
+        sprite = animal._sprites[animal.pose]
+        bottom = round(animal.y) + self._foot_margins[animal.name]
+        screen.blit(sprite, sprite.get_rect(midbottom=(int(animal.x), bottom)))
+
+    def _draw_lip(self, screen):
+        # P0 already contains the water. Reapply it only where swimmers cover it.
+        previous = screen.get_clip()
+        areas = []
+        for e in self.effects:
+            if isinstance(e, AnimalCrossing) and e.gait == "swim":
+                rect = e._sprites[e.pose].get_rect(center=(int(e.x), int(e.y))).clip(previous)
+                if rect:
+                    areas.append(rect)
+        if areas:
+            screen.set_clip(areas[0].unionall(areas[1:]))
+            try:
+                self.pond.draw_near_water(screen)
+            finally:
+                screen.set_clip(previous)
+
+    def _draw_beat(self, target):
+        clock = self.beat_clock
+        flies = self.pond._flies
+        if flies and clock.beat_index >= 0 and clock.beat_phase < 0.18:
+            glow = flies.frames[1]
+            dx = self.pond._painted.shake_x
+            for x, y in flies.positions:
+                target.blit(glow, glow.get_rect(center=(int(x) + dx, int(y))),
+                            special_flags=pygame.BLEND_ADD)
+
+    def _draw_clean(self, screen: pygame.Surface, trails_live: bool) -> None:
+        backdrop = self._draw_veil if trails_live and self.chaos is None else self._draw_opaque_scene
+        buffered = self.clean_sprites and trails_live
+        if not buffered:
+            self._fx = None
+        elif self._fx is None:
             self._fx = pygame.Surface(self.size).convert()
             backdrop = self._draw_opaque_scene
-        elif self.chaos is not None:
-            backdrop = self._draw_opaque_scene
 
-        targets = {"scene": self._scene, "fx": self._fx, "screen": screen}
+        targets = {"scene": self._scene, "fx": self._fx if buffered else screen, "screen": screen}
         painters = defaultdict(list)
         painters["pond"].append(self.pond.draw)
+        if self.painted and self.party and self.beat_clock is not None:
+            painters["pond"].append(self._draw_beat)
         painters["backdrop"].append(backdrop)
-        painters["present"].append(self._present_fx)
+        if buffered:
+            painters["present"].append(self._present_fx)
+        if self.reflections.enabled and self.ctx.scale >= 0.6:
+            painters["reflections"].append(self._draw_reflections)
+        if self.lily:
+            painters["lily"].append(self.lily.draw)
         painters["frog"].append(self.frog.draw)  # draws its pad first
         if self.attract is not None:
             painters["attract"].append(self.attract.draw)
         if self.chaos is not None:
             painters["chaos"].append(self.chaos.draw)
         for effect in self.effects:
-            painters[_layer(effect)].append(effect.draw)
+            layer = _layer(effect)
+            if layer == "ground" and self._foot_margins and effect.name in self._foot_margins:
+                painters[layer].append(partial(self._draw_ground, effect))
+            else:
+                painters[layer].append(effect.draw)
+        if self.painted and painters["swimmers"] and self.ctx.scale >= 0.6:
+            painters["lip"].append(self._draw_lip)
 
         for target, layers in _CLEAN_PASSES:
             for layer in layers:

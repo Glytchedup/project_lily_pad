@@ -23,9 +23,9 @@ def test_painted_pond_bands():
     assert layout.sky == (0.00, 0.52)
     assert layout.fly_band == (0.10, 0.40)
     assert layout.far_shore == (0.52, 0.62)
-    assert layout.shockwave == layout.ground == 0.66
-    assert layout.water == (0.66, 0.88)
-    assert layout.swim_band == (0.74, 0.84)
+    assert layout.shockwave == layout.ground == 774 / 1080
+    assert layout.water == (layout.ground, 0.93)
+    assert layout.swim_band == (0.79, 0.86)
     assert layout.swim_height == 0.22
 
 

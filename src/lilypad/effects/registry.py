@@ -16,6 +16,7 @@ from .animals import animal_effect, animal_for_letter, random_dinosaur
 from .base import BRIGHT_PALETTE, Effect, EffectContext
 from .bubbles import BubbleField
 from .letters import GiantLetter
+from .layout import CLASSIC, Layout
 from .numbers import CountAlong
 from .particles import (
     Balloons,
@@ -116,12 +117,6 @@ _SPECIAL_FACTORIES: dict[str, Factory] = {
     "vacuum": lambda ctx, a: [Vacuum(ctx, ctx.random_pos(0.3))],
     "balloon": lambda ctx, a: [Balloons(ctx, 8)],
     "drum": lambda ctx, a: [Rings(ctx, ctx.random_pos(0.25), count=3)],
-    # F7-F12: a dinosaur thunders across, with a shockwave off its feet.
-    "dino": lambda ctx, a: [
-        animal_effect(ctx, random_dinosaur(ctx)),
-        Rings(ctx, (ctx.width * 0.5, ctx.height * 0.92),
-              color=(214, 196, 150), count=2, life=0.9),
-    ],
 }
 
 
@@ -143,7 +138,13 @@ _KIND_FACTORIES: dict[str, Factory] = {
 }
 
 
-def effects_for(ctx: EffectContext, action: Action) -> list[Effect]:
+def effects_for(ctx: EffectContext, action: Action, layout: Layout = CLASSIC) -> list[Effect]:
+    if action.kind == "special" and action.letter == "dino":
+        return [
+            animal_effect(ctx, random_dinosaur(ctx)),
+            Rings(ctx, (ctx.width * 0.5, ctx.height * layout.shockwave),
+                  color=(214, 196, 150), count=2, life=0.9),
+        ]
     factory = _KIND_FACTORIES.get(action.kind)
     if factory is None:
         return []

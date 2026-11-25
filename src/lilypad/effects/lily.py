@@ -65,17 +65,16 @@ class _SpotDef:
 
 def _spot_defs(layout: Layout) -> list[_SpotDef]:
     """Named spots derived from the pond bands (assumes far_shore and water exist)."""
-    far = layout.far_shore[1] - 0.015
-    water_top, water_bottom = layout.water
+    far = layout.ground - 0.008
     return [
         # Three each side of the stage. The painted moon sits near x 0.30, y 0.14 in
         # every mood, so she stands just left of it on the far shore and points at it.
-        _SpotDef("far_shore_left", 0.05, far, 0.22, "sit"),
-        _SpotDef("bank_near_pip", 0.12, water_bottom - 0.04, 0.28, "sit"),
-        _SpotDef("under_the_moon", 0.23, far, 0.26, "point"),
-        _SpotDef("lily_pad", 0.80, water_top + 0.12, 0.25, "sit", pad=True),
-        _SpotDef("far_shore_right", 0.94, far, 0.22, "sit"),
-        _SpotDef("tummy_on_bank", 0.925, water_bottom, 0.24, "tummy"),
+        _SpotDef("far_shore_left", 0.044, far, 0.22, "sit"),
+        _SpotDef("bank_near_pip", 0.137, layout.ground, 0.25, "sit"),
+        _SpotDef("under_the_moon", 0.241, far, 0.26, "point"),
+        _SpotDef("lily_pad", 0.762, layout.ground + 0.09, 0.22, "sit", pad=True),
+        _SpotDef("far_shore_right", 0.957, far, 0.22, "sit"),
+        _SpotDef("tummy_on_bank", 0.873, layout.ground, 0.22, "tummy"),
     ]
 
 
