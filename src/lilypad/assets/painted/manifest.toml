@@ -1,2 +1,333 @@
 # Schema 1 uses paths relative to this directory and fractional frame coordinates.
 schema = 1
+style = "A"
+
+[animals.alligator]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5984848484848485, 0.0681198910081744]
+eye_at = [0.6275265598624472, 0.20743515420853686]
+faces_left = false
+frames = { blink = "alligator/blink.webp", idle = "alligator/idle.webp", step = "alligator/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:07a45a955958612ba7cb95fc22b4a77a8905a8a7f524bed9fc553a1bbca5321a"
+view = "side"
+
+[animals.bear]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5, 0.10354223433242507]
+eye_at = [0.6846104630468184, 0.3417769365900352]
+faces_left = false
+frames = { blink = "bear/blink.webp", idle = "bear/idle.webp", step = "bear/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:ce58a3d9646112745d34807f87caf459996c8c16447d1c250c288ef4032060fc"
+view = "side"
+
+[animals.brachiosaurus]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5059701492537313, 0.45776566757493187]
+eye_at = [0.7641757200392595, 0.1558354495294939]
+faces_left = false
+frames = { blink = "brachiosaurus/blink.webp", idle = "brachiosaurus/idle.webp", step = "brachiosaurus/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:be62740359ed49d5aa2a81a6aed2ec095295990aee83e07abe874dad7ae8754b"
+view = "side"
+
+[animals.cow]
+anchor = [0.5, 0.9375]
+back_at = [0.5012953367875648, 0.09953703703703703]
+eye_at = [0.3565490832330211, 0.3289336263873301]
+faces_left = false
+frames = { blink = "cow/blink.webp", idle = "cow/idle.webp" }
+native_height = 432
+prompt_id = "sheet-front-v1"
+source_hash = "sha256:1728fdc6e4ce733df18a84b18132c4c31bfacbac4f6dcbe2c2abe3b7b359cf43"
+view = "front"
+
+[animals.duck]
+anchor = [0.5, 0.9375]
+back_at = [0.5089020771513353, 0.06018518518518518]
+eye_at = [0.36169330559471574, 0.33374257459160256]
+faces_left = false
+frames = { blink = "duck/blink.webp", idle = "duck/idle.webp" }
+native_height = 432
+prompt_id = "sheet-front-v1"
+source_hash = "sha256:dda6eb1e61cbc310368bc4fe95989b32dce036df43acae8d31031818280bb7e7"
+view = "front"
+
+[animals.elephant]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.44666666666666666, 0.05994550408719346]
+eye_at = [0.6990209339774557, 0.31788185531817803]
+faces_left = false
+frames = { blink = "elephant/blink.webp", idle = "elephant/idle.webp", step = "elephant/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:b88a260c573969d4f3595d3f893de31fa08614a5672590d168d94adf5940d223"
+view = "side"
+
+[animals.fox]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.531700288184438, 0.07901907356948229]
+eye_at = [0.7022581408623259, 0.3508163417534345]
+faces_left = false
+frames = { blink = "fox/blink.webp", idle = "fox/idle.webp", step = "fox/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:36371a80df9a983a88f42620a81c25f5b0f8f067e500aa4c2828647ef65391c0"
+view = "side"
+
+[animals.giraffe]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5952380952380952, 0.0681198910081744]
+eye_at = [0.708061779490351, 0.1767991318400038]
+faces_left = false
+frames = { blink = "giraffe/blink.webp", idle = "giraffe/idle.webp", step = "giraffe/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:8cc78063d654f1d66f1653f37891d120e01f0eb3b696e3232bdeb402960b5998"
+view = "side"
+
+[animals.horse]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5986486486486486, 0.14986376021798364]
+eye_at = [0.7506186022534796, 0.25318697146760316]
+faces_left = false
+frames = { blink = "horse/blink.webp", idle = "horse/idle.webp", step = "horse/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:15860f78b3c28a6d300cf313ca893cbaf6df87be620dc8232b6354f52b358e58"
+view = "side"
+
+[animals.iguana]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5905432595573441, 0.10899182561307902]
+eye_at = [0.7228883765497233, 0.20703695320504736]
+faces_left = false
+frames = { blink = "iguana/blink.webp", idle = "iguana/idle.webp", step = "iguana/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:2ad1095c25395c8aba5616819cd1fbf8072639a6443fffc66f18fa870eab03f7"
+view = "side"
+
+[animals.jellyfish]
+anchor = [0.5, 0.9343629343629344]
+back_at = [0.5024752475247525, 0.06177606177606178]
+eye_at = [0.5095890686629638, 0.31056753617729227]
+faces_left = false
+frames = { blink = "jellyfish/blink.webp", idle = "jellyfish/idle.webp" }
+native_height = 259
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:0ff173a8031e6a3bfca62de0bef615ccc1d4428e0cfedef3a689323476fdd589"
+view = "side"
+
+[animals.koala]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.4037900874635568, 0.09536784741144415]
+eye_at = [0.6110346088883629, 0.3939994168334054]
+faces_left = false
+frames = { blink = "koala/blink.webp", idle = "koala/idle.webp", step = "koala/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:7624d42c10543f7494e1a56ded14b2c744b406f32ca2b12dfa8253e9e4fc0d9b"
+view = "side"
+
+[animals.lion]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.595873786407767, 0.0681198910081744]
+eye_at = [0.7138378626220869, 0.34914763326783477]
+faces_left = false
+frames = { blink = "lion/blink.webp", idle = "lion/idle.webp", step = "lion/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:9606464831f7ac74453c129234591fa969e667946e345baa805c8f733e57ce21"
+view = "side"
+
+[animals.monkey]
+anchor = [0.5, 0.936231884057971]
+back_at = [0.5957178841309824, 0.11884057971014493]
+eye_at = [0.6816602860806227, 0.3473813634698896]
+faces_left = false
+frames = { blink = "monkey/blink.webp", idle = "monkey/idle.webp", step = "monkey/step.webp" }
+native_height = 345
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:8563838f804e61344dfdcae2b5ea111fc76470fa0f0124db5fca98c9ac90d003"
+view = "side"
+
+[animals.narwhal]
+anchor = [0.5, 0.9370860927152318]
+back_at = [0.5907127429805615, 0.2185430463576159]
+eye_at = [0.6385378896606346, 0.4560386327818875]
+faces_left = false
+frames = { blink = "narwhal/blink.webp", idle = "narwhal/idle.webp" }
+native_height = 302
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:e68e4ae57fe59633b3a07c07dfd9cb1a2b3a8ac7929888977abb6c530ab351d6"
+view = "side"
+
+[animals.owl]
+anchor = [0.5, 0.9343629343629344]
+back_at = [0.5894941634241245, 0.16216216216216217]
+eye_at = [0.7696785719692955, 0.63448913059808]
+faces_left = false
+frames = { blink = "owl/blink.webp", idle = "owl/idle.webp", step = "owl/step.webp" }
+native_height = 259
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:fc03a1092f12f357739d0dba6b9f68384bcfad3414f1eb602546dfa3953d0c5a"
+view = "side"
+
+[animals.pig]
+anchor = [0.5, 0.9375]
+back_at = [0.49890350877192985, 0.0787037037037037]
+eye_at = [0.3411488826172676, 0.3802628034480573]
+faces_left = false
+frames = { blink = "pig/blink.webp", idle = "pig/idle.webp" }
+native_height = 432
+prompt_id = "sheet-front-v1"
+source_hash = "sha256:4c4b284639d5b295f5ae4fe3ff3e941d7db0ab772b2fa4899b17e58d9fdfa5bb"
+view = "front"
+
+[animals.pterodactyl]
+anchor = [0.5, 0.9073359073359073]
+back_at = [0.5065573770491804, 0.06177606177606178]
+eye_at = [0.7062015503875969, 0.5027685492801772]
+faces_left = false
+frames = { blink = "pterodactyl/blink.webp", idle = "pterodactyl/idle.webp", step = "pterodactyl/step.webp" }
+native_height = 259
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:e5b0558d199c737b66d76415ef96d3e4fd878903edb557287338895343402539"
+view = "side"
+
+[animals.quail]
+anchor = [0.5, 0.9343629343629344]
+back_at = [0.527681660899654, 0.11969111969111969]
+eye_at = [0.772425925387456, 0.44784941003428397]
+faces_left = false
+frames = { blink = "quail/blink.webp", idle = "quail/idle.webp", step = "quail/step.webp" }
+native_height = 259
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:83f4accada72e3ecc2fd9a38d5e18ec3303eb229324d7e6d1f5115befbbcc84d"
+view = "side"
+
+[animals.rabbit]
+anchor = [0.5, 0.936231884057971]
+back_at = [0.47641509433962265, 0.06086956521739131]
+eye_at = [0.6361809923130678, 0.4080734885082711]
+faces_left = false
+frames = { blink = "rabbit/blink.webp", idle = "rabbit/idle.webp", step = "rabbit/step.webp" }
+native_height = 345
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:1f3f486163e98fa60983c51318487ef131712b57dd3ed1aab54b8c44f33978f7"
+view = "side"
+
+[animals.sheep]
+anchor = [0.5, 0.9375]
+back_at = [0.5011904761904762, 0.06018518518518518]
+eye_at = [0.4027910210568137, 0.3680624530967201]
+faces_left = false
+frames = { blink = "sheep/blink.webp", idle = "sheep/idle.webp" }
+native_height = 432
+prompt_id = "sheet-front-v1"
+source_hash = "sha256:aa519a0deb7a1af22eceda36bcf158769cb411ab773cdf26d1f5d841a4af5c83"
+view = "front"
+
+[animals.stegosaurus]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.45791583166332667, 0.05994550408719346]
+eye_at = [0.7843139462445491, 0.3770134062666898]
+faces_left = false
+frames = { blink = "stegosaurus/blink.webp", idle = "stegosaurus/idle.webp", step = "stegosaurus/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:3f5c5798feae09c18c3d3bfc63592d7b1e1e0283dac74fce6445ee8d7a863fd7"
+view = "side"
+
+[animals.trex]
+anchor = [0.5, 0.936231884057971]
+back_at = [0.5892448512585813, 0.06086956521739131]
+eye_at = [0.6191601282716981, 0.18313585510551453]
+faces_left = false
+frames = { blink = "trex/blink.webp", idle = "trex/idle.webp", step = "trex/step.webp" }
+native_height = 345
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:6b1b8829f03b2f80851c7218be88b7b9dfccc1e6edb67f13dee4e777d0eb8daf"
+view = "side"
+
+[animals.triceratops]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5835214446952596, 0.05994550408719346]
+eye_at = [0.7323134345037212, 0.447430328863949]
+faces_left = false
+frames = { blink = "triceratops/blink.webp", idle = "triceratops/idle.webp", step = "triceratops/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:c481cd7b68a46596a9d39aedc196d942036c52fae6133958cc749ed855ad5128"
+view = "side"
+
+[animals.unicorn]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5848765432098766, 0.1226158038147139]
+eye_at = [0.7304867413403101, 0.35980535455425827]
+faces_left = false
+frames = { blink = "unicorn/blink.webp", idle = "unicorn/idle.webp", step = "unicorn/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:5154ee20be1bb010d7f06cb91e8e9dd9d4a030da9d1c626389b775c77a67cafb"
+view = "side"
+
+[animals.velociraptor]
+anchor = [0.5, 0.936231884057971]
+back_at = [0.5025575447570333, 0.06086956521739131]
+eye_at = [0.6232489986374514, 0.18424069794521775]
+faces_left = false
+frames = { blink = "velociraptor/blink.webp", idle = "velociraptor/idle.webp", step = "velociraptor/step.webp" }
+native_height = 345
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:9ae3ee20531f42133d13844aaa529887a55ae90202aa3e33c127e750c7bff69a"
+view = "side"
+
+[animals.whale]
+anchor = [0.5, 0.9370860927152318]
+back_at = [0.5942796610169492, 0.0728476821192053]
+eye_at = [0.666342254275548, 0.4128795240159658]
+faces_left = false
+frames = { blink = "whale/blink.webp", idle = "whale/idle.webp" }
+native_height = 302
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:89eb103f607700559db9955fd64e57c430e268929c0e5eaa29fde2af7a33d662"
+view = "side"
+
+[animals.xrayfish]
+anchor = [0.5, 0.9370860927152318]
+back_at = [0.4875, 0.059602649006622516]
+eye_at = [0.750479182533638, 0.4309919147798631]
+faces_left = false
+frames = { blink = "xrayfish/blink.webp", idle = "xrayfish/idle.webp" }
+native_height = 302
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:039f2bdef02e724027397ed2861bd54a7334e79e7014bf56a3fa094fdc7e95c4"
+view = "side"
+
+[animals.yak]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5689252336448598, 0.10354223433242507]
+eye_at = [0.7617326369800256, 0.3672116257947321]
+faces_left = false
+frames = { blink = "yak/blink.webp", idle = "yak/idle.webp", step = "yak/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:d68a74c1f822097388d84d93abb91c4ae021e367a58d5086280e997802c29f62"
+view = "side"
+
+[animals.zebra]
+anchor = [0.5, 0.9373297002724795]
+back_at = [0.5969101123595506, 0.10899182561307902]
+eye_at = [0.7393748447119234, 0.29801699147748195]
+faces_left = false
+frames = { blink = "zebra/blink.webp", idle = "zebra/idle.webp", step = "zebra/step.webp" }
+native_height = 367
+prompt_id = "sheet-side-v1"
+source_hash = "sha256:7258224ceba7c1858f8b549c658c8a6bcc26d3f50862d2210e5695bea3e10ed9"
+view = "side"
