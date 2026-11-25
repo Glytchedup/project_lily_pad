@@ -538,6 +538,11 @@ class Frog:
         # guessed 1.8r left the notch hanging a few pixels off the screen.
         self.floor_y = self.h - pad_reach(self.r) - self._feet
         self.pad = _Pad(size, self.r, self.floor_y + self._feet)
+        if painted_pip_active():
+            # Scale every painted pose now so the first cheer or blink does not
+            # cost a frame. (The drawn route is left lazy, as it always was.)
+            for pose in PAINTED_POSES:
+                frog_sprite(self.r, pose)
 
     def shove(self, direction: tuple[int, int]) -> None:
         dx, dy = direction
