@@ -1,0 +1,154 @@
+# Classic play. Select this profile with --config config.legacy.toml.
+
+[audio]
+# Master mute. true = no sound at all, regardless of volume.
+mute = false
+# 0.0 .. 1.0
+volume = 0.65
+# Speech source: "narrator" or "espeak" (no-op until built).
+voice = "espeak"
+# Speak short phrases for animals and letters (no-op until built).
+phrases = false
+# Count number-key shapes aloud (no-op until built).
+count_aloud = false
+
+[music]
+# Every key plays a note of the C major pentatonic scale, laid out like a piano
+# across the keyboard: lower rows are lower notes, left to right climbs. That
+# scale has no clashing intervals, so any handful of keys pressed together is a
+# chord. false = no key notes (character cues and chimes only).
+key_notes = true
+# Background instrumental tunes:
+#   "reward" — silence while playing, then a whole track has to be EARNED:
+#              `reward_seconds` of engaged play or `reward_presses` keys,
+#              whichever lands first, buys fireworks and then a full track
+#              with Pip throwing a dance party. The track ending ends the
+#              party, and the next one has to be earned again.
+#   "active" — play while keys are being pressed, fading out after
+#              `fade_after` seconds of no activity (see below). Uses whatever
+#              audio files are in `background_folder`; falls back to the
+#              built-in generated tunes if that folder is empty or missing.
+#   "idle"   — play only during the attract animation, fading out on the next
+#              keypress, so playing is never competing with backing music
+#   "always" — loop continuously
+#   "off"    — never
+tunes = "reward"
+# Background music level, 0.0 .. 1.0. Separate from audio.volume, which sets
+# the level of the keypress cues.
+tune_volume = 0.6
+# Folder of personal MP3/OGG/WAV files to shuffle through in "reward" and
+# "active" modes — never checked into git (see .gitignore), so this is safe
+# for real songs.
+# Resolved relative to the repo root in dev mode, /opt/lilypad in kiosk mode.
+background_folder = "music"
+# "active" mode only: seconds of no keypress before the music fades out. A
+# fade caught mid-track resumes from the same spot, not the top, next time.
+fade_after = 30.0
+# "reward" mode only. A track is earned by whichever of these lands first.
+# reward_window is what makes the seconds mean *play* rather than wall clock:
+# a gap longer than this stops counting, so a key touched once a minute never
+# earns anything. Progress survives a break; only a party spends it.
+reward_seconds = 60.0
+reward_presses = 50
+reward_window = 10.0
+# Party mix. The reward track is the event, so it plays near full while the
+# key cues drop under it — loud music, soft typing. Both 0.0 .. 1.0.
+party_volume = 0.95
+party_duck = 0.25
+# Include packaged music in the reward playlist (no-op until built).
+bundled_tracks = false
+# Preferred reward music: "folder_first", "bundled" or "generated" (no-op until built).
+reward_source = "folder_first"
+# Synchronize the party effects with the music (no-op until built).
+party_show = false
+
+[display]
+# Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.
+dev_window = [1280, 720]
+# Target frames per second.
+fps = 60
+# Seconds of no keypresses before the idle "attract" animation starts.
+idle_timeout = 60.0
+# Seconds of no keypresses before the screen goes fully black and the keyboard
+# lights go out — the app is still running, and the very next keypress brings
+# everything straight back. 0 disables sleeping entirely.
+#
+# This is a black picture, not a powered-down HDMI output: on a Pi 5 there is
+# no way to switch the output off from software (vcgencmd display_power is
+# gone, and the DRM dpms node is read-only), and blanking the output would risk
+# the monitor dropping hot-plug detect — the exact deadlock that forced
+# video=HDMI-A-1:...D into cmdline.txt. Use the monitor's own power saving if
+# you want the backlight off too.
+sleep_timeout = 300.0
+
+[effects]
+# Hard cap on live particles; the engine lowers this automatically if the frame
+# budget is exceeded (graceful degradation).
+max_particles = 900
+# 2-key chord detection window, seconds.
+chord_window = 0.15
+# Motion trails: effects streak and fade instead of vanishing. Costs roughly
+# one extra full-screen alpha blit per frame (plus a periodic anti-ghost pass).
+# The engine sheds trails automatically under heavy load; set false to always
+# use the cheap opaque clear (e.g. on a Pi 4 that can't hold 60 fps).
+trails = true
+# A mega-celebration (fireworks + confetti + balloons + frog party) fires every
+# this many keypresses. 0 disables milestones.
+milestone_every = 50
+# Traced-outline animals. A few creatures (currently giraffe, triceratops and
+# whale) are drawn from a real anatomical outline instead of being assembled
+# from ellipses — the shape comes from a public-domain silhouette, everything
+# else about them is still generated. false puts those three back to the drawn
+# version, which is the point: it is a trial, and this is how you compare.
+# Ignored if this machine's SDL_image cannot rasterise SVG; it falls back to
+# the drawn animals and says so in the log.
+silhouettes = true
+# Animal art: "painted", "traced" or "drawn". Overrides silhouettes (no-op until built).
+animal_art = "traced"
+# Pip and his pad: "painted" or "drawn" (no-op until built).
+pip_art = "drawn"
+# Maximum sprite width as a fraction of screen width, 0 disables the cap (no-op until built).
+max_sprite_width = 0
+# Draw moving sprites over the trails (no-op until built).
+clean_sprites = false
+# Enable encounters between animals and Pip (no-op until built).
+ecosystem = false
+# Show storybook cards during "encore", "attract", "both" or "off" (no-op until built).
+storybook = "off"
+# Effect artwork: "painted" or "glow" (no-op until built).
+fx_style = "glow"
+# Collect animal portraits in the session album (no-op until built).
+album = false
+# Celebrate completing the alphabet with the Grand Parade (no-op until built).
+parade = false
+
+[scene]
+# Scene art and layout: "painted" pond or "drawn" classic (no-op until built).
+world = "drawn"
+# Drift painted scenery layers at different speeds (no-op until built).
+parallax = false
+# Reflect walkers and Pip in the pond (no-op until built).
+reflections = false
+# Show fireflies over the painted pond (no-op until built).
+fireflies = false
+# Minutes between painted mood changes, must be positive (no-op until built).
+mood_minutes = 5.0
+
+[lighting]
+# Backend: "auto" tries razer_hid, then openrazer, then mock.
+# Force one with "razer_hid" | "openrazer" | "mock".
+backend = "auto"
+# Keyboard LED brightness, 0.0 .. 1.0.
+brightness = 0.9
+# Lighting frame rate (keyboard USB updates per second).
+fps = 30
+# Mirror on-screen animals on the keyboard LEDs (no-op until built).
+mirror_animals = false
+
+[escape]
+# Parent escape hatch: hold ALL of these keys together for `hold_seconds`.
+# Key names follow Linux evdev naming without the KEY_ prefix.
+combo = ["LEFTSHIFT", "RIGHTSHIFT", "BACKSPACE"]
+hold_seconds = 5.0
+# Seconds to show the session summary on exit, 0 disables it (no-op until built).
+summary_seconds = 0
