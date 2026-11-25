@@ -50,6 +50,7 @@ _DEFAULT_SEED = 0x11E
 #: The central stage, as screen-width fractions. Lily never stands inside it.
 STAGE_X = (0.30, 0.70)
 _SPARKLES = 8
+_MAX_CARRY = 0.1
 
 
 @dataclass(frozen=True)
@@ -67,12 +68,14 @@ def _spot_defs(layout: Layout) -> list[_SpotDef]:
     far = layout.far_shore[1] - 0.015
     water_top, water_bottom = layout.water
     return [
-        _SpotDef("far_shore_left", 0.09, far, 0.22, "sit"),
-        _SpotDef("far_shore_right", 0.93, far, 0.22, "sit"),
-        _SpotDef("bank_near_pip", 0.11, water_bottom - 0.04, 0.28, "sit"),
-        _SpotDef("lily_pad", 0.85, water_top + 0.13, 0.25, "sit", pad=True),
-        _SpotDef("tummy_on_bank", 0.89, water_bottom - 0.04, 0.26, "tummy"),
-        _SpotDef("under_the_moon", 0.77, far, 0.26, "point"),
+        # Three each side of the stage. The painted moon sits near x 0.30, y 0.14 in
+        # every mood, so she stands just left of it on the far shore and points at it.
+        _SpotDef("far_shore_left", 0.05, far, 0.22, "sit"),
+        _SpotDef("bank_near_pip", 0.12, water_bottom - 0.04, 0.28, "sit"),
+        _SpotDef("under_the_moon", 0.23, far, 0.26, "point"),
+        _SpotDef("lily_pad", 0.80, water_top + 0.12, 0.25, "sit", pad=True),
+        _SpotDef("far_shore_right", 0.94, far, 0.22, "sit"),
+        _SpotDef("tummy_on_bank", 0.925, water_bottom, 0.24, "tummy"),
     ]
 
 
@@ -132,7 +135,8 @@ def _rgba(frame: pygame.Surface) -> pygame.Surface:
     return out
 
 
-def _decode(row: dict, directory: Path) -> tuple[dict[str, pygame.Surface], int, float]:
+def _decode(row: dict, directory: Path) -> tuple[
+        dict[str, pygame.Surface], int, tuple[float, float], dict[str, float]]:
     native = row["native_height"]
     if type(native) is not int or native <= 0:
         raise ValueError("invalid native_height")
@@ -156,7 +160,8 @@ def _decode(row: dict, directory: Path) -> tuple[dict[str, pygame.Surface], int,
     for pose, fraction in heights.items():
         if type(fraction) not in (int, float) or not 0 < fraction <= 1.5:
             raise ValueError(f"invalid height for {pose}")
-    return frames, native, float(anchor[0])
+    return frames, native, (float(anchor[0]), float(anchor[1])), {
+        pose: float(f) for pose, f in heights.items()}
 
 
 def _pad_sprite(width: int, height: int) -> pygame.Surface:
@@ -184,7 +189,7 @@ def _dots(radius: int) -> tuple[pygame.Surface, ...]:
 
 
 def _build_spot(defn: _SpotDef, size: tuple[int, int], frames: dict[str, pygame.Surface],
-                native: int, anchor_x: float) -> _Spot:
+                native: int, anchor: tuple[float, float], heights: dict[str, float]) -> _Spot:
     w, h = size
     size_px = max(8, round(defn.size * h))
     scale = size_px / native
@@ -196,13 +201,20 @@ def _build_spot(defn: _SpotDef, size: tuple[int, int], frames: dict[str, pygame.
     rect = pygame.Rect(cx, feet, 0, 0)
     for pose in wanted:
         art = frames[pose]
-        target = (max(1, round(art.get_width() * scale)), max(1, round(art.get_height() * scale)))
+        # `heights` is the pose height as a fraction of her standing height, so the
+        # painted canvases may be any size and she still stays one size across poses.
+        if pose in heights:
+            tall = max(1, round(size_px * heights[pose]))
+            target = (max(1, round(art.get_width() * tall / art.get_height())), tall)
+        else:
+            target = (max(1, round(art.get_width() * scale)),
+                      max(1, round(art.get_height() * scale)))
         surface = pygame.transform.smoothscale(art, target)
-        ax = anchor_x
+        ax = anchor[0]
         if mirror and pose in _MIRRORED:
             surface = pygame.transform.flip(surface, True, False)
-            ax = 1.0 - anchor_x
-        topleft = (round(cx - ax * target[0]), feet - target[1])
+            ax = 1.0 - anchor[0]
+        topleft = (round(cx - ax * target[0]), feet - round(anchor[1] * target[1]))
         poses[pose] = (surface, topleft)
         rect.union_ip(pygame.Rect(topleft, target))
     pad = None
@@ -229,7 +241,7 @@ def load_lily(root: Path | None, screen_size: tuple[int, int], layout: Layout, *
         return None
     row, directory = found
     try:
-        frames, native, anchor_x = _decode(row, directory)
+        frames, native, anchor, heights = _decode(row, directory)
     except (KeyError, TypeError, OSError, ValueError, pygame.error,
             NotImplementedError) as exc:
         log.warning("Ignoring painted Lily: %s", exc)
@@ -241,7 +253,7 @@ def load_lily(root: Path | None, screen_size: tuple[int, int], layout: Layout, *
     bob = max(2, round(0.012 * h))
     spots = []
     for defn in _spot_defs(layout):
-        spot = _build_spot(defn, screen_size, frames, native, anchor_x)
+        spot = _build_spot(defn, screen_size, frames, native, anchor, heights)
         reach = spot.rect.inflate(0, 2 * bob)
         if (not pygame.Rect(0, 0, w, h).contains(reach) or reach.colliderect(stage)
                 or reach.bottom > pad_top):
@@ -348,7 +360,7 @@ class Lily:
     # -- per frame -----------------------------------------------------------
 
     def update(self, dt: float, events=()) -> bool:
-        if "animal_start" in events:
+        if events and "animal_start" in events:
             self.on_animal_start()
         if self.asleep or not dt > 0 or not math.isfinite(dt):
             return True
@@ -364,13 +376,16 @@ class Lily:
         if self.phase == "hold":
             self.move_time += dt
             if self.move_time >= self.move_seconds:
-                self.phase, self.phase_time = "out", self.move_time - self.move_seconds
+                self.phase = "out"
+                self.phase_time = min(self.move_time - self.move_seconds, _MAX_CARRY)
         else:
             self.phase_time += dt
         if self.phase != "hold" and self.phase_time >= FADE_SECONDS:
-            carry = self.phase_time - FADE_SECONDS
+            # A frame hitch carries a little into the next phase, never a whole move.
+            carry = min(self.phase_time - FADE_SECONDS, _MAX_CARRY)
             if self.phase == "in":
-                self.phase, self.move_time = "hold", carry
+                self.phase = "hold"
+                self.move_time += carry     # keeps the wait when she wakes mid-way
             else:
                 self._arrive()
                 self.phase_time = carry

@@ -31,15 +31,15 @@ CANVAS = {
 }
 
 
-def make_art(root, *, skip=(), schema=1, lily=True):
+def make_art(root, *, skip=(), schema=1, lily=True, canvas=None, anchor="[0.5, 1.0]"):
     """Write a tiny [lily] manifest and its frames under root/painted/."""
     painted = root / "painted"
     (painted / "lily").mkdir(parents=True)
     files = []
-    for pose, (size, colour) in CANVAS.items():
+    for pose, (size, colour) in {**CANVAS, **(canvas or {})}.items():
         art = pygame.Surface(size, pygame.SRCALPHA)
         art.fill((*colour, 255))
-        if pose == "point":   # asymmetric, so mirroring is observable
+        if pose in ("point", "tummy"):   # asymmetric, so mirroring is observable
             art.fill((255, 0, 0, 255), (0, 0, size[0] // 2, size[1]))
             art.fill((0, 0, 255, 255), (size[0] // 2, 0, size[0] - size[0] // 2, size[1]))
         if pose not in skip:
@@ -47,7 +47,7 @@ def make_art(root, *, skip=(), schema=1, lily=True):
         files.append(f'{pose} = "lily/{pose}.png"')
     text = f"schema = {schema}\n"
     if lily:
-        text += (f"[lily]\nnative_height = {NATIVE}\nanchor = [0.5, 1.0]\n"
+        text += (f"[lily]\nnative_height = {NATIVE}\nanchor = {anchor}\n"
                  f"frames = {{ {', '.join(files)} }}\n"
                  "heights = { sit = 0.78, sit_blink = 0.78, wave = 1.0, tummy = 0.55,"
                  " point = 1.0, cheer = 1.0 }\n")
@@ -56,7 +56,8 @@ def make_art(root, *, skip=(), schema=1, lily=True):
 
 
 def build(tmp_path, size=SIZE, **options):
-    return load_lily(make_art(tmp_path), size, POND, **options)
+    art = {k: options.pop(k) for k in ("canvas", "anchor") if k in options}
+    return load_lily(make_art(tmp_path, **art), size, POND, **options)
 
 
 def run(lily, seconds, dt=1 / 60):
@@ -175,14 +176,17 @@ def test_a_spot_that_would_cross_the_stage_is_dropped(tmp_path, caplog):
 def test_mirroring_by_side_for_tummy_and_point(tmp_path):
     lily = build(tmp_path)
     by_name = {s.name: s for s in lily.spots}
-    moon = by_name["under_the_moon"]      # right half: faces the centre, so flipped
-    surf, _ = moon.poses["point"]
-    left, right = surf.get_at((2, 50)), surf.get_at((surf.get_width() - 3, 50))
+    # Art faces right: left-side spots keep it (the moon is to the right of her),
+    # right-side spots flip it so she faces the centre.
+    moon = by_name["under_the_moon"].poses["point"][0]
+    left, right = moon.get_at((2, 50)), moon.get_at((moon.get_width() - 3, 50))
+    assert left.r > 240 and left.b < 15 and right.b > 240 and right.r < 15
+    tummy = by_name["tummy_on_bank"].poses["tummy"][0]
+    left, right = tummy.get_at((2, 20)), tummy.get_at((tummy.get_width() - 3, 20))
     assert left.b > 240 and left.r < 15 and right.r > 240 and right.b < 15
     keep = by_name["bank_near_pip"].poses["sit"][0]       # facing the viewer: never flipped
     assert close(keep.get_at((5, 5)), CANVAS["sit"][1])
-    surf, _ = by_name["tummy_on_bank"].poses["tummy"]       # right side: flipped too
-    assert surf.get_width() > 0 and by_name["tummy_on_bank"].cx > SIZE[0] / 2
+    assert by_name["tummy_on_bank"].cx > SIZE[0] / 2 > by_name["under_the_moon"].cx
 
 
 # -- schedule ----------------------------------------------------------------
@@ -432,3 +436,70 @@ def test_module_exports_the_wiring_surface():
         assert hasattr(lily_module, name)
     for method in ("update", "draw", "on_animal_start", "set_party", "sleep", "wake", "cheer"):
         assert callable(getattr(lily_module.Lily, method))
+
+
+# -- manifest honesty, wiring edge cases -------------------------------------
+
+@pytest.mark.parametrize("size", [(1280, 720), (1920, 1080)])
+def test_spots_are_distinct_patches_of_screen_three_a_side(tmp_path, size):
+    lily = build(tmp_path / str(size[0]), size)
+    rects = lily.spot_rects
+    assert len(rects) == 6
+    for (a, ra), (b, rb) in itertools.combinations(rects.items(), 2):
+        assert not ra.colliderect(rb), (a, b)
+    centres = [s.cx for s in lily.spots]
+    assert sum(c < size[0] / 2 for c in centres) == 3
+
+
+def test_heights_table_wins_over_the_canvas_size(tmp_path):
+    # A sit canvas twice as tall as the 0.78 the table promises is still 0.78 here.
+    lily = build(tmp_path, canvas={"sit": ((200, 468), (200, 30, 30)),
+                                   "sit_blink": ((200, 468), (200, 30, 31))})
+    spot = next(s for s in lily.spots if s.base == "sit")
+    assert abs(spot.poses["sit"][0].get_height() - round(spot.size_px * 0.78)) <= 1
+    assert spot.poses["sit"][0].get_width() * 468 == pytest.approx(
+        spot.poses["sit"][0].get_height() * 200, rel=0.02)    # aspect kept
+    assert spot.poses["sit"][0].get_height() < spot.poses["cheer"][0].get_height()
+
+
+def test_anchor_y_places_the_feet(tmp_path):
+    flush = build(tmp_path / "a")
+    lifted = build(tmp_path / "b", anchor="[0.5, 0.95]")
+    for a, b in zip(flush.spots, lifted.spots, strict=True):
+        art, (_, top_a) = a.poses["cheer"]
+        art2, (_, top_b) = b.poses["cheer"]
+        assert top_a + art.get_height() == a.feet                  # bottom row on the baseline
+        assert top_b + round(0.95 * art2.get_height()) == b.feet    # alpha ends at 95% of canvas
+
+
+def test_events_may_be_none_or_empty(tmp_path):
+    lily = build(tmp_path)
+    assert lily.update(0.1, None) is True
+    assert lily.update(0.1, []) is True
+
+
+def test_sleep_and_wake_keep_the_move_timer(tmp_path):
+    lily = build(tmp_path, move_seconds=100)
+    run(lily, 40)
+    waited = lily.move_time
+    assert 38 < waited < 41
+    lily.sleep()
+    lily.wake()
+    run(lily, 1)
+    assert lily.phase == "hold" and lily.move_time > waited
+
+
+def test_one_huge_hitch_is_one_move_not_two(tmp_path):
+    lily = build(tmp_path, move_seconds=10)
+    run(lily, 1)
+    start = lily.index
+    lily.update(500.0)
+    lily.update(1 / 60)
+    lily.update(1 / 60)
+    assert lily.phase == "out" or lily.phase == "in"
+    for _ in range(60):
+        lily.update(1 / 60)
+    assert lily.index != start
+    second = lily.index
+    run(lily, 2)
+    assert lily.index == second     # not hopping straight on again
