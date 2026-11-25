@@ -21,6 +21,7 @@ pi = [
 dev = [
     "pytest>=7.4",
 ]
+art = ["pillow", "numpy", "scipy"]
 
 [project.scripts]
 lilypad = "lilypad.__main__:main"
@@ -32,6 +33,14 @@ where = ["src"]
 # The traced animal outlines. Without this they are left out of a non-editable
 # install and every silhouette animal silently falls back to the drawn one.
 lilypad = ["assets/silhouettes/*.svg", "assets/silhouettes/*.md"]
+# Setuptools discovers the asset directories as namespace packages under src/.
+# Recursive patterns cover manifests at the root and assets nested by creature or mood.
+"lilypad.assets.painted" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
+"lilypad.assets.world" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
+"lilypad.assets.storybook" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
+"lilypad.assets.fx" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
+"lilypad.assets.voice" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
+"lilypad.assets.music" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
