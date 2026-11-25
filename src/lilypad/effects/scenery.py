@@ -1,30 +1,28 @@
-"""A living pond scene — the full-screen background the engine draws first
-each frame, in place of the flat ``surface.fill(BACKGROUND)``.
+"""Drawn and painted ponds, animated in seconds of play.
 
-Everything expensive happens once at init: three moody near-black gradient
-surfaces (``night`` / ``dusk`` / ``aurora``) are pre-rendered with a baked
-crescent moon and starfield, one per variant. Per-frame work stays cheap —
-a handful of small circles for twinkling stars and a few sprite blits for
-gently swaying lily pads — matching the performance rules in
-``particles.py``'s header comment. The three lily-pad sprites are cached
-surfaces built once and blitted at a swaying offset each frame rather than
-baked into the background, so the sway doesn't need any per-frame redraw of
-the pad shape itself.
-
-Variant cycling crossfades every ``_VARIANT_PERIOD_S`` of accumulated
-``update(dt)`` time (never wall-clock) over ``_CROSSFADE_S`` seconds, via
-``set_alpha`` on the incoming surface — one extra full-screen blit only
-while the crossfade is in flight.
+The classic pond caches three gradients sharing a moon and starfield.
+Painted moods each supply an opaque plate and two scrolling strips. Their
+registered skies share one twinkle field, and the foreground water can
+also be drawn over swimming animals.
 """
 
 from __future__ import annotations
 
+import logging
 import math
+import tomllib
+from concurrent.futures import Future
 from dataclasses import dataclass
+from pathlib import Path
+from threading import Thread
 
 import pygame
 
+from ..config import SceneConfig
+from . import assets
 from .base import EffectContext
+from .glow import glow_sprite
+from .layout import POND
 
 VARIANTS: tuple[str, ...] = ("night", "dusk", "aurora")
 
@@ -49,6 +47,7 @@ _TWINKLE_COUNT = 10
 _LILY_COUNT = 3
 _VARIANT_PERIOD_S = 300.0
 _CROSSFADE_S = 4.0
+_log = logging.getLogger(__name__)
 
 
 def _lerp_color(a: tuple[int, int, int], b: tuple[int, int, int],
@@ -97,16 +96,7 @@ def _draw_moon(surf: pygame.Surface, moon: tuple[int, int, int], h: int,
     pygame.draw.circle(surf, bite_color, (cx + offset, cy - int(offset * 0.3)), int(r * 0.92))
 
 
-@dataclass
-class _Variant:
-    name: str
-    surface: pygame.Surface
-    stars: list[dict]
-    twinkle_idx: list[int]
-    twinkle_phases: list[float]
-
-
-def _build_variant(size: tuple[int, int], name: str, layout: dict) -> _Variant:
+def _build_variant(size: tuple[int, int], name: str, layout: dict) -> pygame.Surface:
     w, h = size
     top, bottom = _GRADIENTS[name]
     surf = pygame.Surface(size).convert()
@@ -136,9 +126,7 @@ def _build_variant(size: tuple[int, int], name: str, layout: dict) -> _Variant:
     for s in stars:
         pygame.draw.circle(surf, _STAR_COLOR, (int(s["x"]), int(s["y"])), s["r"])
 
-    return _Variant(name=name, surface=surf, stars=stars,
-                     twinkle_idx=layout["twinkle_idx"],
-                     twinkle_phases=layout["twinkle_phases"])
+    return surf
 
 
 def _build_lily_sprite(r: float, lotus: bool) -> pygame.Surface:
@@ -186,19 +174,323 @@ def _gen_lily_pads(rng, w: int, h: int, count: int) -> list[dict]:
     return pads
 
 
+@dataclass(frozen=True)
+class _MoodFiles:
+    order: int
+    name: str
+    plate: Path
+    far_shore: Path
+    near_water: Path
+
+
+def _mood_files(root: Path) -> list[_MoodFiles]:
+    directory = root / "world"
+    try:
+        with (directory / "manifest.toml").open("rb") as stream:
+            rows = tomllib.load(stream).get("moods", {})
+        if not isinstance(rows, dict):
+            raise ValueError("expected a moods table")
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError) as exc:
+        _log.warning("Ignoring pond manifest: %s", exc)
+        return []
+
+    files = []
+    for name, row in rows.items():
+        try:
+            order = row["order"]
+            if type(order) is not int:
+                raise ValueError("order must be an integer")
+            paths = []
+            for key in ("plate", "far_shore", "near_water"):
+                path = Path(row[key])
+                if path.anchor or ".." in path.parts:
+                    raise ValueError(f"{key} must be relative to the manifest")
+                paths.append(directory / path)
+            files.append(_MoodFiles(order, name, *paths))
+        except (KeyError, TypeError, ValueError) as exc:
+            _log.warning("Ignoring pond mood %s: %s", name, exc)
+    return sorted(files, key=lambda mood: (mood.order, mood.name))
+
+
+def _scaled(image: pygame.Surface, size: tuple[int, int]) -> pygame.Surface:
+    if image.get_size() == size:
+        return image
+    return pygame.transform.smoothscale(image, size)
+
+
+def _opaque_plate(image: pygame.Surface, size: tuple[int, int]) -> pygame.Surface:
+    if image.get_alpha() is not None or image.get_colorkey() is not None or image.get_bitsize() < 24:
+        image = image.convert()
+        image.set_alpha(None)
+        image.set_colorkey(None)
+    return _scaled(image, size)
+
+
+def _wrap_blit(target: pygame.Surface, image: pygame.Surface, x: int, y: int) -> None:
+    """Cover a screen row even when drift or shake exhausts the overscan."""
+    width = image.get_width()
+    left = x % width
+    if left:
+        target.blit(image, (left - width, y))
+    if left < target.get_width():
+        target.blit(image, (left, y))
+
+
+class _Mood:
+    def __init__(self, files: _MoodFiles, size: tuple[int, int]) -> None:
+        w, h = size
+        self.files = files
+        self.plate = _opaque_plate(assets.load_image(files.plate), size)
+        strip_width = math.ceil(w * 1.04)
+        far_height = max(1, round(h * 0.30))
+        near_height = max(1, round(h * 0.22))
+        self.far = _scaled(assets.load_image(files.far_shore), (strip_width, far_height))
+        self.near = _scaled(assets.load_image(files.near_water), (strip_width, near_height))
+        self.far_y = round(h * POND.far_shore[1]) - far_height
+        self.near_y = round(h * POND.foreground[1]) - near_height
+        self.center = (w - strip_width) // 2
+        self._underlays: list[tuple[pygame.Rect, pygame.Surface]] = []
+        self.flat_card: pygame.Surface | None = None
+
+    def draw_strips(self, target: pygame.Surface, far_x: int, near_x: int, top: int = 0) -> None:
+        _wrap_blit(target, self.far, self.center + far_x, self.far_y - top)
+        _wrap_blit(target, self.near, self.center + near_x, self.near_y - top)
+
+    def prepare(self, flat: bool, card: pygame.Surface | None) -> None:
+        """Bake in place, saving just the covered rows for instant recovery."""
+        self.flat_card = None
+        bake_plate = flat and card is None
+        if bake_plate and not self._underlays:
+            for strip, y in ((self.far, self.far_y), (self.near, self.near_y)):
+                band = self.plate.get_rect().clip((0, y, self.plate.get_width(), strip.get_height()))
+                self._underlays.append((band, self.plate.subsurface(band).copy()))
+            self.draw_strips(self.plate, 0, 0)
+        elif not bake_plate and self._underlays:
+            for band, original in self._underlays:
+                self.plate.blit(original, band)
+            self._underlays.clear()
+        if flat and card is not None:
+            self.flat_card = card.copy()
+            self.draw_strips(self.flat_card, 0, 0)
+
+
+class _Fireflies:
+    """A deterministic sum of slow waves, pulled briefly toward the last key."""
+
+    def __init__(self, ctx: EffectContext) -> None:
+        w, h = ctx.size
+        rng = ctx.rng
+        self.homes = [(rng.uniform(.08, .92) * w, rng.uniform(.32, .84) * h,
+                       rng.uniform(0, math.tau), rng.uniform(.55, 1.15)) for _ in range(24)]
+        self.frames = (glow_sprite((112, 128, 48), 2), glow_sprite((224, 224, 96), 4))
+        self.size = ctx.size
+        self.positions = [(x, y) for x, y, _, _ in self.homes]
+        self.target = (0.0, 0.0)
+        self.remaining = 0.0
+
+    def attract(self, x: float, y: float) -> None:
+        self.target = (x, y)
+        self.remaining = 2.0
+
+    def update(self, age: float, dt: float) -> None:
+        w, h = self.size
+        hold = min(self.remaining, dt)
+        self.remaining -= hold
+        pull = 1 - math.exp(-2.4 * hold)
+        follow = 1 - math.exp(-1.6 * (dt - hold))
+        for i, (x, y, phase, rate) in enumerate(self.homes):
+            t = age * rate + phase
+            home_x = x + w * (.045 * math.sin(t) + .022 * math.sin(.63 * t + phase))
+            home_y = y + h * (.035 * math.cos(.81 * t) + .018 * math.sin(1.3 * t))
+            old_x, old_y = self.positions[i]
+            # Keep a little of each fly's own motion even at the same key.
+            old_x += pull * (self.target[0] + .12 * (home_x - x) - old_x)
+            old_y += pull * (self.target[1] + .12 * (home_y - y) - old_y)
+            self.positions[i] = (old_x + follow * (home_x - old_x),
+                                 old_y + follow * (home_y - old_y))
+
+    def draw(self, surface: pygame.Surface, age: float, shake_x: int) -> None:
+        for (_, _, phase, rate), (x, y) in zip(self.homes, self.positions):
+            sprite = self.frames[int(age * rate + phase) % 2]
+            surface.blit(sprite, sprite.get_rect(center=(int(x) + shake_x, int(y))),
+                         special_flags=pygame.BLEND_ADD)
+
+
+class _PaintedWorld:
+    """One active mood and a single lookahead slot, including in-flight loads."""
+
+    def __init__(self, files: list[_MoodFiles], size: tuple[int, int], scene: SceneConfig) -> None:
+        self.size = size
+        self.files = files
+        self.period = scene.mood_minutes * 60
+        self.fade_time = min(_CROSSFADE_S, self.period)
+        self.elapsed = 0.0
+        self.current = self._load_next(None)
+        self.next = self._load_next(self.current.files) if self.current else None
+        self.pending: Future[_Mood | None] | None = None
+        self.card: pygame.Surface | None = None
+        self.flat = False
+        # Reserve once, even if quality changes during a fade. One near-water
+        # band suffices for exact compositing in both render passes.
+        self.scratch = (pygame.Surface((size[0], self.next.near.get_height())).convert()
+                        if self.next is not None else None)
+        self.parallax = scene.parallax
+        self.drift_time = 0.0
+        self.far_x = self.near_x = self.shake_x = 0
+        self.shake_px = 0
+        self.shake_duration = self.shake_left = 0.0
+
+    def _load_next(self, after: _MoodFiles | None) -> _Mood | None:
+        # Only the loader touches the list until its result has been collected.
+        index = self.files.index(after) + 1 if after is not None else 0
+        while self.files:
+            index %= len(self.files)
+            files = self.files[index]
+            if files == after:
+                break
+            try:
+                return _Mood(files, self.size)
+            except (OSError, ValueError, pygame.error, NotImplementedError) as exc:
+                _log.warning("Ignoring pond mood %s: %s", files.name, exc)
+                self.files.pop(index)
+        return None
+
+    def _prefetch(self) -> None:
+        # Startup loaded the first pair. Later decodes never wait on input or exit.
+        future = self.pending = Future()
+        after = self.current.files
+
+        def load() -> None:
+            try:
+                future.set_result(self._load_next(after))
+            except Exception as exc:
+                future.set_exception(exc)
+
+        Thread(target=load, daemon=True, name="pond-mood-loader").start()
+
+    def prepare(self, flat: bool, card: pygame.Surface | None) -> None:
+        if flat == self.flat and card is self.card:
+            return
+        self.flat, self.card = flat, card
+        self.current.prepare(flat, card)
+        if self.next:
+            self.next.prepare(flat, card)
+
+    def shake(self, px: int, seconds: float) -> None:
+        self.shake_px = max(0, int(px))
+        self.shake_duration = self.shake_left = max(0.0, seconds)
+        self.shake_x = self.shake_px if self.shake_left else 0
+
+    def update(self, dt: float) -> None:
+        if self.parallax:
+            # A delayed frame cannot move the near strip by more than one pixel.
+            self.drift_time += min(dt, 0.1)
+            self.far_x = round(40 * math.sin(self.drift_time * .09))
+            self.near_x = round(70 * math.sin(self.drift_time * .13))
+        self.shake_left = max(0.0, self.shake_left - dt)
+        self.shake_x = 0
+        if self.shake_left:
+            t = self.shake_duration - self.shake_left
+            self.shake_x = round(self.shake_px * self.shake_left / self.shake_duration
+                                 * math.cos(math.tau * 8 * t))
+        if self.pending is not None and self.pending.done():
+            self.next = self.pending.result()
+            self.pending = None
+            if self.next:
+                self.next.prepare(self.flat, self.card)
+        if self.next is None:
+            self.elapsed = min(self.period, self.elapsed + dt)
+            return
+        self.elapsed += dt
+        if self.elapsed >= self.period + self.fade_time:
+            if len(self.files) == 2:
+                steps = int((self.elapsed - self.fade_time) // self.period)
+                self.elapsed -= steps * self.period
+                if steps % 2:
+                    self.current, self.next = self.next, self.current
+            else:
+                self.elapsed -= self.period
+                self.current, self.next = self.next, None
+                self._prefetch()
+
+    @property
+    def alpha(self) -> int:
+        if self.next is None or self.elapsed <= self.period:
+            return 0
+        return min(255, round(255 * (self.elapsed - self.period) / self.fade_time))
+
+    def _draw_mood(self, target: pygame.Surface, mood: _Mood, top: int = 0) -> None:
+        base = mood.flat_card or self.card or mood.plate
+        _wrap_blit(target, base, self.shake_x, -top)
+        if not self.flat:
+            mood.draw_strips(target, self.far_x + self.shake_x, self.near_x + self.shake_x, top)
+
+    def draw(self, target: pygame.Surface) -> None:
+        self._draw_mood(target, self.current)
+        alpha = self.alpha
+        if not alpha:
+            return
+        if self.flat:
+            incoming = self.next.flat_card or self.next.plate
+            incoming.set_alpha(alpha)
+            _wrap_blit(target, incoming, self.shake_x, 0)
+            incoming.set_alpha(None)
+        else:
+            # Blend complete compositions a band at a time. The scratch space
+            # is only as tall as the near strip and also serves P3.
+            scratch = self.scratch
+            scratch.set_alpha(alpha)
+            for top in range(0, self.size[1], scratch.get_height()):
+                self._draw_mood(scratch, self.next, top)
+                target.blit(scratch, (0, top))
+
+    def draw_near_water(self, target: pygame.Surface) -> None:
+        if self.flat:
+            return
+        x = self.current.center + self.near_x + self.shake_x
+        y = self.current.near_y
+        alpha = self.alpha
+        if alpha:
+            scratch = self.scratch
+            band = (0, y, self.size[0], self.current.near.get_height())
+            scratch.blit(target, (0, 0), band)
+            _wrap_blit(scratch, self.next.near, x, 0)
+        _wrap_blit(target, self.current.near, x, y)
+        if alpha:
+            scratch.set_alpha(alpha)
+            target.blit(scratch, (0, y))
+
+
 class PondBackground:
     """Persistent full-screen background — the engine owns exactly one and
     draws it before anything else each frame (update() always True)."""
 
-    def __init__(self, ctx: EffectContext) -> None:
+    def __init__(self, ctx: EffectContext, scene: SceneConfig | None = None, *,
+                 root: Path | None = None) -> None:
+        """Pass cfg.scene and the startup asset_root(kiosk=...) to enable painted art."""
         self.ctx = ctx
         w, h = ctx.size
-        self._w, self._h = w, h
+        self._age = 0.0
+        self._painted: _PaintedWorld | None = None
+        self._flies: _Fireflies | None = None
+        self._sky = _gen_sky_layout(ctx.rng, w, h)  # one twinkle field for every mood
+        if scene is not None and scene.world == "painted":
+            files = _mood_files(root if root is not None else assets.asset_root(kiosk=True))
+            if files:
+                world = _PaintedWorld(files, ctx.size, scene)
+                if world.current is not None:
+                    self._painted = world
+                    world.prepare(ctx.scale < 0.6, None)
+                    # The painted sky ends at the shore, above the classic starfield.
+                    for star in self._sky["stars"]:
+                        star["y"] *= POND.sky[1] / .6
+                    if scene.fireflies:
+                        self._flies = _Fireflies(ctx)
+                    return
 
-        layout = _gen_sky_layout(ctx.rng, w, h)   # one sky, three lights
-        self._variants: list[_Variant] = [
-            _build_variant((w, h), name, layout) for name in VARIANTS
-        ]
+        self._variants = [_build_variant(ctx.size, name, self._sky) for name in VARIANTS]
 
         self._lily_pads = _gen_lily_pads(ctx.rng, w, h, _LILY_COUNT)
         self._lily_sprites = [
@@ -210,10 +502,39 @@ class PondBackground:
         self._time_in_variant = 0.0
         self._crossfading = False
         self._crossfade_elapsed = 0.0
-        self._age = 0.0
+
+    @property
+    def painted(self) -> bool:
+        """Whether a usable painted world was resolved at startup."""
+        return self._painted is not None
+
+    def attract(self, x: float, y: float) -> None:
+        if self._flies is not None:
+            self._flies.attract(x, y)
+
+    def shake(self, px: int, seconds: float) -> None:
+        if self._painted is not None:
+            self._painted.shake(px, seconds)
+
+    def set_card(self, surface: pygame.Surface | None) -> None:
+        """Replace the painted base plate until cleared. The caller's art is read-only."""
+        if self._painted is not None:
+            card = _opaque_plate(surface, self.ctx.size) if surface is not None else None
+            self._painted.prepare(self.ctx.scale < 0.6, card)
+
+    def draw_near_water(self, surface: pygame.Surface) -> None:
+        """P3 foreground lip; may be clipped to swimmers' destination rectangles."""
+        if self._painted is not None:
+            self._painted.draw_near_water(surface)
 
     def update(self, dt: float) -> bool:
         self._age += dt
+        if self._painted is not None:
+            self._painted.prepare(self.ctx.scale < 0.6, self._painted.card)
+            self._painted.update(dt)
+            if self._flies is not None:
+                self._flies.update(self._age, dt)
+            return True
         self._time_in_variant += dt
 
         if not self._crossfading and self._time_in_variant >= _VARIANT_PERIOD_S:
@@ -231,29 +552,35 @@ class PondBackground:
         return True  # persistent; the engine owns it
 
     def draw(self, surface: pygame.Surface) -> None:
+        if self._painted is not None:
+            self._painted.draw(surface)
+            self._draw_twinkles(surface, self._painted.shake_x)
+            if self._flies is not None:
+                self._flies.draw(surface, self._age, self._painted.shake_x)
+            return
         current = self._variants[self._index]
-        surface.blit(current.surface, (0, 0))
+        surface.blit(current, (0, 0))
 
-        active = current
         if self._crossfading:
             incoming = self._variants[self._next_index]
             alpha = int(255 * min(1.0, self._crossfade_elapsed / _CROSSFADE_S))
-            incoming.surface.set_alpha(alpha)
-            surface.blit(incoming.surface, (0, 0))
-            incoming.surface.set_alpha(255)
-            if alpha > 127:
-                active = incoming
+            incoming.set_alpha(alpha)
+            surface.blit(incoming, (0, 0))
+            incoming.set_alpha(255)
 
-        self._draw_twinkles(surface, active)
+        self._draw_twinkles(surface)
         self._draw_lily_pads(surface)
 
-    def _draw_twinkles(self, surface: pygame.Surface, variant: _Variant) -> None:
-        for pos, star_idx in enumerate(variant.twinkle_idx):
-            star = variant.stars[star_idx]
-            phase = variant.twinkle_phases[pos]
+    def _draw_twinkles(self, surface: pygame.Surface, shake_x: int = 0) -> None:
+        for pos, star_idx in enumerate(self._sky["twinkle_idx"]):
+            star = self._sky["stars"][star_idx]
+            phase = self._sky["twinkle_phases"][pos]
             b = 0.5 + 0.5 * math.sin(self._age * 2.2 + phase)
             color = tuple(min(255, int(c * (0.4 + 0.9 * b))) for c in _STAR_COLOR)
-            pygame.draw.circle(surface, color, (int(star["x"]), int(star["y"])), star["r"] + 1)
+            x = int(star["x"])
+            if shake_x:
+                x = (x + shake_x) % self.ctx.width
+            pygame.draw.circle(surface, color, (x, int(star["y"])), star["r"] + 1)
 
     def _draw_lily_pads(self, surface: pygame.Surface) -> None:
         for pad, sprite in zip(self._lily_pads, self._lily_sprites):
@@ -263,4 +590,4 @@ class PondBackground:
             surface.blit(sprite, rect)
 
     def __len__(self) -> int:
-        return 10
+        return _TWINKLE_COUNT + (len(self._flies.positions) if self._flies is not None else 0)

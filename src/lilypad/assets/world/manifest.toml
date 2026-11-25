@@ -1,0 +1,6 @@
+# Each [moods.<id>] table has these four keys. Paths are relative to this file.
+# plate = "twilight/plate.webp"       # opaque 1920x1080; register moon and stars across moods
+# far_shore = "twilight/shore.png"    # tileable RGBA, 1920x324; bottom at the far-shore band
+# near_water = "twilight/water.png"   # horizontally tileable RGBA, 1920x238; bottom-aligned
+# order = 0                          # integer playback order; ties sort by mood id
+# The empty manifest selects the original drawn pond.
