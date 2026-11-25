@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import random
+import time
 from pathlib import Path
 
 from ..effects.assets import asset_root
@@ -20,7 +21,7 @@ from ..input.mapper import Action
 from .music import chord_for_keys, note_for_key
 from .tracks import load_bundled_tracks
 from .tunes import TUNE_NAMES
-from .voice import VoiceLoader
+from .voice import NarratorPolicy, VoiceLoader
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,14 @@ _TUNE_MODES = ("idle", "always", "off", "active", "reward")
 #: Extensions scanned in the "active" mode's background_folder. WAV is
 #: included so it also matches a folder of the generated tunes.
 _MUSIC_EXTS = (".mp3", ".ogg", ".oga", ".flac", ".wav")
+
+#: How long a "G is for Giraffe!" stays wanted after its letter press. The
+#: policy releases it only once the channel has been idle 0.8 s with no letter
+#: in the last 0.6 s, so this must outlast name + 0.8 s but not linger into
+#: the next game.
+PHRASE_WINDOW = 4.0
+#: How long a praise or party line waits for a clip that is still sounding.
+PRAISE_PATIENCE = 3.0
 
 _PLAYLIST_FADE_IN_MS = 1200
 _PLAYLIST_FADE_OUT_MS = 1500
@@ -82,7 +91,10 @@ class AudioEngine:
                  reward_presses: int = 50,
                  reward_window: float = 10.0,
                  party_volume: float = PARTY_VOLUME,
-                 party_duck: float = PARTY_DUCK) -> None:
+                 party_duck: float = PARTY_DUCK,
+                 voice: str = "espeak",
+                 phrases: bool = True,
+                 count_aloud: bool = True) -> None:
         self.mute = mute
         self.volume = volume
         self.key_notes = key_notes
@@ -96,6 +108,17 @@ class AudioEngine:
         self.party_volume = max(0.0, min(1.0, party_volume))
         self.party_duck = max(0.0, min(1.0, party_duck))
         self.sounds_dir = Path(sounds_dir)
+        # Narrator mode (see the narrator block below). "espeak" is today's
+        # behaviour exactly: none of the narrator state is ever consulted.
+        self.voice = voice if voice in ("narrator", "espeak") else "espeak"
+        self.phrases = phrases
+        self.count_aloud = count_aloud
+        self._clock = time.monotonic    # tests inject a fake; ticks pass `now`
+        self.narrator = NarratorPolicy(party_duck=self.party_duck)
+        self._narrator = None           # the reserved mixer channel
+        self._phrase_wanted: tuple[str, float] | None = None
+        self._praise_wanted: tuple[str, float] | None = None
+        self._count_total = 0
         assets = asset_root(kiosk=True)  # use the packaged audio manifests in both modes
         self.voice_loader = VoiceLoader(assets / "voice", self.sounds_dir / "voice")
         self.bundled_tracks = load_bundled_tracks(assets / "music")
@@ -132,6 +155,12 @@ class AudioEngine:
             import pygame
             pygame.mixer.init(frequency=22050, channels=2, buffer=512)
             pygame.mixer.set_num_channels(16)
+            if self.voice == "narrator":
+                # Channel 0 is reserved so no cue's Sound.play() can land on
+                # (and cut) the narrator, and the narrator never steals a
+                # channel from the key notes.
+                pygame.mixer.set_reserved(1)
+                self._narrator = pygame.mixer.Channel(0)
             self._enabled = True
         except Exception as exc:              # noqa: BLE001 — silence, never crash
             log.warning("audio unavailable (%s) — running silent", exc)
@@ -414,6 +443,7 @@ class AudioEngine:
         self._party = "starting"
         self._party_at = now
         self._party_pending = True
+        self.narrate("party_start", now=now)
         log.info("reward earned — fireworks, then the dance party track")
 
     def consume_party_started(self) -> bool:
@@ -499,6 +529,7 @@ class AudioEngine:
         no-op in every other tune mode."""
         if not self._enabled or self.mute:
             return
+        self._tick_narrator(now)
         if self.tunes == "reward":
             self._tick_reward(now)
             return
@@ -521,7 +552,9 @@ class AudioEngine:
 
         if kind == "letter":
             # The note above carries the sound; the voice carries the lesson.
-            if self.key_notes:
+            if self._narrator is not None and self._narrate_letter(action.letter):
+                pass
+            elif self.key_notes:
                 self._play(f"voice/{action.letter}")
             else:
                 self._play(f"voice/{action.letter}", self._next_chime())
@@ -532,7 +565,11 @@ class AudioEngine:
                 # Fallback for a pre-upgrade sounds dir that lacks the cue.
                 self._play(cue, "boing")
         elif kind == "number":
-            self._play(f"voice/{action.count}", "pop")
+            if self._narrator is not None and self.count_aloud:
+                # The voice counts each object as it pops (see narrate_count).
+                self.narrate_count(action.count)
+            else:
+                self._play(f"voice/{action.count}", "pop")
             # One cue per press: the marimba note for the count, so the pitch
             # rises with the number. (The effect layer paces the visual pops at
             # 0.28 s.) No fallback here: the voice line above already falls back
@@ -568,6 +605,92 @@ class AudioEngine:
         elif kind == "sparkle":
             self._play("sparkle")
 
+    # ------------------------------------------------------------- narrator
+    #
+    # One mixer channel, one voice. Who may speak is decided by the pure
+    # NarratorPolicy (audio/voice.py); this block only resolves clips, plays
+    # them on the reserved channel, and keeps the two things that have to wait
+    # for the policy: the "X is for Animal!" line and a praise line that
+    # arrived while another clip was sounding. Nothing here ever blocks input.
+
+    def _speak(self, group: str, sound, now: float) -> bool:
+        """Ask the policy, then play on the narrator channel. True if playing."""
+        duration = sound.get_length() if sound is not None else 0.0
+        if not self.narrator.request(group, now=now, duration=duration):
+            return False
+        try:
+            sound.set_volume(self.volume * self.narrator.gain(
+                party_playing=self._party == "playing"))
+            self._narrator.play(sound)   # replaces whatever was sounding
+        except Exception as exc:         # noqa: BLE001 — speech is optional
+            log.warning("narrator clip failed to play (%s)", exc)
+            return False
+        return True
+
+    def _narrate_letter(self, letter: str) -> bool:
+        """The letter name always pre-empts; its phrase is queued behind it."""
+        now = self._clock()
+        sound = self.voice_loader.get("letters", letter)
+        spoken = self._speak("letters", sound, now)
+        self._phrase_wanted = ((letter.upper(), now + PHRASE_WINDOW)
+                               if self.phrases else None)
+        return spoken
+
+    def narrate_count(self, n: int, kind: str | None = None) -> None:
+        """Count 1..n aloud on the visual pop schedule; the last is "N!".
+
+        ``kind`` is the mini sprite kind. The ending lines are generic
+        ("Five!") so it is unused today; it is accepted so the effect engine
+        can pass it without a later signature change. Calling again replaces
+        the schedule (same instant, so harmless after on_action's own call).
+        """
+        if self._narrator is None or self.mute or not self.count_aloud:
+            return
+        self._count_total = max(1, min(int(n), 10))
+        self.narrator.schedule_count(self._count_total, now=self._clock())
+
+    def narrate(self, event: str, now: float | None = None) -> bool:
+        """Speak a praise line (``party_start``, ``alphabet_complete``, ...).
+
+        There is no espeak stand-in for praise: a missing take is silence. A
+        clip still sounding delays the line (up to PRAISE_PATIENCE) rather than
+        dropping it, because the party starts on the very press that just
+        started a letter name.
+        """
+        if self._narrator is None or self.mute or not self.phrases:
+            return False
+        sound = self.voice_loader.get_packaged("praise", event)
+        if sound is None:
+            return False
+        now = self._clock() if now is None else now
+        if self._speak("praise", sound, now):
+            self._praise_wanted = None
+            return True
+        self._praise_wanted = (event, now + PRAISE_PATIENCE)
+        return False
+
+    def _tick_narrator(self, now: float) -> None:
+        if self._narrator is None:
+            return
+        number = self.narrator.due_count(now)
+        if number is not None and self.count_aloud:
+            group = "endings" if number == self._count_total else "numbers"
+            self._speak(group, self.voice_loader.get(group, number), now)
+        if self._praise_wanted is not None:
+            event, expires = self._praise_wanted
+            sound = self.voice_loader.get_packaged("praise", event)
+            if sound is None or now > expires:
+                self._praise_wanted = None
+            elif self._speak("praise", sound, now):
+                self._praise_wanted = None
+        if self._phrase_wanted is not None:
+            letter, expires = self._phrase_wanted
+            sound = self.voice_loader.get_packaged("phrases", letter)
+            if sound is None or now > expires:
+                self._phrase_wanted = None
+            elif self._speak("phrases", sound, now):
+                self._phrase_wanted = None
+
     def on_celebration(self) -> None:
         """Milestone mega-party fanfare; called by the effects engine's main
         loop. Falls back to the plain chord if the cue is missing."""
@@ -578,6 +701,11 @@ class AudioEngine:
             try:
                 import pygame
                 try:
+                    if self._narrator is not None:
+                        self._narrator.stop()
+                except Exception:             # noqa: BLE001
+                    pass
+                try:
                     pygame.mixer.music.stop()
                 except Exception:             # noqa: BLE001 — music is optional
                     pass
@@ -587,5 +715,7 @@ class AudioEngine:
             self._enabled = False
         self._tune_playing = False
         self._music_on = False
+        self._narrator = None
+        self._phrase_wanted = self._praise_wanted = None
         self._party = "idle"
         self._duck = 1.0
