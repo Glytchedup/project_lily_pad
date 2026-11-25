@@ -1,0 +1,11 @@
+# Each [tracks.id] table names one "file" relative to this directory (OGG,
+# WAV or MP3). Manifest order is preserved. Only listed, existing files
+# enter the bundled track list. Example:
+# [tracks.pond_party]
+# file = "pond_party.ogg"
+#
+# Its optional sidecar is pond_party.ogg.beats.json, beside the track.
+# Times are absolute seconds from track start. Offset equals the first beat.
+# {"bpm":120,"offset":0.1,"beats":[0.1,0.6,1.1],"downbeats":[0.1],"drops":[]}
+# Beats increase strictly. Downbeats mark bar starts. Drops mark accents.
+# Parent-folder tracks use the same sidecar naming and timing rules.
