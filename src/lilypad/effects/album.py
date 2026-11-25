@@ -342,7 +342,10 @@ class Album:
             portrait(name, self.px)                       # build now, not mid-flight
         except Exception:
             log.exception("sticker portrait for %s failed", name)
-        self._fliers.append(_Flier(name, (float(pos[0]), float(pos[1])), self._t, index))
+        # Crossings spawn just off-screen and farm animals below the bottom edge.
+        x = min(max(float(pos[0]), 0.0), float(self.size[0]))
+        y = min(max(float(pos[1]), 0.0), float(self.size[1]))
+        self._fliers.append(_Flier(name, (x, y), self._t, index))
         return True
 
     def set_attract(self, active: bool) -> None:

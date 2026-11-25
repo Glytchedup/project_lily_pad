@@ -184,6 +184,14 @@ def test_flier_is_drawn_between_the_animal_and_its_slot(drawn):
     assert mid.get_at((round(cx), round(cy))) != (5, 5, 5, 255)
 
 
+def test_off_screen_spawn_points_are_clamped_onto_the_screen(drawn):
+    a = Album(SIZE)
+    a.note_animal("lion", (-300, 9000))
+    a.note_animal("owl", (float("1e9"), -5))
+    assert a._fliers[0].start == (0.0, float(SIZE[1]))
+    assert a._fliers[1].start == (float(SIZE[0]), 0.0)
+
+
 def test_strip_shows_for_two_seconds_then_tucks_up(drawn):
     a = Album(SIZE)
     assert not a.visible
