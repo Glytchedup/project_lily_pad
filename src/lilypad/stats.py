@@ -11,8 +11,7 @@ Activity model. Every child input (``on_action`` / ``on_animal``) is an
 to the same run; a longer silence ends the run and the silence itself is not
 counted as play. ``time_played`` is the total length of all runs and
 ``longest_streak`` is the length of the longest single run. A party is earned
-play but is a minutes-long stretch of watching, so ``on_party`` only counts the
-party; it does not bridge a gap.
+play throughout the fanfare and track, including time spent just watching.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ class PlayStats:
 
     # ----------------------------------------------------------------- feed
 
-    def _tick(self, t: float) -> None:
+    def _tick(self, t: float, *, continuous: bool = False) -> None:
         if not isinstance(t, (int, float)) or not math.isfinite(t):
             return
         if self._last is None:
@@ -50,7 +49,7 @@ class PlayStats:
             return
         if t < self._last:
             t = self._last                     # a clock never runs backwards
-        if t - self._last > self.gap:          # silence: close the run
+        if not continuous and t - self._last > self.gap:
             self._closed += self._last - self._run_start
             self._run_start = t
         self._last = t
@@ -77,9 +76,16 @@ class PlayStats:
         self._counts[name] = self._counts.get(name, 0) + 1
         self._tick(t)
 
-    def on_party(self, t: float) -> None:
-        """A reward party started."""
+    def on_party(self, t: float, seconds: float = 0.0) -> None:
+        """Credit the party once and count the full known playback interval."""
         self._parties += 1
+        self._tick(t)
+        if seconds > 0 and math.isfinite(seconds) and isinstance(t, (int, float)):
+            self.party_playing(t + seconds)
+
+    def party_playing(self, t: float) -> None:
+        """Extend a streamed party through the time actually watched so far."""
+        self._tick(t, continuous=True)
 
     # --------------------------------------------------------------- results
 
