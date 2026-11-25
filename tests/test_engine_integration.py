@@ -446,6 +446,20 @@ def test_translucent_lip_covers_the_swimmer_before_pip(pond_engine):
     assert screen.get_clip() == screen.get_rect()
 
 
+def test_painted_peekaboo_cut_stays_below_the_viewport_through_both_jumps(pond_engine):
+    e = pond_engine
+    e._foot_margins["cow"] = 7
+    e.spawn(classify("C"), 0)
+    cow = next(a for a in e.effects if isinstance(a, PeekabooAnimal))
+    screen = pygame.Surface(e.size)
+    for frame in range(1, round((cow.RISE_TIME + cow.HOLD_TIME) * 60)):
+        cow.update(1 / 60)
+        if cow.age >= cow.RISE_TIME:
+            screen.fill("black")
+            cow.draw(screen)
+            assert screen.get_at((int(cow.x), e.ctx.height - 1))[:3] == (224, 64, 32)
+
+
 def test_reward_track_samples_its_own_sidecar_and_clears_clock(tmp_path, monkeypatch):
     import json
     from test_audio_engine_voice import write_clip

@@ -283,10 +283,15 @@ class EffectEngine:
                 if isinstance(effect, ANIMAL_TYPES):
                     if self.lily:
                         self.lily.on_animal_start()
-                    if isinstance(effect, PeekabooAnimal):
-                        effect._y_rest += self._foot_margins.get(effect.name, 0)
-                    if action.kind == "special" and action.letter == "dino":
-                        self.pond.shake(6, 0.35)
+                    if isinstance(effect, PeekabooAnimal) and effect.name in self._foot_margins:
+                        # The painted farm portraits end in a straight cut. Keep
+                        # a quarter below the edge at rest so the 22% jump and
+                        # 2.2% bob can never expose the bottom of the painting.
+                        effect._y_rest = (self.ctx.height - 0.75 * effect.height
+                                          + self._foot_margins[effect.name])
+            if self.painted and action.kind == "special" and action.letter == "dino":
+                # The shockwave still fires when all crossing slots are occupied.
+                self.pond.shake(6, 0.35)
             self.effects.extend(spawned)
         else:
             # The product invariant is that EVERY key visibly does something.
