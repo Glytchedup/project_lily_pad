@@ -1,0 +1,10 @@
+# Storybook letter cards (effects.storybook). One 1920x1080 JPEG per letter, painted in the art-bible style.
+# Paths are relative to this file; the shipped manifest is empty, which switches the feature off quietly.
+#
+# schema = 1
+#
+# [cards.A]
+# file = "A.jpg"
+# animal = "alligator"      # cast name the narrator and animal sound use for this letter
+#
+# ... one [cards.<LETTER>] table per letter A-Z.
