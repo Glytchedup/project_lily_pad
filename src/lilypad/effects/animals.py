@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import logging
 import math
+from functools import cache
 
 import pygame
 
-from . import animal_stencil
+from . import painted
 from .animal_art import (  # noqa: F401 — re-exported for existing importers
     MINI_KINDS,
     POSES,
@@ -33,8 +34,10 @@ from .animal_art import (  # noqa: F401 — re-exported for existing importers
     aspect,
     faces_right,
     mini_sprite,
+    resolved_mode,
 )
 from .base import EffectContext
+from .layout import CLASSIC, Layout
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +111,11 @@ GAITS: dict[str, str] = {
 #: Creatures drawn front-on, which pop up instead of crossing.
 PEEKABOO_CAST: frozenset[str] = frozenset({"cow", "duck", "pig", "sheep"})
 
+# Startup selects the scene geometry before prebuilding the cast. Direct
+# callers retain the classic layout and uncapped sizes until then.
+_layout = CLASSIC
+_max_sprite_width = 0.0
+
 # Dust fades toward the pond's near-black rather than using per-frame alpha
 # surfaces. Kept as a literal (not imported from ``engine``) because engine
 # imports this module — and being a few units off on a puff nobody can name
@@ -124,6 +132,38 @@ def animal_for_letter(letter: str) -> str | None:
 def voice_for(name: str) -> str | None:
     """The audio cue name for a creature, or None if it is a quiet one."""
     return ANIMAL_VOICES.get(name)
+
+
+def _sprite_height(name: str, size: tuple[int, int], gait: str) -> int:
+    if gait == "peekaboo":
+        fraction = 0.40
+    elif gait == "swim":
+        fraction = _layout.swim_height
+    else:
+        fraction = AnimalCrossing._SIZE.get(gait, 0.34)
+    height = max(48, int(size[1] * fraction))
+    if _max_sprite_width:
+        height = max(1, min(height, int(_max_sprite_width * size[0] / aspect(name))))
+    return height
+
+
+@cache
+def _fit_size(sprite: pygame.Surface, width: int, height: int) -> pygame.Surface:
+    return pygame.transform.smoothscale(sprite, (width, height))
+
+
+def _scene_sprite(name: str, height: int, pose: str, going_left: bool,
+                  screen_width: int) -> pygame.Surface:
+    sprite = animal_sprite_facing(name, height, pose, going_left)
+    if _max_sprite_width:
+        limit = max(1, int(_max_sprite_width * screen_width))
+        # Traced outlines can round wider than their measured aspect. A tiny
+        # cap can also request less than the procedural builders' safe 24 px.
+        w, h = sprite.get_size()
+        if w > limit or h != height:
+            width = min(limit, max(1, round(w * height / h)))
+            return _fit_size(sprite, width, height)
+    return sprite
 
 
 # ---------------------------------------------------------------------------
@@ -217,13 +257,13 @@ class PeekabooAnimal:
         self.age = 0.0
         self.total = self.RISE_TIME + self.HOLD_TIME + self.FALL_TIME
         self.pose = "idle"
-        height = max(48, int(ctx.height * 0.40))
+        height = _sprite_height(name, ctx.size, "peekaboo")
         self.height = height
         self._rng = ctx.rng
         self._dust = _Dust()
         self._landed: set[int] = set()
         # Pre-render every pose now so nothing costs a frame mid-animation.
-        self._sprites = {p: animal_sprite(name, height, p) for p in POSES}
+        self._sprites = {p: _scene_sprite(name, height, p, False, ctx.width) for p in POSES}
         self._sprite_w = self._sprites["idle"].get_width()
         # Middle 70 % of the width, sprite kept fully on-screen.
         half = self._sprite_w * 0.5
@@ -335,11 +375,11 @@ class AnimalCrossing:
         self._dust = _Dust()
         self._hops_landed = 0
 
-        height = max(48, int(ctx.height * self._SIZE.get(self.gait, 0.34)))
+        height = _sprite_height(name, ctx.size, self.gait)
         self.height = height
         self.going_left = ctx.rng.random() < 0.5
         self._sprites = {
-            p: animal_sprite_facing(name, height, p, self.going_left)
+            p: _scene_sprite(name, height, p, self.going_left, ctx.width)
             for p in POSES
         }
         self._sprite_w = self._sprites["idle"].get_width()
@@ -351,13 +391,13 @@ class AnimalCrossing:
         self.x = self._x_from
 
         # Ground line: on the bank, a little above the very bottom.
-        self._ground = ctx.height * 0.94
+        self._ground = ctx.height * _layout.ground
         # Flyers and swimmers are centred on their path, so the band they may
         # start in has to leave room for half a sprite *plus* the full wave
         # amplitude — otherwise an owl that happens to start high sails off
         # the top of the screen mid-flap.
-        self._air_y = self._band(ctx, self.FLY_WAVE, 0.16, 0.46)
-        self._swim_y = self._band(ctx, self.SWIM_WAVE, 0.48, 0.74)
+        self._air_y = self._band(ctx, self.FLY_WAVE, *_layout.fly_band)
+        self._swim_y = self._band(ctx, self.SWIM_WAVE, *_layout.swim_band)
         self._wave = ctx.rng.uniform(0.0, math.tau)
         self.y = self._ground
 
@@ -443,36 +483,33 @@ def random_dinosaur(ctx: EffectContext) -> str:
     return ctx.rng.choice(DINOSAURS)
 
 
-def prewarm(screen_height: int) -> int:
-    """Build the traced-outline sprites now, before anyone presses a key.
-
-    A traced sprite costs tens of milliseconds to assemble — rasterising,
-    cropping, stamping a keyline eight times — against about two for a drawn
-    one. That is a once-per-size cost either way, but paid lazily it lands as
-    a few dropped frames the first time a child presses that letter, which is
-    exactly the moment the app should look instant. Paid here it is part of a
-    boot nobody is watching.
-
-    Only the sizes ``AnimalCrossing`` actually asks for, and both facings,
-    since which way an animal walks is a coin flip. Returns how many sprites
-    were built; failures are logged and ignored, because a slow first giraffe
-    is a far better outcome than a crash on startup.
-    """
-    from . import animal_art
-
-    if not animal_art.silhouettes_enabled():
-        return 0
+def prewarm(screen_height: int, *, screen_width: int = 0, max_sprite_width: float = 0,
+            layout: Layout = CLASSIC) -> int:
+    """Select the scene geometry and warm painted/traced poses at their spawn size."""
+    global _layout, _max_sprite_width
+    if max_sprite_width and screen_width <= 0:
+        raise ValueError("a positive screen_width is required for capped sprites")
+    _layout, _max_sprite_width = layout, max_sprite_width
+    _fit_size.cache_clear()
+    counts = {"painted": 0, "traced": 0, "drawn": 0}
     built = 0
-    for name in animal_stencil.names():
-        gait = GAITS.get(name, "walk")
-        height = max(48, int(screen_height * AnimalCrossing._SIZE.get(gait, 0.34)))
-        for pose in POSES:
-            for going_left in (False, True):
+    for name in animal_names():
+        mode = resolved_mode(name)
+        counts[mode] += 1
+        if mode == "drawn":
+            continue
+        side = faces_right(name)
+        gait = GAITS.get(name, "walk") if side else "peekaboo"
+        height = _sprite_height(name, (screen_width, screen_height), gait)
+        poses = POSES if mode == "painted" and painted.has_step(name) else ("idle", "blink", "squash")
+        for pose in poses:
+            for going_left in ((False, True) if side else (False,)):
                 try:
-                    animal_sprite_facing(name, height, pose, going_left)
+                    _scene_sprite(name, height, pose, going_left, screen_width)
                 except Exception:                    # noqa: BLE001
                     log.exception("could not prebuild %s/%s", name, pose)
                 else:
                     built += 1
-    log.info("prebuilt %d traced-outline sprites", built)
+    log.info("animal art: painted (%d), traced (%d), drawn (%d)",
+             counts["painted"], counts["traced"], counts["drawn"])
     return built

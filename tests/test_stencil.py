@@ -417,7 +417,7 @@ def test_prewarm_uses_the_size_the_crossing_will_ask_for(traced):
     for name in STENCILS:
         gait = GAITS.get(name, "walk")
         height = max(48, int(1080 * AnimalCrossing._SIZE.get(gait, 0.34)))
-        assert (name, height, "idle", True) in animal_art._animal_cache
+        assert (name, height, "idle", "traced") in animal_art._animal_cache
 
 
 # ---------------------------------------------------------------------- config
@@ -441,6 +441,6 @@ def test_the_app_sets_the_mode_before_prebuilding_anything():
 
     from lilypad import __main__ as entry
     src = inspect.getsource(entry.main)
-    assert "set_silhouettes(cfg.effects.silhouettes)" in src
-    assert src.index("set_silhouettes(") < src.index("prewarm("), \
+    assert "set_art_mode(cfg.effects.animal_art," in src
+    assert src.index("set_art_mode(") < src.index("prewarm("), \
         "prewarming before the mode is set would cache the wrong art"
