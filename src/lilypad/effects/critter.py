@@ -14,11 +14,9 @@ Two rules shape the code:
   budgeted. Squash is the exception: it is continuous, so it is applied at draw
   time with a plain ``scale``, which is cheap and only runs in the few frames
   after a bounce.
-* **Physics is untouched.** ``self.r``, ``self.x``, ``self.y`` and the bounce
-  behaviour are exactly as before; only the drawing changed. The lily pad is
-  cosmetic — it drifts under him and never affects where he can go, because a
-  character a child is shoving with arrow keys should never get caught on
-  scenery.
+* **Arrow keys always take over.** Pip follows a back only during a ride.
+  A shove immediately returns him to gravity, drag and his usual floor. The
+  pad drifts under him and never constrains his movement.
 
 No licensed characters; the drawn route's pixels come from pygame primitives
 and the painted route's from the repo's own generated art.
@@ -38,10 +36,13 @@ from __future__ import annotations
 import logging
 import math
 import tomllib
+from collections.abc import Callable
+from functools import cached_property
 from pathlib import Path
 
 import pygame
 
+from ..audio.tracks import BeatClock
 from . import assets
 
 log = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ PAD_LIGHT = (70, 158, 84)
 PAD_DARK = (26, 82, 48)
 PAD_OUTLINE = (14, 40, 26)
 
-POSES = ("idle", "blink")
+POSES = ("idle", "blink", "wave")
 #: Frames the painted route can supply. ``cheer`` and ``eyes_white`` are
 #: optional and alias ``idle`` when the art lacks them.
 PAINTED_POSES = ("idle", "blink", "cheer", "eyes_white")
@@ -370,7 +371,11 @@ def frog_sprite(r: int, pose: str = "idle") -> pygame.Surface:
 
     # ---- arms, in front of the body --------------------------------------
     for side in (-1, 1):
-        limb(BODY, cx + side * r * 0.92, cy + r * 0.10, r * 0.48, r * 0.84)
+        if side == 1 and pose == "wave":
+            limb(BODY, cx + r * 1.12, cy - r * 0.14, r * 0.70, r * 0.44)
+            limb(BODY, cx + r * 1.38, cy - r * 0.43, r * 0.42, r * 0.79)
+        else:
+            limb(BODY, cx + side * r * 0.92, cy + r * 0.10, r * 0.48, r * 0.84)
 
     # ---- eyes -------------------------------------------------------------
     for side in (-1, 1):
@@ -514,6 +519,8 @@ class _Pad:
 class Frog:
     """Persistent — update() always returns True; the engine owns exactly one."""
 
+    JUMP_APEX_SECONDS = 0.94
+
     def __init__(self, size: tuple[int, int]) -> None:
         self.w, self.h = size
         self.r = max(30, int(self.h * 0.06))
@@ -524,10 +531,18 @@ class Frog:
         self.squash = 0.0        # 0..1, decays; squashes the draw
         self.age = 0.0
         self.hop_impulse = self.h * 0.9
+        self.gravity = self.h * 1.4
         self.just_bounced = False    # set each update; engine spawns ripples
         self._excited_until = 0.0    # celebration joy-hops while age < this
         self.dancing = False         # reward dance party — hops until told to stop
         self.gaze: tuple[float, float] | None = None   # painted Pip's pupils
+        self._gaze_until: float | None = None
+        self._beat_clock: BeatClock | None = None
+        self._anchor: Callable[[], tuple[float, float] | None] | None = None
+        self._ride_until = 0.0
+        self._duck_until = 0.0
+        self._duck_sprites: dict[pygame.Surface, pygame.Surface] = {}
+        self._wave_start = -1.0
 
         #: Vertical gap from his centre to the soles of his feet.
         self._feet = self.r * 0.62
@@ -545,6 +560,7 @@ class Frog:
                 frog_sprite(self.r, pose)
 
     def shove(self, direction: tuple[int, int]) -> None:
+        self.cancel_ride()
         dx, dy = direction
         self.vx += dx * self.hop_impulse
         self.vy += dy * self.hop_impulse
@@ -556,23 +572,99 @@ class Frog:
         """Milestone joy: keep hopping on its own for a few seconds."""
         self._excited_until = self.age + seconds
 
-    def dance(self, on: bool = True) -> None:
-        """Dance party: joy-hop for as long as the music lasts.
+    @property
+    def sprite_height(self) -> int:
+        return int(self.r * _SPRITE_HEIGHT)
 
-        Same mechanism as ``celebrate`` — a hop relaunched on every landing —
-        but open-ended rather than timed, because the reward track decides
-        when the party is over, not a countdown here.
+    @property
+    def riding(self) -> bool:
+        return self._anchor is not None
+
+    @cached_property
+    def _ride_feet(self) -> float:
+        # _feet locates the canvas bottom, including any engine registration.
+        # Seat the visible soles against the back, leaving the pad floor alone.
+        idle = frog_sprite(self.r)
+        return self._feet - (idle.get_height() - idle.get_bounding_rect().bottom)
+
+    def ride(self, anchor_fn: Callable[[], tuple[float, float] | None], until: float) -> None:
+        """Follow live feet coordinates until an absolute frog.age deadline.
+
+        The caller returns None when its crossing leaves the live effect list.
         """
+        if not self.riding and until > self.age:
+            self._anchor = anchor_fn
+            self._ride_until = min(until, self.age + 8.0)
+            self.squash = 0.0
+            self._duck_until = self.age
+
+    def cancel_ride(self) -> None:
+        if self.riding:
+            self._anchor = None
+            self.vy = -0.30 * self.hop_impulse
+
+    def duck(self, seconds: float) -> None:
+        """Hold a low, feet-anchored pose for at most 1.5 seconds."""
+        self._duck_until = self.age + min(1.5, max(0.0, seconds))
+        for pose in PAINTED_POSES:
+            sprite = frog_sprite(self.r, pose)
+            if sprite not in self._duck_sprites:
+                w, h = sprite.get_size()
+                self._duck_sprites[sprite] = pygame.transform.scale(
+                    sprite, (round(w * 1.12), max(1, round(h * 0.55))))
+
+    def jump_over(self) -> None:
+        self.cancel_ride()
+        self.vy = -self.gravity * self.JUMP_APEX_SECONDS
+
+    def wave(self) -> None:
+        """Two quick arm lifts using the painted cheer or drawn raised foreleg."""
+        self._wave_start = self.age
+        if not painted_pip_active():
+            frog_sprite(self.r, "wave")
+
+    def dance(self, on: bool | BeatClock = True, beat_clock: BeatClock | None = None) -> None:
+        """Relaunch on each landing. An optional clock supplies the next beat."""
+        if isinstance(on, BeatClock):
+            beat_clock, on = on, True
         self.dancing = bool(on)
+        self._beat_clock = beat_clock if self.dancing else None
+
+    def _dance_hop(self) -> None:
+        if self._beat_clock is None:
+            beat = 0.75 + 0.25 * math.sin(self.age * 1.7)
+            self.vy = -self.hop_impulse * 0.8 * beat
+        else:
+            flight = self._beat_clock.time_to_next_beat
+            # v = -g*T/2 brings him to the floor at T. Wait on the
+            # pad during a long lead-in to avoid clipping the ceiling.
+            self.vy = -0.5 * self.gravity * flight if flight <= 1.5 else 0.0
+        if self.vy < 0:
+            self.vx += (1 if (int(self.age * 3.5) % 2) else -1) * self.hop_impulse * 0.45
 
     def update(self, dt: float) -> bool:
         self.age += dt
         self.squash = max(0.0, self.squash - dt * 3)
+        if self._gaze_until is not None and self.age >= self._gaze_until:
+            self.look(None)
+        if self._anchor is not None:
+            anchor = self._anchor() if self.age < self._ride_until else None
+            if anchor is not None and self.r <= anchor[0] <= self.w - self.r:
+                self.x, feet_y = anchor
+                self.y = feet_y - self._ride_feet
+                self.vx = self.vy = 0.0
+                self.just_bounced = False
+                self.pad.update(dt, self.x)
+                return True
+            self.cancel_ride()
         # Gravity + drag
-        self.vy += self.h * 1.4 * dt
+        self.vy += self.gravity * dt
         self.vx *= max(0.0, 1.0 - 1.2 * dt)
         self.x += self.vx * dt
         self.y += self.vy * dt
+        if self._beat_clock is not None:
+            # Exact constant-gravity displacement, even with uneven frames.
+            self.y -= 0.5 * self.gravity * dt * dt
         r = self.r
         bounced = False
         if self.x < r:
@@ -581,7 +673,8 @@ class Frog:
             self.x, self.vx, bounced = self.w - r, -abs(self.vx) * 0.85, True
         if self.y < r:
             self.y, self.vy, bounced = r, abs(self.vy) * 0.85, True
-        elif self.y > self.floor_y:
+        elif self.y > self.floor_y or (self._beat_clock is not None and self.vy >= 0
+                                       and self.y >= self.floor_y - 1e-8):
             # A resting frog re-enters the floor by a sub-pixel every frame
             # (gravity), so only a real impact counts as a bounce — otherwise
             # he'd stay squashed forever and rain ripples while sitting still.
@@ -599,7 +692,7 @@ class Frog:
             # landings still register.
             impact = abs(self.vy)
             self.y = self.floor_y
-            settle_threshold = max(40.0, self.h * 1.4 * dt * 1.5)
+            settle_threshold = max(40.0, self.gravity * dt * 1.5)
             if impact < settle_threshold:
                 self.vy = 0.0
             else:
@@ -614,13 +707,7 @@ class Frog:
                 bounced = True
             # Joy-hop: while excited and touching the floor, launch again.
             if self.dancing:
-                # Dance party. Hop height breathes on a slow sine so a
-                # two-minute track reads as dancing rather than one hop on
-                # repeat, and the sway is wider than a joy-hop's — he works
-                # his way across the pond and back.
-                beat = 0.75 + 0.25 * math.sin(self.age * 1.7)
-                self.vy = -self.hop_impulse * 0.8 * beat
-                self.vx += (1 if (int(self.age * 3.5) % 2) else -1) * self.hop_impulse * 0.45
+                self._dance_hop()
             elif self.age < self._excited_until:
                 self.vy = -self.hop_impulse * 0.8
                 self.vx += (1 if (int(self.age * 7) % 2) else -1) * self.hop_impulse * 0.3
@@ -634,12 +721,19 @@ class Frog:
         """Aim the pupils (painted Pip only); ``look(None)`` stops looking.
 
         ``dx`` and ``dy`` run from -1 to 1 across the pupils' range of travel.
-        Nothing calls this yet: it is the hook for eye tracking.
         """
+        self._gaze_until = None
         if dx is None:
             self.gaze = None
         else:
             self.gaze = (max(-1.0, min(1.0, dx)), max(-1.0, min(1.0, dy)))
+
+    def look_at(self, x: float, y: float) -> None:
+        """Track a screen-space target. An unrefreshed gaze relaxes after a second."""
+        dx, dy = x - self.x, y - self.y
+        distance = max(self.r, math.hypot(dx, dy))
+        self.look(dx / distance, dy / distance)
+        self._gaze_until = self.age + 1.0
 
     @property
     def cheering(self) -> bool:
@@ -648,6 +742,9 @@ class Frog:
 
     @property
     def pose(self) -> str:
+        wave_age = self.age - self._wave_start
+        if 0 <= wave_age < 0.13 or 0.26 <= wave_age < 0.41:
+            return "cheer" if painted_pip_active() else "wave"
         if (self.age % 4.0) > 3.85:
             # A blink only shows on a Pip who is not mid-cheer.
             if not (self.cheering and painted_pip_active()):
@@ -676,7 +773,9 @@ class Frog:
 
         pose = self.pose
         sprite = frog_sprite(self.r, pose)
-        if self.squash > 0.01:
+        if self.age < self._duck_until:
+            sprite = self._duck_sprites.get(sprite, sprite)
+        elif self.squash > 0.01:
             # Continuous, so it cannot be a cached pose. `scale` rather than
             # `smoothscale` — this runs for a handful of frames after every
             # bounce and the difference is invisible at that speed.
