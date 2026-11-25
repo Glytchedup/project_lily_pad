@@ -19,7 +19,7 @@ from pathlib import Path
 from ..effects.assets import asset_root
 from ..input.mapper import Action
 from .music import chord_for_keys, note_for_key
-from .tracks import load_bundled_tracks
+from .tracks import BeatClock, load_beat_map, load_bundled_tracks, reward_source_order
 from .tunes import TUNE_NAMES
 from .voice import NarratorPolicy, VoiceLoader
 
@@ -90,6 +90,9 @@ class AudioEngine:
                  reward_seconds: float = 60.0,
                  reward_presses: int = 50,
                  reward_window: float = 10.0,
+                 reward_source: str = "folder_first",
+                 bundled_tracks: bool = False,
+                 party_show: bool = False,
                  party_volume: float = PARTY_VOLUME,
                  party_duck: float = PARTY_DUCK,
                  voice: str = "espeak",
@@ -105,6 +108,11 @@ class AudioEngine:
         self.reward_seconds = max(1.0, reward_seconds)
         self.reward_presses = max(1, reward_presses)
         self.reward_window = max(0.5, reward_window)
+        self.reward_source = reward_source
+        self.beat_clock: BeatClock | None = None
+        self._beat_maps = {}
+        self._clock_at = 0.0
+        self._sync_bar = -2
         self.party_volume = max(0.0, min(1.0, party_volume))
         self.party_duck = max(0.0, min(1.0, party_duck))
         self.sounds_dir = Path(sounds_dir)
@@ -122,6 +130,7 @@ class AudioEngine:
         assets = asset_root(kiosk=True)  # use the packaged audio manifests in both modes
         self.voice_loader = VoiceLoader(assets / "voice", self.sounds_dir / "voice")
         self.bundled_tracks = load_bundled_tracks(assets / "music")
+        self._use_bundled = bundled_tracks
         self._sounds: dict[str, object] = {}
         self._chime_cycle = 0
         self._tune_index = -1
@@ -181,6 +190,11 @@ class AudioEngine:
             self._start_tune()
         elif self.tunes in ("active", "reward"):
             self._playlist, self._playlist_from_folder = self._build_playlist()
+            if self.tunes == "reward" and party_show:
+                for path in self._playlist:
+                    beatmap = load_beat_map(path)
+                    if beatmap is not None:
+                        self._beat_maps[path] = beatmap
 
     # ------------------------------------------------------------- cue play
 
@@ -294,15 +308,22 @@ class AudioEngine:
     # checkout with no personal music still plays something.
 
     def _build_playlist(self) -> tuple[list[Path], bool]:
-        files: list[Path] = []
-        if self.background_folder.is_dir():
-            files = sorted(
-                p for p in self.background_folder.iterdir()
-                if p.is_file() and p.suffix.lower() in _MUSIC_EXTS
-            )
-        if files:
-            random.shuffle(files)
-            return files, True
+        sources = reward_source_order(self.reward_source) if self.tunes == "reward" else ("folder",)
+        for source in sources:
+            if source == "folder" and self.background_folder.is_dir():
+                try:
+                    files = sorted(p for p in self.background_folder.iterdir()
+                                   if p.is_file() and p.suffix.lower() in _MUSIC_EXTS)
+                except OSError as exc:
+                    log.warning("Cannot read music folder %s: %s", self.background_folder, exc)
+                    continue
+                if files:
+                    random.shuffle(files)
+                    return files, True
+            if source == "bundled" and self._use_bundled and self.bundled_tracks:
+                tracks = list(self.bundled_tracks)
+                random.shuffle(tracks)
+                return tracks, True  # finite file playlist, same transport as a parent track
         fallback = [self._tune_path(i) for i in range(len(TUNE_NAMES))]
         fallback = [p for p in fallback if p.is_file()]
         random.shuffle(fallback)
@@ -456,6 +477,7 @@ class AudioEngine:
         if self._party == "idle":
             return
         self._party = "idle"
+        self.beat_clock = None
         self._duck = 1.0
         # The party is not an idle gap: without this the first press after it
         # would be measured against a press from minutes ago.
@@ -474,10 +496,16 @@ class AudioEngine:
             return
         if self._playlist_from_folder:
             self._playlist_advance(now)   # already finite (loops=0)
+            path = self._playlist[self._playlist_index]
         else:
             # Generated tunes are seamless infinite loops. The party has to
             # end when the track does, so this one plays exactly once.
             self._start_tune(loops=0)
+            path = self._tune_path(self._tune_index)
+        if beatmap := self._beat_maps.get(path):
+            self.beat_clock = BeatClock(beatmap)
+            self._clock_at = now
+            self._sync_bar = -2
         # Both paths above load at `tune_volume` (the background-bed level).
         # Lift to the party level AFTER starting, so the reward track is the
         # loudest thing in the room rather than something under the keys.
@@ -532,6 +560,18 @@ class AudioEngine:
         self._tick_narrator(now)
         if self.tunes == "reward":
             self._tick_reward(now)
+            clock = self.beat_clock
+            if clock is not None:
+                clock.advance(now - self._clock_at)
+                self._clock_at = now
+                if clock.bar > self._sync_bar:
+                    bar = clock.bar
+                    try:
+                        import pygame
+                        clock.resync(pygame.mixer.music.get_pos())
+                    except pygame.error:
+                        pass  # let the clock coast until the next bar
+                    self._sync_bar = max(bar, clock.bar)
             return
         if self.tunes != "active":
             return
