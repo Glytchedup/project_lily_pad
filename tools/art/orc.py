@@ -114,11 +114,9 @@ def _check_budget(status, baseline, total, estimate, cap):
         raise SystemExit(f"SPEND CAP: ${total} used/reserved + ${estimate} exceeds ${cap}.")
     # Estimates control admission. Only the provider can bound the final
     # bill for an arbitrary model if it charges more than the estimate.
+    # The ledger cap above is the enforcement. A key-level limit, when the key has one, is only a second fence.
     limit = status.get("limit")
-    if limit is None or status.get("limit_reset", "unknown") is not None or _money(limit) > baseline + cap:
-        raise SystemExit(f"SPEND CAP: /key must report a non-resetting credit limit "
-                         f"of at most ${baseline + cap} before a paid call.")
-    if baseline + next_total > _money(limit):
+    if limit is not None and baseline + next_total > _money(limit):
         raise SystemExit("SPEND CAP: estimate exceeds the key's unreserved credit.")
 
 

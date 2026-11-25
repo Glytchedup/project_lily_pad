@@ -199,16 +199,11 @@ def test_legacy_ledger_shared_key_delta_and_headers(monkeypatch, ledger, tmp_pat
         orc.chat("m", [], est=0.01)
 
 
-@pytest.mark.parametrize("status", [
-    {"usage": 20}, {"usage": 20, "limit": None, "limit_reset": None},
-    {"usage": 20, "limit": 20.26, "limit_reset": None},
-    {"usage": 20, "limit": 1, "limit_reset": "daily"},
-])
-def test_unbounded_final_price_requires_provider_ceiling(monkeypatch, ledger, status):
-    monkeypatch.setattr(orc, "_key_data", lambda key: status)
-    with pytest.raises(SystemExit, match="non-resetting credit limit"):
-        orc.chat("arbitrarily-priced-model", [], est=0.01)
-    assert not ledger.exists()
+def test_key_without_limit_is_allowed_and_key_limit_is_a_second_fence(monkeypatch, ledger):
+    """Lead ruling 2026-11-25: the ledger cap is the enforcement; a key limit, if any, only fences further."""
+    monkeypatch.setattr(orc, "_key_data", lambda key: {"usage": 20, "limit": 20.005, "limit_reset": None})
+    with pytest.raises(SystemExit, match="unreserved credit"):
+        orc.chat("m", [], est=0.01)
 
 
 def test_mocked_audio_and_stream_settle_in_shared_ledger(monkeypatch, ledger, tmp_path):
