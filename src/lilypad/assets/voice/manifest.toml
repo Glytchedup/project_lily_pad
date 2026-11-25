@@ -1,0 +1,19 @@
+# Each [group.key] table names one "file" relative to this directory (OGG,
+# WAV or MP3). Keys are uppercase letters, decimal counts 1–10, or line IDs.
+# Examples to uncomment when the corresponding audio is bundled:
+# [letters.G]
+# file = "letters/G.ogg"
+# [phrases.G]
+# file = "phrases/G.ogg"            # "G is for Giraffe!"
+# [animals.giraffe]
+# file = "animals/giraffe.ogg"
+# [numbers.3]
+# file = "numbers/3.ogg"           # counting cadence
+# [endings.3]
+# file = "endings/3.ogg"           # emphatic final count
+# [praise.party_start]
+# file = "praise/party_start.ogg"
+#
+# A missing or undecodable letter or phrase uses the installed espeak
+# voice/<letter>.wav. Numbers and endings use voice/<number>.wav. Animal
+# names and praise have no espeak recording and are skipped if unavailable.
