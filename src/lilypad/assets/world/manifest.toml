@@ -4,3 +4,32 @@
 # near_water = "twilight/water.png"   # horizontally tileable RGBA, 1920x238; bottom-aligned
 # order = 0                          # integer playback order; ties sort by mood id
 # The empty manifest selects the original drawn pond.
+
+
+
+
+
+
+[moods.starry]
+plate = "starry/plate.jpg"
+far_shore = "shared/clear.png"
+near_water = "starry/water.png"
+order = 0
+
+[moods.twilight]
+plate = "twilight/plate.jpg"
+far_shore = "shared/clear.png"
+near_water = "twilight/water.png"
+order = 1
+
+[moods.aurora]
+plate = "aurora/plate.jpg"
+far_shore = "shared/clear.png"
+near_water = "aurora/water.png"
+order = 2
+
+[moods.mist]
+plate = "mist/plate.jpg"
+far_shore = "shared/clear.png"
+near_water = "mist/water.png"
+order = 3
