@@ -307,6 +307,21 @@ def test_hopping_animals_land_squashed_and_kick_dust():
     assert dust_seen > 0, "landings should kick up dust"
 
 
+@pytest.mark.parametrize("name,gait,beat", [
+    ("bear", "walk", "step"), ("rabbit", "hop", "step"), ("owl", "fly", "step"),
+    ("whale", "swim", "step"), ("jellyfish", "fly", "step"),
+])
+def test_every_gait_walks_through_its_stepping_frame(name, gait, beat):
+    """Each gait's schedule reaches ``step`` during a crossing (step aliases
+    idle on traced/drawn art, so this is a label, not a visible change)."""
+    effect = AnimalCrossing(ctx(), name, gait=gait)
+    poses = set()
+    for _ in range(int(effect.total * 60)):
+        effect.update(1 / 60)
+        poses.add(effect.pose)
+    assert beat in poses and "idle" in poses
+
+
 def test_walking_animals_keep_their_feet_near_the_ground():
     effect = AnimalCrossing(ctx(), "bear", gait="walk")
     ys = []

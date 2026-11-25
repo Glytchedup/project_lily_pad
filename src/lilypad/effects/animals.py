@@ -36,6 +36,7 @@ from .animal_art import (  # noqa: F401 — re-exported for existing importers
     mini_sprite,
     resolved_mode,
 )
+from .animal_specs import SPECS
 from .base import EffectContext
 from .layout import CLASSIC, Layout
 
@@ -110,6 +111,23 @@ GAITS: dict[str, str] = {
 
 #: Creatures drawn front-on, which pop up instead of crossing.
 PEEKABOO_CAST: frozenset[str] = frozenset({"cow", "duck", "pig", "sheep"})
+
+# Frame schedules for painted art (rates are per second of the effect's own
+# clock). A walker alternates idle/step on every bob trough, so this is the
+# footfall rate (the bob is |sin| at 1.3 Hz, two troughs per cycle). Flyers,
+# swimmers and floaters run a full idle-then-step cycle at their rate.
+WALK_STEP_HZ = 2.6
+FLY_FLAP_HZ = 3.0
+SWIM_SWISH_HZ = 1.2
+FLOAT_PULSE_HZ = 1.5
+#: A hopper shows its stretched frame while sin(pi * phase) is above this.
+HOP_STEP_ARC = 0.25
+
+
+def _cycle_pose(age: float, hz: float) -> str:
+    """idle for the first half of each cycle, step for the second."""
+    return "step" if (age * hz) % 1.0 >= 0.5 else "idle"
+
 
 # Startup selects the scene geometry before prebuilding the cast. Direct
 # callers retain the classic layout and uncapped sizes until then.
@@ -374,6 +392,8 @@ class AnimalCrossing:
         self._rng = ctx.rng
         self._dust = _Dust()
         self._hops_landed = 0
+        spec = SPECS.get(name)
+        self._floater = spec is not None and spec.build == "floater"
 
         height = _sprite_height(name, ctx.size, self.gait)
         self.height = height
@@ -415,8 +435,43 @@ class AnimalCrossing:
     def _blinking(self) -> bool:
         return any(a <= self.age < b for a, b in self._BLINKS)
 
+    @classmethod
+    def pose_for(cls, gait: str, age: float, floater: bool = False) -> str:
+        """The frame this gait shows at ``age`` seconds into the crossing.
+
+        A pure function of the effect's own clock: it draws nothing from the
+        shared rng, so the schedule can never perturb anyone else's dice. The
+        poses are only labels. With traced or drawn art ``step`` aliases
+        ``idle`` at the sprite level, so those routes look exactly as before.
+
+        Priority: a hop's landing squash, then a blink, then the gait's own
+        stepping frame. (A blink during a hop's landing would otherwise be a
+        visible change to the legacy look.)
+        """
+        blinking = any(a <= age < b for a, b in cls._BLINKS)
+        if gait == "hop":
+            phase = (age % cls.HOP_PERIOD) / cls.HOP_PERIOD
+            if phase > 0.90 or phase < 0.06:
+                return "squash"
+            if blinking:
+                return "blink"
+            return "step" if math.sin(math.pi * phase) > HOP_STEP_ARC else "idle"
+        if blinking:
+            return "blink"
+        if gait == "walk":
+            # One footfall per bob trough; the bob is |sin| at 1.3 Hz.
+            return "step" if int(age * WALK_STEP_HZ) % 2 else "idle"
+        if gait == "swim":
+            return _cycle_pose(age, SWIM_SWISH_HZ)
+        if floater:
+            return _cycle_pose(age, FLOAT_PULSE_HZ)
+        if gait == "fly":
+            return _cycle_pose(age, FLY_FLAP_HZ)
+        return "idle"
+
     def _vertical(self) -> tuple[float, str]:
         """Return (y of the sprite's anchor, pose) for the current age."""
+        pose = self.pose_for(self.gait, self.age, self._floater)
         if self.gait == "hop":
             phase = (self.age % self.HOP_PERIOD) / self.HOP_PERIOD
             lift = math.sin(math.pi * phase) * self.height * 0.42
@@ -425,21 +480,18 @@ class AnimalCrossing:
                 self._hops_landed = landed
                 self._dust.kick(self.x, self._ground, self.height * 0.32,
                                 self._rng, count=6)
-            pose = "squash" if phase > 0.90 or phase < 0.06 else "idle"
-            if pose == "idle" and self._blinking():
-                pose = "blink"
             return self._ground - lift, pose
         if self.gait == "fly":
             y = self._air_y + math.sin(self.age * math.tau * 0.55 + self._wave) \
                 * self.height * self.FLY_WAVE
-            return y, "blink" if self._blinking() else "idle"
+            return y, pose
         if self.gait == "swim":
             y = self._swim_y + math.sin(self.age * math.tau * 0.42 + self._wave) \
                 * self.height * self.SWIM_WAVE
-            return y, "blink" if self._blinking() else "idle"
+            return y, pose
         # walk: a two-beat bob, feet staying on the ground line
         bob = abs(math.sin(self.age * math.tau * 1.3)) * self.height * 0.035
-        return self._ground - bob, "blink" if self._blinking() else "idle"
+        return self._ground - bob, pose
 
     @property
     def airborne(self) -> bool:
