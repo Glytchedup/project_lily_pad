@@ -279,6 +279,79 @@ def test_crossing_goes_both_ways_over_many_spawns():
     assert directions == {True, False}
 
 
+def test_greeting_freezes_travel_but_bobs_blinks_and_resumes_within_budget():
+    animal = AnimalCrossing(ctx(), "bear")
+    animal.update(0.75)
+    x = animal.x
+    animal.pause(0.6)
+    animal.greet_bounce()
+    baseline = AnimalCrossing(ctx(), "bear")
+    baseline.update(0.75)
+    lifts, poses = [], []
+    for _ in range(4):
+        animal.update(0.15)
+        baseline.update(0.15)
+        assert animal.x == pytest.approx(x)
+        lifts.append(baseline.y - animal.y)
+        poses.append(animal.pose)
+    assert min(lifts[::2]) > 0.08 * animal.height
+    assert lifts[1::2] == pytest.approx([0, 0])
+    assert "blink" in poses
+    animal.update(0.1)
+    assert animal.x != pytest.approx(x)
+
+    # Even a fresh greet every frame cannot keep a crossing on screen.
+    while animal.age < animal.DURATION + 1.5:
+        animal.pause(90)
+        alive = animal.update(min(0.05, animal.DURATION + 1.5 - animal.age))
+    assert not alive
+    assert animal.x == pytest.approx(animal._x_to)
+
+
+@pytest.mark.parametrize("seed,left", [(1, True), (2, False)])
+def test_back_anchor_lands_on_the_painted_pixel_in_either_direction(tmp_path, seed, left):
+    from lilypad.effects import animal_art, assets
+    from lilypad.effects.engine import EffectEngine
+
+    directory = tmp_path / "painted"
+    directory.mkdir()
+    frame = pygame.Surface((80, 48), pygame.SRCALPHA)
+    frame.set_at((20, 12), "red")
+    pygame.image.save(frame, directory / "seat.png")
+    (directory / "manifest.toml").write_text(
+        'schema = 1\n[animals.elephant]\nview = "side"\nnative_height = 48\n'
+        'frames = {idle="seat.png", blink="seat.png"}\nanchor=[0.5,1]\n'
+        'eye_at=[0.8,0.2]\nback_at=[0.25625,0.25]\n', encoding="utf-8")
+    previous_mode = animal_art._art_mode
+    try:
+        animal_art.set_art_mode("painted", root=tmp_path)
+        size = (320, 144)
+        animal = AnimalCrossing(EffectContext(size, random.Random(seed)), "elephant")
+        animal.update(1.7)
+        assert animal.going_left == left
+        # Later spawns can select different art. This crossing still draws its
+        # original frames and must keep the landmark from the same manifest.
+        animal_art.set_art_mode("drawn")
+        screen = pygame.Surface(size)
+        animal.draw(screen)
+        assert screen.get_at(animal.back_anchor()) == pygame.Color("red")
+        engine = EffectEngine(size)
+        engine._foot_margins["elephant"] = 6
+        screen.fill("black")
+        engine._draw_ground(animal, screen)
+        assert screen.get_at(animal.back_anchor(ground_margin=6)) == pygame.Color("red")
+    finally:
+        animal_art.set_art_mode(previous_mode, root=assets.asset_root())
+
+
+def test_fallback_anchor_is_top_centre_even_for_an_airborne_sprite():
+    animal = AnimalCrossing(ctx(), "owl")
+    animal.update(1.7)
+    assert animal.back_at is None
+    sprite = animal._sprites[animal.pose]
+    assert animal.back_anchor() == sprite.get_rect(center=(int(animal.x), int(animal.y))).midtop
+
+
 def test_a_side_on_animal_is_mirrored_when_it_walks_the_other_way():
     right = animal_sprite_facing("fox", 150, "idle", going_left=False)
     left = animal_sprite_facing("fox", 150, "idle", going_left=True)
