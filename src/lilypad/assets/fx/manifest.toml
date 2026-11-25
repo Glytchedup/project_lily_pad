@@ -1,2 +1,42 @@
-# Painted particle sprites, relative to this directory.
+# Painted FX sprites (wave 2, J23 contract). Near-white or pale sprites; tint = multiply by palette colour.
 schema = 1
+
+[sprites.star]
+files = ["star_1.webp", "star_2.webp", "star_3.webp", "star_4.webp"]
+tint = true
+blend = "add"
+
+[sprites.petal]
+files = ["petal_1.webp", "petal_2.webp", "petal_3.webp", "petal_4.webp", "petal_5.webp", "petal_6.webp"]
+tint = true
+blend = "alpha"
+
+[sprites.leaf]
+files = ["leaf_1.webp", "leaf_2.webp", "leaf_3.webp", "leaf_4.webp"]
+tint = false
+blend = "alpha"
+
+[sprites.heart]
+files = ["heart_1.webp", "heart_2.webp"]
+tint = true
+blend = "alpha"
+
+[sprites.bubble]
+files = ["bubble_1.webp", "bubble_2.webp", "bubble_3.webp", "bubble_4.webp"]
+tint = false
+blend = "alpha"
+
+[sprites.bokeh]
+files = ["bokeh_1.webp", "bokeh_2.webp", "bokeh_3.webp", "bokeh_4.webp"]
+tint = true
+blend = "add"
+
+[sprites.balloon]
+files = ["balloon_1.webp", "balloon_2.webp", "balloon_3.webp", "balloon_4.webp"]
+tint = true
+blend = "alpha"
+
+[sprites.glint]
+files = ["glint_1.webp", "glint_2.webp", "glint_3.webp", "glint_4.webp"]
+tint = false
+blend = "add"

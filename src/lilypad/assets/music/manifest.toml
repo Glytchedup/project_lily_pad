@@ -9,3 +9,15 @@
 # {"bpm":120,"offset":0.1,"beats":[0.1,0.6,1.1],"downbeats":[0.1],"drops":[]}
 # Beats increase strictly. Downbeats mark bar starts. Drops mark accents.
 # Parent-folder tracks use the same sidecar naming and timing rules.
+
+[tracks.pond_party]
+file = "pond_party.ogg"
+
+[tracks.frog_parade]
+file = "frog_parade.ogg"
+
+[tracks.dino_stomp]
+file = "dino_stomp.ogg"
+
+[tracks.starlight_disco]
+file = "starlight_disco.ogg"
