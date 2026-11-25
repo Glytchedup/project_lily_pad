@@ -15,9 +15,12 @@ import logging
 import random
 from pathlib import Path
 
+from ..effects.assets import asset_root
 from ..input.mapper import Action
 from .music import chord_for_keys, note_for_key
+from .tracks import load_bundled_tracks
 from .tunes import TUNE_NAMES
+from .voice import VoiceLoader
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +96,9 @@ class AudioEngine:
         self.party_volume = max(0.0, min(1.0, party_volume))
         self.party_duck = max(0.0, min(1.0, party_duck))
         self.sounds_dir = Path(sounds_dir)
+        assets = asset_root(kiosk=True)  # use the packaged audio manifests in both modes
+        self.voice_loader = VoiceLoader(assets / "voice", self.sounds_dir / "voice")
+        self.bundled_tracks = load_bundled_tracks(assets / "music")
         self._sounds: dict[str, object] = {}
         self._chime_cycle = 0
         self._tune_index = -1
