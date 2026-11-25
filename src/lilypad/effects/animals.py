@@ -372,6 +372,8 @@ class AnimalCrossing:
     """
 
     DURATION = 3.4
+    MAX_PAUSE = 1.5
+    GREET_DURATION = 0.6
     HOP_PERIOD = 0.62
     #: Wave amplitude as a fraction of sprite height, for the two air gaits.
     FLY_WAVE = 0.40
@@ -388,6 +390,9 @@ class AnimalCrossing:
         self.gait = gait or GAITS.get(name, "walk")
         self.age = 0.0
         self.total = self.DURATION
+        self._travel_age = 0.0
+        self._pause_left = 0.0
+        self._greet_start = -self.GREET_DURATION
         self.pose = "idle"
         self._rng = ctx.rng
         self._dust = _Dust()
@@ -403,6 +408,12 @@ class AnimalCrossing:
             for p in POSES
         }
         self._sprite_w = self._sprites["idle"].get_width()
+
+        # Keep the landmark with the frames it was measured on. A later art
+        # selection applies to new crossings, while these sprites stay live.
+        self.back_at = None
+        if resolved_mode(name) == "painted" and painted.has(name):
+            self.back_at = painted.back_at(name)
 
         # Start fully off one edge, end fully off the other.
         pad = self._sprite_w * 0.6 + 8
@@ -499,22 +510,61 @@ class AnimalCrossing:
         on it."""
         return self.gait in ("fly", "swim")
 
+    @property
+    def width(self) -> int:
+        return self._sprite_w
+
+    @property
+    def speed(self) -> float:
+        """Horizontal travel speed in screen pixels per second while moving."""
+        return abs(self._x_to - self._x_from) / self.DURATION
+
+    def pause(self, seconds: float) -> None:
+        """Hold x, sharing one extension budget across the whole crossing."""
+        if self.age < self.total:
+            extra = min(max(0.0, seconds - self._pause_left),
+                        self.DURATION + self.MAX_PAUSE - self.total)
+            self._pause_left += extra
+            self.total += extra
+
+    def greet_bounce(self) -> None:
+        self._greet_start = self.age
+
     def update(self, dt: float) -> bool:
         self.age += dt
         self._dust.update(dt)
-        t = min(1.0, self.age / self.DURATION)
+        paused = min(dt, self._pause_left)
+        self._pause_left -= paused
+        self._travel_age += dt - paused
+        t = min(1.0, self._travel_age / self.DURATION)
         self.x = self._x_from + (self._x_to - self._x_from) * t
         self.y, self.pose = self._vertical()
+        elapsed = self.age - self._greet_start
+        if elapsed < self.GREET_DURATION:
+            self.y -= self.height * 0.14 * abs(math.sin(math.tau * elapsed / self.GREET_DURATION))
         return self.age < self.total
+
+    def _sprite_rect(self, sprite: pygame.Surface) -> pygame.Rect:
+        point = (int(self.x), int(self.y))
+        return sprite.get_rect(center=point) if self.airborne else sprite.get_rect(midbottom=point)
+
+    def back_anchor(self, *, ground_margin: int | None = None) -> tuple[int, int]:
+        """Pixel on the current sprite. Pass the engine's margin for registered ground art."""
+        rect = self._sprite_rect(self._sprites[self.pose])
+        if ground_margin is not None and not self.airborne:
+            rect.bottom = round(self.y) + ground_margin
+        if self.back_at is None:
+            return rect.midtop
+        fx, fy = self.back_at
+        col = min(rect.w - 1, int(fx * rect.w))
+        if self.going_left and faces_right(self.name):
+            col = rect.w - 1 - col
+        return rect.left + col, rect.top + min(rect.h - 1, round(fy * rect.h))
 
     def draw(self, surface: pygame.Surface) -> None:
         self._dust.draw(surface)
         sprite = self._sprites.get(self.pose, self._sprites["idle"])
-        if self.airborne:
-            rect = sprite.get_rect(center=(int(self.x), int(self.y)))
-        else:
-            rect = sprite.get_rect(midbottom=(int(self.x), int(self.y)))
-        surface.blit(sprite, rect)
+        surface.blit(sprite, self._sprite_rect(sprite))
 
     def __len__(self) -> int:
         return 25 + len(self._dust)

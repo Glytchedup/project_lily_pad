@@ -517,3 +517,153 @@ def test_pupils_are_two_discs_on_the_eyes_white_frame(painted_pip):
     assert frog.pose == "idle"
     frog.look(9, -9)
     assert frog.gaze == (1.0, -1.0)                     # clamped
+
+
+@pytest.mark.parametrize("end", ["deadline", "despawn", "timeout", "offscreen"])
+def test_ride_tracks_moving_feet_then_hops_home(end, painted_pip):
+    frog = settled()
+    start = frog.age
+    anchor = [360, 190]
+    frog.ride(lambda: anchor, until=start + (0.5 if end == "deadline" else 80))
+    assert frog.riding
+    for _ in range(10):
+        anchor[0] += 2
+        anchor[1] += 1
+        frog.update(0.025)
+        assert (frog.x, frog.y + frog._feet) == pytest.approx(anchor)
+        assert not frog.just_bounced
+    if end == "despawn":
+        anchor = None
+    elif end == "offscreen":
+        anchor[0] = -200
+    else:
+        duration = 0.5 if end == "deadline" else 8.0
+        while frog.age + 0.01 < start + duration:
+            frog.update(0.01)
+            assert frog.riding
+    frog.update(0.011)
+    assert not frog.riding
+    assert frog.vy < 0
+    for _ in range(300):
+        frog.update(1 / 60)
+        assert frog.r <= frog.x <= frog.w - frog.r
+    assert frog.y == frog.floor_y and frog.vy == 0
+    assert abs(frog.pad.x - frog.x) < 1
+
+
+@pytest.mark.parametrize("direction", [(1, 0), (-1, 0), (0, 1), (0, -1)])
+def test_arrow_cancels_ride_in_the_input_frame(direction, painted_pip):
+    from lilypad.effects.engine import EffectEngine
+    from lilypad.input.mapper import Action
+
+    engine = EffectEngine(SIZE)
+    frog = engine.frog
+    frog.ride(lambda: (400, 150), until=frog.age + 2)
+    frog.update(1 / 60)
+    engine.spawn(Action("arrow", direction=direction), now=0)
+    assert not frog.riding
+    frog.cancel_ride()  # also safe for an explicit call in the input handler
+    frog.update(1 / 60)
+    assert (frog.x - 400) * direction[0] + (frog.y + frog._feet - 150) * direction[1] > 0
+
+
+def test_duck_lowers_painted_head_but_keeps_feet_on_pad_and_expires(painted_pip):
+    frog = settled()
+
+    def top():
+        frame = pygame.Surface(SIZE, pygame.SRCALPHA)
+        frog.draw(frame)
+        return frame.get_bounding_rect().top
+
+    standing = top()
+    frog.duck(0.4)
+    frog.update(0.39)
+    assert top() - standing > frog.r
+    assert frog.floor_y == frog.y
+    frog.update(0.02)
+    assert top() == standing
+    frog.duck(100)
+    for _ in range(180):
+        frog.update(1 / 60)
+    assert top() == standing
+
+
+def test_look_at_aims_the_pupils_in_screen_space_and_expires(painted_pip):
+    frog = settled()
+    frog.look_at(frog.x - 200, frog.y + 100)
+    assert frog.pose == "eyes_white"
+    assert frog.gaze[0] < 0 < frog.gaze[1]
+    for _ in range(180):
+        frog.update(1 / 60)
+    assert frog.gaze is None
+
+
+def test_ride_puts_visible_padded_feet_on_back(painted_pip):
+    from lilypad.effects.engine import EffectEngine
+
+    # Bottom five native rows are empty, as on a registered pose canvas.
+    idle = pygame.Surface(PIP_NATIVE, pygame.SRCALPHA)
+    idle.fill((*PIP_COLOURS["idle"], 255), (0, 0, PIP_NATIVE[0], 45))
+    pygame.image.save(idle, painted_pip / "painted/pip/idle.png")
+    critter.set_pip_art("painted")
+    frog = EffectEngine(SIZE).frog
+    frog.ride(lambda: (480, 170), until=2)
+    frog.update(0.1)
+    screen = pygame.Surface(SIZE, pygame.SRCALPHA)
+    frog.draw(screen)
+    # Up to one scaled antialiasing pixel at the sole.
+    visible = screen.subsurface((0, 0, SIZE[0], 220)).get_bounding_rect()
+    assert visible.bottom == pytest.approx(170, abs=1)
+
+
+def test_painted_wave_raises_arms_twice_then_relaxes_on_the_pad(painted_pip):
+    frog = settled()
+    frog.wave()
+    poses = []
+    for _ in range(6):
+        poses.append(frog.pose)
+        frog.update(0.15)
+    assert poses[:5] == ["cheer", "idle", "cheer", "idle", "idle"]
+    assert frog.y == frog.floor_y and frog.vy == 0
+
+
+def test_drawn_wave_moves_a_foreleg_and_reuses_its_sprite():
+    frog = settled()
+    idle = frog_sprite(frog.r)
+    frog.wave()
+    lifted = frog_sprite(frog.r, frog.pose)
+    assert lifted is not idle
+    assert lifted.get_at((int(lifted.get_width() * 0.90), lifted.get_height() // 2)).a > 0
+    assert idle.get_at((int(idle.get_width() * 0.90), idle.get_height() // 2)).a == 0
+    frog.update(0.30)
+    assert frog_sprite(frog.r, frog.pose) is lifted
+    frog.update(0.5)
+    assert frog_sprite(frog.r, frog.pose) is idle
+
+
+@pytest.mark.parametrize("steps", [(1/24,), (1/60,), (1/24, 1/72, 1/38, 1/60)])
+def test_dance_lands_on_mapped_beats_with_an_irregular_tempo_and_lead_in(steps):
+    from lilypad.audio.tracks import BeatClock, BeatMap
+
+    beats = (2.80, 3.24, 4.12, 4.53, 5.18, 5.70)
+    clock = BeatClock(BeatMap(120, beats[0], beats, (beats[0],), ()))
+    frog = settled()
+    frog.dance(beat_clock=clock)
+    landings = []
+    frame, elapsed = 0, 0.0
+    while elapsed < beats[-1] + 0.1:
+        dt = steps[frame % len(steps)]
+        elapsed += dt
+        frame += 1
+        was_above = frog.y < frog.floor_y
+        clock.advance(dt)
+        frog.update(dt)
+        if was_above and frog.y == frog.floor_y:
+            landings.append((elapsed, dt))
+    assert len(landings) == len(beats)
+    for (landing, dt), beat in zip(landings, beats):
+        assert landing == pytest.approx(beat, abs=dt + 1e-9)
+    frog.dance(False)
+    for _ in range(240):
+        frog.update(1 / 60)
+    assert frog.y == frog.floor_y and frog.vy == 0
