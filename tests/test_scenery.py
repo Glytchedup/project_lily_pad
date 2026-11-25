@@ -86,7 +86,7 @@ def make_art(root, count=3):
     for index in reversed(range(count)):  # playback follows order, not TOML insertion
         plate = pygame.Surface((100, 50))
         plate.fill((10 + 20 * index, 10, 20))
-        plate.set_at((50, 6), (160, 160, 160))  # a single registered moon
+        plate.set_at((50, 6), (160, 160, 160))
         plate.set_at((0, 36), (67, 66, 65))  # marker for plate shake
         pygame.image.save(plate, world / f"plate{index}.png")
         for name, height in (("far", 15), ("near", 11)):
@@ -115,6 +115,94 @@ def render(pond):
 
 def rgb(surface):
     return pygame.image.tobytes(surface, "RGB")
+
+
+@pytest.mark.parametrize("scale", [1.0, .5])
+def test_moons_dip_out_before_the_other_moon_appears(tmp_path, scale):
+    root = make_art(tmp_path, 2)
+    moons = [(24, 10), (75, 15)]
+    skies = [(12, 18, 24), (28, 30, 40)]
+    for i, (moon, sky) in enumerate(zip(moons, skies)):
+        plate = pygame.Surface((100, 50))
+        plate.fill(sky)
+        pygame.draw.circle(plate, (240, 240, 240), moon, 4)
+        pygame.image.save(plate, root / f"world/plate{i}.png")
+    pond = painted(root, mood_minutes=.25, parallax=False)
+    pond.ctx.scale = scale
+    pond.update(15.)
+
+    # Measure disc-to-local-sky contrast, independently of the dip colour.
+    # The five interior samples per disc also avoid mistaking a twinkle for a moon.
+    def contrast(image, moon):
+        x, y = moon
+        values = sorted(image.get_at((x + dx, y)).r for dx in range(-2, 3))
+        return values[2] - image.get_at((x + 6, y)).r
+
+    for tick in range(65):
+        frame = render(pond)
+        outgoing, incoming = [contrast(frame, moon) for moon in moons]
+        if tick <= 32:
+            assert incoming <= 2
+        if tick >= 32:
+            assert outgoing <= 2
+        if tick in (0, 16):
+            assert outgoing > 55
+        if tick in (48, 64):
+            assert incoming > 55
+        if tick == 32:
+            for moon in moons:
+                assert frame.get_at(moon)[:3] == (20, 24, 32)
+        if tick < 64:
+            pond.update(4 / 64)
+
+
+@pytest.mark.parametrize("scale", [1.0, .5])
+def test_storybook_card_stays_lit_during_mood_dip(tmp_path, scale):
+    pond = painted(make_art(tmp_path, 2), mood_minutes=.25, parallax=False)
+    pond.ctx.scale = scale
+    card = pygame.Surface(pond.ctx.size)
+    card.fill((190, 120, 75))
+    pond.set_card(card)
+    pond.update(15.)
+    for _ in range(3):
+        pond.update(1.)
+        page = render(pond)
+        assert page.get_at((50, 6)) == card.get_at((50, 6))
+        pond.set_card(None)
+        landscape = render(pond)
+        assert landscape.get_at((50, 6)) != card.get_at((50, 6))
+        # Showing or clearing a page must not jump the opaque far-shore strip.
+        assert landscape.get_at((50, 30)) == page.get_at((50, 30))
+        pond.set_card(card)
+
+
+@pytest.mark.parametrize("size", [(100, 50), (200, 100)])
+def test_plate_shift_registers_bank_and_extends_its_own_sky(tmp_path, size):
+    root = make_art(tmp_path, 1)
+    manifest = root / "world/manifest.toml"
+    with manifest.open("a", encoding="utf-8") as stream:
+        stream.write("plate_shift = 0.04\n")
+    w, h = size
+    bank = round(.68 * h)
+    plate = pygame.Surface(size)
+    for y in range(h):
+        for x in range(w):
+            plate.set_at((x, y), (x, y, 100 if y >= bank else 10))
+    pygame.image.save(plate, root / "world/plate0.png")
+    pond = painted(root, size=size, parallax=False)
+    shifted = pond._painted.current.plate
+    offset = round(.04 * h)
+    for y in range(h):
+        source_y = y - offset if y >= offset else offset - 1 - y
+        assert rgb(shifted.subsurface((0, y, w, 1))) == rgb(plate.subsurface((0, source_y, w, 1)))
+    # The new water starts on the shared ground, including after baking and recovery.
+    ground = round(scenery.POND.ground * h)
+    for scale in (1., .5, 1.):
+        pond.ctx.scale = scale
+        pond.update(0.)
+        frame = render(pond)
+        assert frame.get_at((w // 2, ground - 1)).b == 10
+        assert frame.get_at((w // 2, ground)).b == 100
 
 
 @pytest.mark.parametrize("route", ["drawn", "missing", "empty", "broken"])
@@ -202,9 +290,9 @@ def test_mood_order_complete_composite_fade_and_two_residents(tmp_path, monkeypa
         assert world.next.files.name == f"m{(i + 1) % 4}"
         pond.update(17. if i == 0 else 13.)  # 15 s period, 2 s into a 4 s fade
         midpoint = render(pond)
-        assert world.alpha == 128
         assert pond._sky is sky
-        assert midpoint.get_at((50, 6)) == first.get_at((50, 6))
+        expected_sky = (first.get_at((0, 0)).r + world.next.plate.get_at((0, 0)).r) // 2
+        assert midpoint.get_at((50, 6)).r == expected_sky
         # Exact cross-fade above a swimmer too, with the P3 call independent of P0.
         lip = pygame.Surface(pond.ctx.size)
         lip.fill((231, 54, 81))
