@@ -299,7 +299,8 @@ def main(argv: list[str] | None = None) -> int:
                           fps=cfg.display.fps,
                           trails=cfg.effects.trails,
                           milestone_every=cfg.effects.milestone_every,
-                          sleep_timeout=cfg.display.sleep_timeout)
+                          sleep_timeout=cfg.display.sleep_timeout,
+                          clean_sprites=cfg.effects.clean_sprites)
 
     clock = pygame.time.Clock()
     running = True
