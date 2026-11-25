@@ -1,0 +1,5 @@
+# Sticker album and parent's "today's play" card art. Paths are relative to this file.
+# Both entries are optional: a missing key or file falls back to a drawn bar / gradient.
+schema = 1
+# strip = "strip.webp"   # 1920x110 RGBA bar behind the sticker strip (scaled to the screen)
+# card = "card.jpg"      # 1920x1080 background for the 8 s summary card
