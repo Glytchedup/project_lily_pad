@@ -30,3 +30,8 @@ Thumbs.db
 # Editors
 .idea/
 .vscode/
+
+# Run work folder (plans, briefs, generated-art staging, spend log) — never committed
+/work/
+shots/
+.impeccable/review/
