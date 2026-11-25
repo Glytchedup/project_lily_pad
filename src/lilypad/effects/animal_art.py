@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import tomllib
 from pathlib import Path
 
 import pygame
@@ -1162,7 +1163,7 @@ def faces_right(name: str) -> bool:
 
 def set_art_mode(mode: str, root: Path | None = None) -> None:
     """Select the preferred art route before warming the display-size caches."""
-    global _art_mode, _traced_available
+    global _art_mode, _traced_available, _mini_rows_cache
     if mode not in ("painted", "traced", "drawn"):
         raise ValueError(f"unknown animal art mode {mode!r}")
     if mode == "painted" or _art_mode == "painted":
@@ -1171,6 +1172,10 @@ def set_art_mode(mode: str, root: Path | None = None) -> None:
             for key in list(cache):
                 if key[-1] == "painted":
                     del cache[key]
+        # Painted minis follow the same root; a mode switch must not keep one.
+        _mini_rows_cache = None
+        _mini_art.clear()
+        _mini_cache.clear()
     _art_mode = mode
     _traced_available = mode != "drawn" and animal_stencil.available()
     if mode != "drawn" and not _traced_available:
@@ -1410,10 +1415,63 @@ _MINI_DRAWERS = {
 }
 
 
-def mini_sprite(kind: str, size: int) -> pygame.Surface:
-    """Cached square sprite (~``size`` px tall) of a countable object.
+_mini_art: dict[str, pygame.Surface | None] = {}
+_mini_rows_cache: dict | None = None
 
-    Unknown ``kind`` raises ``KeyError``. The surface is shared — blit only.
+
+def _mini_rows() -> dict:
+    """The manifest's ``[minis.<name>]`` tables (empty when absent or invalid)."""
+    global _mini_rows_cache
+    if _mini_rows_cache is None:
+        directory = painted._directory()
+        rows: dict = {}
+        try:
+            with (directory / "manifest.toml").open("rb") as stream:
+                manifest = tomllib.load(stream)
+            if type(manifest.get("schema")) is int and manifest["schema"] == 1:
+                found = manifest.get("minis", {})
+                rows = found if isinstance(found, dict) else {}
+        except (OSError, ValueError):
+            pass       # painted.py already logs an unreadable manifest
+        _mini_rows_cache = rows
+    return _mini_rows_cache
+
+
+def _painted_mini(kind: str) -> pygame.Surface | None:
+    """The decoded native frame for a painted mini, or None to use the drawn one.
+
+    Decoded once per kind and kept at native size (the sheet cells are small);
+    a missing or undecodable file is logged once and falls back to drawing.
+    """
+    if kind in _mini_art:
+        return _mini_art[kind]
+    frame = None
+    row = _mini_rows().get(kind)
+    if isinstance(row, dict):
+        try:
+            relative = Path(row["file"])
+            native = row["native_height"]
+            if (relative.anchor or ".." in relative.parts
+                    or relative.suffix.lower() not in (".png", ".webp")
+                    or type(native) is not int or native <= 0):
+                raise ValueError("invalid mini entry")
+            image = assets.load_image(painted._directory() / relative)
+            if image.get_height() != native:
+                raise ValueError("mini frame must match its native_height")
+            frame = image
+        except (KeyError, TypeError, OSError, ValueError, pygame.error,
+                NotImplementedError) as exc:
+            log.warning("Ignoring painted mini %s: %s", kind, exc)
+    _mini_art[kind] = frame
+    return frame
+
+
+def mini_sprite(kind: str, size: int) -> pygame.Surface:
+    """Cached sprite (~``size`` px tall) of a countable object.
+
+    Painted art supplies it when the manifest has a ``[minis.<kind>]`` row,
+    otherwise it is drawn (and square). Unknown ``kind`` raises ``KeyError``.
+    The surface is shared — blit only.
     """
     draw = _MINI_DRAWERS[kind]            # KeyError for an unknown kind
     size = max(16, int(size))
@@ -1421,8 +1479,18 @@ def mini_sprite(kind: str, size: int) -> pygame.Surface:
     cached = _mini_cache.get(key)
     if cached is not None:
         return cached
-    surf = _new_surface(size, size)
-    draw(surf, size)
-    surf = _finish(surf)
+    surf = None
+    native = _painted_mini(kind) if _art_mode == "painted" else None
+    if native is not None:
+        w, h = native.get_size()
+        surf = native
+        if h != size:
+            surf = pygame.transform.smoothscale(
+                native, (max(1, round(w * size / h)), size))
+        surf = _finish(surf)
+    else:
+        surf = _new_surface(size, size)
+        draw(surf, size)
+        surf = _finish(surf)
     _mini_cache[key] = surf
     return surf
