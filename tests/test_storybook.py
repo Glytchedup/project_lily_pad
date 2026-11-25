@@ -1,3 +1,4 @@
+# ruff: noqa: RUF059
 import logging
 import threading
 import time

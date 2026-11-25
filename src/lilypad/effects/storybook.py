@@ -186,7 +186,7 @@ class _Decoder:
                 self._slot = None
             try:
                 outcome = (key, self._loader(path, size), None)
-            except Exception as exc:  # decode problems never reach the child
+            except Exception as exc:  # noqa: BLE001 - decode problems never reach the child
                 outcome = (key, None, exc)
             with self._cond:
                 if not self._closed:
