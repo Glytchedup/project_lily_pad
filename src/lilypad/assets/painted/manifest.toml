@@ -331,3 +331,43 @@ native_height = 367
 prompt_id = "sheet-side-v1"
 source_hash = "sha256:7258224ceba7c1858f8b549c658c8a6bcc26d3f50862d2210e5695bea3e10ed9"
 view = "side"
+
+[minis.apple]
+file = "minis/apple.webp"
+native_height = 160
+
+[minis.duck]
+file = "minis/duck.webp"
+native_height = 160
+
+[minis.flower]
+file = "minis/flower.webp"
+native_height = 160
+
+[minis.frog]
+file = "minis/frog.webp"
+native_height = 160
+
+[minis.star]
+file = "minis/star.webp"
+native_height = 160
+
+[minis.stegosaurus]
+file = "minis/stegosaurus.webp"
+native_height = 160
+
+[minis.triceratops]
+file = "minis/triceratops.webp"
+native_height = 160
+
+[pad]
+file = "pip/pad.webp"
+native_height = 60
+
+[pip]
+anchor = [0.5, 0.9333333333333333]
+eye_at = [0.3471668091574048, 0.25862258953168044]
+frames = { blink = "pip/blink.webp", cheer = "pip/cheer.webp", eyes_white = "pip/eyes_white.webp", idle = "pip/idle.webp" }
+native_height = 150
+prompt_id = "pip-v1"
+source_hash = "sha256:5099d0cf006733b244d7ad0964b7bd27ac1c2de4679402df21247acaf618fdc6"

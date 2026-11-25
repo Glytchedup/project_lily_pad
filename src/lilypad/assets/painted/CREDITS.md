@@ -84,3 +84,15 @@
 | `zebra/idle.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
 | `zebra/blink.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
 | `zebra/step.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `pip/idle.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `pip/blink.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `pip/cheer.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `pip/eyes_white.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `pip/pad.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/duck.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/apple.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/frog.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/flower.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/star.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/stegosaurus.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `minis/triceratops.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
