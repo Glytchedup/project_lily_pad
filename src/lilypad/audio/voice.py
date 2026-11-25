@@ -43,16 +43,27 @@ class VoiceLoader:
             self._cache.popitem(last=False)
         return sound
 
+    @staticmethod
+    def _normal(group: str, key: str | int) -> str:
+        key = str(key)
+        return key.upper() if group in ("letters", "phrases") else key
+
+    def get_packaged(self, group: str, key: str | int) -> pygame.mixer.Sound | None:
+        """The packaged take only, with no espeak stand-in.
+
+        A "G is for Giraffe!" line has no honest espeak equivalent (the
+        letter-name wav would just repeat the name), so the phrase caller asks
+        for the packaged take and stays silent without it.
+        """
+        path = self._files.get((group, self._normal(group, key)))
+        return self._decode(path) if path is not None else None
+
     def get(self, group: str, key: str | int) -> pygame.mixer.Sound | None:
         """Try the packaged take, then the corresponding installed espeak name."""
-        key = str(key)
-        if group in ("letters", "phrases"):
-            key = key.upper()
-        path = self._files.get((group, key))
-        if path is not None:
-            sound = self._decode(path)
-            if sound is not None:
-                return sound
+        key = self._normal(group, key)
+        sound = self.get_packaged(group, key)
+        if sound is not None:
+            return sound
         letter = group in ("letters", "phrases") and len(key) == 1 and "A" <= key <= "Z"
         number = group in ("numbers", "endings") and key in _NUMBER_KEYS
         if letter or number:
@@ -81,6 +92,8 @@ class NarratorPolicy:
         elif group == "phrases":
             if now < self._idle_since + 0.8 or now < self._last_letter + 0.6:
                 return False
+        elif group == "endings":
+            pass  # the count's climax replaces a still-sounding "nine"
         elif now < self._idle_since:
             return False
 
@@ -104,3 +117,77 @@ class NarratorPolicy:
     def gain(self, *, party_playing: bool) -> float:
         """Multiplier on narrator volume while the reward track is audible."""
         return self.party_duck if party_playing else 1.0
+
+
+# ---------------------------------------------------------------------------
+# The line catalogue
+# ---------------------------------------------------------------------------
+# One row per clip the narrator can say. An id is "<manifest group>.<key>",
+# so ``phrases.G`` is the manifest table ``[phrases.G]`` and the TTS batch can
+# name each rendered file from it. The engine requests exactly these
+# (group, key) pairs; tests keep the two in step.
+
+#: Letter names spelled the way a TTS voice should say them.
+LETTER_NAMES: dict[str, str] = dict(zip(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    ("Ay", "Bee", "See", "Dee", "Ee", "Eff", "Gee", "Aitch", "Eye", "Jay",
+     "Kay", "El", "Em", "En", "Oh", "Pee", "Cue", "Are", "Ess", "Tee", "You",
+     "Vee", "Double-you", "Ex", "Why", "Zee"), strict=True))
+
+#: How a creature's name is written for speech, where the id would be read badly.
+_SPOKEN_ANIMAL = {"trex": "T-Rex", "xrayfish": "X-ray fish"}
+
+_NUMBER_WORDS = ("One", "Two", "Three", "Four", "Five",
+                 "Six", "Seven", "Eight", "Nine", "Ten")
+
+#: Praise and party lines, keyed by the event name ``AudioEngine.narrate`` takes.
+PRAISE_LINES: dict[str, str] = {
+    "party_start": "You did it! Party time!",
+    "alphabet_complete": "You found ALL the animals!",
+    "party_end": "What a great party!",
+    "milestone": "Hooray! Look at that!",
+    "great_job": "Great job!",
+    "well_done": "Well done!",
+    "wow": "Wow!",
+    "yay": "Yay!",
+    "amazing": "Amazing!",
+    "super": "Super duper!",
+    "good_job": "Good job, you!",
+    "nice": "Nice one!",
+    "fantastic": "Fantastic!",
+    "hooray": "Hooray!",
+    "bravo": "Bravo!",
+    "you_found_it": "You found it!",
+    "so_clever": "You are so clever!",
+    "keep_going": "Keep going!",
+    "high_five": "High five!",
+    "look_at_that": "Look at that!",
+}
+
+
+def _spoken(animal: str) -> str:
+    return _SPOKEN_ANIMAL.get(animal, animal)
+
+
+def narrator_lines() -> list[dict[str, str]]:
+    """Every clip to record: ``{id, text, kind}``, in a stable order."""
+    from ..effects.animals import ANIMAL_LETTERS, DINOSAURS
+
+    lines = [{"id": f"letters.{k}", "text": f"{v}!", "kind": "letter"}
+             for k, v in LETTER_NAMES.items()]
+    # Phrases spell the letter as its name too: a bare "A is for ..." reads as
+    # the article "a".
+    lines += [{"id": f"phrases.{k}",
+               "text": f"{LETTER_NAMES[k]} is for {_spoken(animal)}!",
+               "kind": "phrase"} for k, animal in ANIMAL_LETTERS.items()]
+    animals = list(ANIMAL_LETTERS.values())
+    animals += [d for d in DINOSAURS if d not in animals]
+    lines += [{"id": f"animals.{a}", "text": f"{_spoken(a)}!", "kind": "animal"}
+              for a in animals]
+    lines += [{"id": f"numbers.{i}", "text": f"{w}...", "kind": "number"}
+              for i, w in enumerate(_NUMBER_WORDS, 1)]
+    lines += [{"id": f"endings.{i}", "text": f"{w}!", "kind": "ending"}
+              for i, w in enumerate(_NUMBER_WORDS, 1)]
+    lines += [{"id": f"praise.{k}", "text": t, "kind": "praise"}
+              for k, t in PRAISE_LINES.items()]
+    return lines

@@ -131,3 +131,24 @@ def test_new_count_replaces_old_letter_cancels_and_late_frame_does_not_burst():
     assert policy.due_count(2 + 2 * CountAlong.POP_INTERVAL) == 3
     assert policy.request("letters", now=2.8, duration=0.3)
     assert policy.due_count(5) is None
+
+
+def test_get_packaged_never_uses_the_espeak_stand_in(clips):
+    packaged, espeak = clips
+    write_clip(packaged / "gee.wav", 50)
+    write_clip(espeak / "G.wav", 30)
+    write_clip(espeak / "B.wav", 30)
+    (packaged / "manifest.toml").write_text('[letters.G]\nfile="gee.wav"\n', encoding="utf-8")
+    loader = VoiceLoader(packaged, espeak)
+    assert loader.get_packaged("letters", "g").get_length() == pytest.approx(0.05, abs=0.001)
+    assert loader.get_packaged("letters", "B") is None
+    assert loader.get_packaged("phrases", "G") is None
+    assert loader.get("phrases", "G") is not None      # get() keeps its fallback
+
+
+def test_an_ending_replaces_a_count_number_that_is_still_sounding():
+    policy = NarratorPolicy(party_duck=0.5)
+    assert policy.request("numbers", now=1.0, duration=0.5)
+    assert not policy.request("numbers", now=1.2, duration=0.5)
+    assert policy.request("endings", now=1.2, duration=0.5)
+    assert not policy.request("numbers", now=1.6, duration=0.5)
