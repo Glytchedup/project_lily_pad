@@ -1,36 +1,18 @@
-"""Drawing the cast: pygame primitives in, cached sprites out.
+"""Cached painted, traced and procedural sprites for the animal cast.
 
-Two drawing systems live here, and the split is deliberate:
-
-* The four **original farm animals** (cow, duck, pig, sheep) keep their
-  hand-drawn, front-on art. They were tuned by eye, they ship, and rewriting
-  them into the generic system would risk making them worse to no benefit.
-* Everyone else is drawn **side-on facing right** by one data-driven builder
-  fed from :mod:`lilypad.effects.animal_specs`. Twenty-six bespoke drawing
-  functions would be a thousand lines nobody could keep consistent; one
-  builder with a spec row per creature stays legible and gives the whole cast
-  a single house style.
-
-All art is original — ellipses, circles, polygons and arcs — in the same
-chunky, big-eyed, high-contrast spirit as Pip in ``critter.py``. No licensed
-characters, no image assets on disk.
-
-**Performance rule** (same as ``particles.py``): every sprite is drawn exactly
-once into a cached ``SRCALPHA`` surface, keyed by (name, height, pose). Sprite
-construction may therefore be as expensive as it likes — masks, per-pixel
-blends, scaling — because it happens once. Per-frame work is a single blit
-plus integer offset math: no per-frame surface allocation, no rotation, no
-scaling.
+The four farm animals face front. Every other creature faces right before
+mirroring. Art selection, drawing and transformations happen at cache time.
 """
 
 from __future__ import annotations
 
 import logging
 import math
+from pathlib import Path
 
 import pygame
 
-from . import animal_stencil
+from . import animal_stencil, assets, painted
 from .animal_specs import SPECS, AnimalSpec
 
 log = logging.getLogger(__name__)
@@ -83,29 +65,18 @@ MINI_KINDS: tuple[str, ...] = ("duck", "apple", "frog", "flower", "star",
 
 #: ``squash`` is derived from ``idle`` by a one-off scale (see ``animal_sprite``)
 #: and is used by the hop/landing animations.
-POSES: tuple[str, ...] = ("idle", "blink", "squash")
+POSES: tuple[str, ...] = ("idle", "blink", "squash", "step")
 
 # Body width as a multiple of the requested height, for the bespoke four.
 _BESPOKE_ASPECT: dict[str, float] = {
     "cow": 1.15, "duck": 1.05, "pig": 1.15, "sheep": 1.20,
 }
 
-# Cache keys are (name, height, pose) / (kind, size) / (name, height, pose)
-# for the flipped variants. In normal use the heights come from a handful of
-# screen-derived values, so the dicts top out at a few hundred small surfaces
-# for the life of the process. No eviction policy is needed — an LRU here
-# would cost more than it saves.
-#
-# The mode is part of the key because the two art routes produce different
-# sprites — and different *widths* — for the same name and height. Without it,
-# flipping the setting mid-process would serve stale art forever.
-_animal_cache: dict[tuple[str, int, str, bool], pygame.Surface] = {}
-_flip_cache: dict[tuple[str, int, str, bool], pygame.Surface] = {}
-
-#: Whether traced-outline sprites are in use for the creatures that have one.
-#: Set once at startup by ``set_silhouettes``; off until then so that importing
-#: this module never touches the filesystem or needs a display.
-_silhouettes = False
+# Both facings use the same normalized (name, height, pose, resolved route).
+_animal_cache: dict[tuple[str, int, str, str], pygame.Surface] = {}
+_flip_cache: dict[tuple[str, int, str, str], pygame.Surface] = {}
+_art_mode = "drawn"
+_traced_available = False
 _mini_cache: dict[tuple[str, int], pygame.Surface] = {}
 
 
@@ -1189,35 +1160,46 @@ def faces_right(name: str) -> bool:
     return name not in _BESPOKE_DRAWERS
 
 
-def set_silhouettes(on: bool) -> bool:
-    """Turn traced-outline sprites on or off, and report what actually happened.
+def set_art_mode(mode: str, root: Path | None = None) -> None:
+    """Select the preferred art route before warming the display-size caches."""
+    global _art_mode, _traced_available
+    if mode not in ("painted", "traced", "drawn"):
+        raise ValueError(f"unknown animal art mode {mode!r}")
+    if mode == "painted" or _art_mode == "painted":
+        painted.configure(root if root is not None else assets.asset_root())
+        for cache in (_animal_cache, _flip_cache):
+            for key in list(cache):
+                if key[-1] == "painted":
+                    del cache[key]
+    _art_mode = mode
+    _traced_available = mode != "drawn" and animal_stencil.available()
+    if mode != "drawn" and not _traced_available:
+        log.warning("silhouette animals unavailable — traced fallback uses drawn animals")
 
-    Returns False if they were asked for but this machine can't rasterise SVG
-    — an SDL_image build option, so it has to be probed rather than assumed.
-    A Pi without it falls back to the drawn animals and logs why, instead of
-    dying on the first giraffe.
-    """
-    global _silhouettes
-    wanted = bool(on)
-    if wanted and not animal_stencil.available():
-        log.warning("silhouette animals requested but unavailable — using drawn animals")
-        wanted = False
-    if wanted != _silhouettes:
-        _silhouettes = wanted
-        log.info("animal art: %s", "traced outlines" if wanted else "drawn")
-    return wanted
+
+def set_silhouettes(on: bool) -> bool:
+    """Compatibility switch for the original traced and drawn routes."""
+    set_art_mode("traced" if on else "drawn")
+    return silhouettes_enabled()
 
 
 def silhouettes_enabled() -> bool:
-    return _silhouettes
+    return _traced_available
 
 
-def _use_stencil(name: str) -> bool:
-    return _silhouettes and animal_stencil.has(name)
+def resolved_mode(name: str) -> str:
+    if _art_mode == "painted" and painted.has(name):
+        return "painted"
+    if _traced_available and animal_stencil.has(name):
+        return "traced"
+    return "drawn"
 
 
 def aspect(name: str) -> float:
-    if _use_stencil(name):
+    mode = resolved_mode(name)
+    if mode == "painted":
+        return painted.aspect(name)
+    if mode == "traced":
         return animal_stencil.aspect(name)
     if name in _BESPOKE_DRAWERS:
         return _BESPOKE_ASPECT[name]
@@ -1246,19 +1228,15 @@ def animal_sprite(name: str, height: int, pose: str = "idle") -> pygame.Surface:
     ``"idle"``. Side-on animals face **right**. The returned surface is
     shared — never draw onto it.
     """
-    if name not in _BESPOKE_DRAWERS and name not in SPECS:
-        raise KeyError(name)
-    if pose not in POSES:
-        pose = "idle"
-    height = max(24, int(height))
-    key = (name, height, pose, _silhouettes)
-    cached = _animal_cache.get(key)
-    if cached is not None:
-        return cached
+    return animal_sprite_facing(name, height, pose, going_left=False)
 
+
+def _build_sprite(name: str, height: int, pose: str, mode: str) -> pygame.Surface:
+    if mode == "painted":
+        return painted.build(name, height, pose)
     if pose == "squash":
         surf = _squash(animal_sprite(name, height, "idle"))
-    elif _use_stencil(name):
+    elif mode == "traced":
         surf = animal_stencil.build(name, height, pose)
     else:
         width = int(height * aspect(name))
@@ -1268,23 +1246,29 @@ def animal_sprite(name: str, height: int, pose: str = "idle") -> pygame.Surface:
             bespoke(surf, width, height, pose)
         else:
             _BUILDERS[SPECS[name].build](surf, width, height, pose, SPECS[name])
-    surf = _finish(surf)
-    _animal_cache[key] = surf
-    return surf
+    return _finish(surf)
 
 
 def animal_sprite_facing(name: str, height: int, pose: str,
                          going_left: bool) -> pygame.Surface:
-    """``animal_sprite`` mirrored when travelling left.
-
-    Flips are cached like everything else, so a crossing costs at most three
-    extra surfaces the first time a given animal runs at a given size.
-    """
-    sprite = animal_sprite(name, height, pose)
+    """Return a shared pose, mirrored only for a leftbound side-on animal."""
+    if name not in _BESPOKE_DRAWERS and name not in SPECS:
+        raise KeyError(name)
+    mode = resolved_mode(name)
+    if pose not in POSES or (pose == "step" and (mode != "painted" or not painted.has_step(name))):
+        pose = "idle"
+    height = max(1 if mode == "painted" else 24, int(height))
+    key = (name, height, pose, mode)
+    sprite = _animal_cache.get(key)
+    if sprite is None:
+        try:
+            sprite = _build_sprite(*key)
+        except painted.FrameUnavailable:
+            # A trial frame disappeared between validation and a size change.
+            return animal_sprite_facing(name, height, pose, going_left)
+        _animal_cache[key] = sprite
     if not going_left or not faces_right(name):
         return sprite
-    key = (name, max(24, int(height)), pose if pose in POSES else "idle",
-           _silhouettes)
     flipped = _flip_cache.get(key)
     if flipped is None:
         flipped = _finish(pygame.transform.flip(sprite, True, False))

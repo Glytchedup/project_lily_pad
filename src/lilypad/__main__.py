@@ -249,10 +249,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # Must happen before the first sprite is cached, and after the display
     # exists so the probe can build a real surface.
-    from .effects.animal_art import set_silhouettes
+    from .effects.animal_art import set_art_mode
     from .effects.animals import prewarm
-    set_silhouettes(cfg.effects.silhouettes)
-    prewarm(size[1])
+    from .effects.assets import asset_root
+    from .effects.layout import layout_for
+    set_art_mode(cfg.effects.animal_art, root=asset_root(kiosk=kiosk))
+    prewarm(size[1], screen_width=size[0], max_sprite_width=cfg.effects.max_sprite_width,
+            layout=layout_for(cfg.scene.world))
 
     # Input backend
     if args.smoke:
