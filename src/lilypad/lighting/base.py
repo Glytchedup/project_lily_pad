@@ -1,6 +1,6 @@
 """Lighting interface + host-side animation math.
 
-All animation (breathing, ripples, strobe-rainbow) is computed here into a
+All animation (breathing, screen mirror, ripples, strobe) is computed into a
 6×22 RGB grid; backends only ship the finished grid to hardware. That keeps
 every visual behavior identical — and unit-testable — across the razer_hid,
 openrazer, and mock backends (PLAN.md D10).
@@ -11,11 +11,12 @@ from __future__ import annotations
 import colorsys
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Hashable, Iterable
 from dataclasses import dataclass
 
 from .keymap import COLS, ROWS, position
+from .patterns import RGB, Track, screen_cell
 
-RGB = tuple[int, int, int]
 Grid = list[list[RGB]]
 
 RIPPLE_SPEED = 14.0     # matrix cells per second
@@ -24,6 +25,7 @@ RIPPLE_LIFE = 1.2       # seconds
 KEY_FLASH_LIFE = 0.5    # pressed key stays lit this long
 BREATHE_PERIOD = 6.0    # idle breathing cycle, seconds
 STROBE_HZ = 6.0         # mash-mode rainbow strobe
+MAX_TRACKS = 5
 
 
 def blank_grid() -> Grid:
@@ -47,6 +49,14 @@ class Ripple:
     hue: float
 
 
+@dataclass(frozen=True, slots=True)
+class Bloom:
+    row: int
+    col: int
+    colour: RGB
+    start: float
+
+
 class LightingBackend(ABC):
     """Ships finished frames to hardware (or nowhere, for the mock)."""
 
@@ -68,6 +78,8 @@ def render_frame(
     ripples: list[Ripple],
     lit_keys: dict[str, tuple[float, float]],  # name -> (press_time, hue)
     mash: bool,
+    tracks: Iterable[Track] = (),
+    blooms: Iterable[Bloom] = (),
 ) -> Grid:
     """Pure frame function: current lighting state → 6×22 RGB grid."""
     grid = blank_grid()
@@ -86,6 +98,22 @@ def render_frame(
     for r in range(ROWS):
         for c in range(COLS):
             grid[r][c] = base
+
+    # Paint coats in arrival order. Transparent cells leave older coats
+    # visible, and fireworks briefly illuminate the animals underneath.
+    for track in tracks:
+        for r, c, colour in track.pixels(now):
+            grid[r][c] = colour
+    for bloom in blooms:
+        if bloom.start > now:
+            continue
+        r, c = bloom.row, bloom.col
+        grid[r][c] = bloom.colour
+        red, green, blue = bloom.colour
+        halo = (red // 2, green // 2, blue // 2)
+        for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+            if 0 <= nr < ROWS and 0 <= nc < COLS:
+                grid[nr][nc] = _add(grid[nr][nc], halo)
 
     # Expanding rings from recent keypresses.
     for rp in ripples:
@@ -114,11 +142,15 @@ def render_frame(
 class LightingEngine:
     """Holds lighting state, renders frames at its own fps, feeds a backend."""
 
-    def __init__(self, backend: LightingBackend, fps: int = 30, brightness: float = 0.9):
+    def __init__(self, backend: LightingBackend, fps: int = 30, brightness: float = 0.9,
+                 *, mirror_animals: bool = True):
         self.backend = backend
         self.frame_interval = 1.0 / max(1, fps)
         self._ripples: list[Ripple] = []
         self._lit: dict[str, tuple[float, float]] = {}
+        self._mirror_animals = mirror_animals
+        self._tracks: dict[Hashable, Track] = {}
+        self._blooms: dict[tuple[int, int], Bloom] = {}
         self._mash = False
         self._sleep = False
         self._last_frame = float("-inf")  # first tick always renders
@@ -135,6 +167,32 @@ class LightingEngine:
     def set_mash(self, on: bool) -> None:
         self._mash = on
 
+    def track(self, token: Hashable, pattern_name: str, x_frac: float, y_frac: float,
+              width_frac: float, now: float) -> None:
+        """Place or move a sprite by its screen centre and full screen-relative width.
+
+        A stable token keeps its animation phase until untracked. If the
+        cast exceeds five, the newest arrival replaces the oldest one.
+        """
+        if not self._mirror_animals or self._sleep:
+            return
+        previous = self._tracks.get(token)
+        if previous is None and len(self._tracks) == MAX_TRACKS:
+            del self._tracks[next(iter(self._tracks))]
+        start = previous.start if previous and previous.name == pattern_name else now
+        self._tracks[token] = Track(pattern_name, x_frac, y_frac, width_frac, start)
+
+    def untrack(self, token: Hashable) -> None:
+        self._tracks.pop(token, None)
+
+    def bloom(self, x_frac: float, y_frac: float, colour: RGB, now: float) -> None:
+        """Flash a burst on the next lighting frame, coalescing hits on the same LED."""
+        if not self._mirror_animals or self._sleep:
+            return
+        row, col = screen_cell(y_frac, ROWS), screen_cell(x_frac, COLS)
+        if 0 <= row < ROWS and 0 <= col < COLS:
+            self._blooms[row, col] = Bloom(row, col, colour, now)
+
     def set_sleep(self, on: bool) -> None:
         """Go dark with the screen, and come back the instant it does.
 
@@ -148,6 +206,8 @@ class LightingEngine:
         if on:
             self._ripples.clear()
             self._lit.clear()
+            self._tracks.clear()
+            self._blooms.clear()
             self.backend.apply(blank_grid())
         # Render immediately on the next tick either way rather than waiting
         # out the frame interval.
@@ -161,7 +221,10 @@ class LightingEngine:
         self._last_frame = now
         self._ripples = [rp for rp in self._ripples if now - rp.start <= RIPPLE_LIFE]
         self._lit = {k: v for k, v in self._lit.items() if now - v[0] <= KEY_FLASH_LIFE}
-        self.backend.apply(render_frame(now, self._ripples, self._lit, self._mash))
+        self.backend.apply(render_frame(now, self._ripples, self._lit, self._mash,
+                                        self._tracks.values(), self._blooms.values()))
+        if self._blooms:
+            self._blooms = {k: b for k, b in self._blooms.items() if b.start > now}
 
     def close(self) -> None:
         self.backend.close()
