@@ -332,6 +332,14 @@ prompt_id = "sheet-side-v1"
 source_hash = "sha256:7258224ceba7c1858f8b549c658c8a6bcc26d3f50862d2210e5695bea3e10ed9"
 view = "side"
 
+[lily]
+anchor = [0.5, 1.0]
+frames = { cheer = "lily/cheer.webp", point = "lily/point.webp", sit = "lily/sit.webp", sit_blink = "lily/sit_blink.webp", tummy = "lily/tummy.webp", wave = "lily/wave.webp" }
+heights = { cheer = 1.0, point = 1.0, sit = 0.78, sit_blink = 0.78, tummy = 0.55, wave = 1.0 }
+native_height = 300
+prompt_id = "lily-v1"
+source_hash = "sha256:1a23bc216474eb073b8e3d1d4b5ce5c95f0cf96191bbc9982782a531d0396ade"
+
 [minis.apple]
 file = "minis/apple.webp"
 native_height = 160

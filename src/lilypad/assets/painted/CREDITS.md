@@ -96,3 +96,9 @@
 | `minis/star.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
 | `minis/stegosaurus.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
 | `minis/triceratops.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `lily/sit.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `lily/sit_blink.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `lily/wave.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `lily/tummy.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `lily/point.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
+| `lily/cheer.webp` | google/gemini-3-pro-image | 2026-11-25 | A | unknown | AI-generated original; no reference to existing characters |
