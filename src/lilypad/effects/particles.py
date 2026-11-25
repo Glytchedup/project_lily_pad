@@ -1,8 +1,6 @@
 """Particle primitives. Most named effects are parametrizations of these.
 
-Everything is plain pygame.draw circles/polys — no per-pixel Python loops,
-so a Pi GPU-composited 1080p frame stays inside the 60 fps budget with the
-default particle caps (engine degrades caps if not).
+The painted and procedural renderers share particle motion and budget counts.
 """
 
 from __future__ import annotations
@@ -13,7 +11,7 @@ from dataclasses import dataclass
 import pygame
 
 from .base import BRIGHT_PALETTE, EffectContext, random_bright
-from .glow import draw_glow
+from .glow import PaintedSprite, draw_glow, painted_sprite
 
 
 @dataclass
@@ -28,6 +26,7 @@ class Particle:
     gravity: float = 0.0
     drag: float = 0.0
     age: float = 0.0
+    sprite: PaintedSprite | None = None
 
     def step(self, dt: float) -> bool:
         self.age += dt
@@ -41,6 +40,18 @@ class Particle:
         self.x += self.vx * dt
         self.y += self.vy * dt
         return True
+
+
+def _paint_particles(parts: list[Particle], kind: str) -> None:
+    primary = painted_sprite(kind, 0)
+    leaves = kind == "petal" and painted_sprite("leaf", 0) is not None
+    if primary is None and not leaves:
+        return
+    for i, p in enumerate(parts):
+        family = "leaf" if leaves and (primary is None or i % 4 == 3) else kind
+        # Size is sampled once at birth. The file stays with its particle when
+        # earlier particles die, without consuming another random number.
+        p.sprite = painted_sprite(family, int(p.size * 1024), p.color)
 
 
 class ParticleSystem:
@@ -62,6 +73,9 @@ class ParticleSystem:
         for p in self.particles:
             fade = 1.0 - p.age / p.life
             r = max(1, int(p.size * (0.4 + 0.6 * fade)))
+            if p.sprite is not None:
+                p.sprite.draw(surface, p.x, p.y, 2 * r, int((p.life + p.age) * 8))
+                continue
             color = tuple(int(c * (0.35 + 0.65 * fade)) for c in p.color)
             draw_glow(surface, color, (p.x, p.y), r)
 
@@ -69,7 +83,7 @@ class ParticleSystem:
 def burst(ctx: EffectContext, pos: tuple[float, float], count: int = 60,
           colors: list[tuple[int, int, int]] | None = None,
           speed: float = 420.0, gravity: float = 380.0,
-          size: float = 7.0, life: float = 1.2) -> ParticleSystem:
+          size: float = 7.0, life: float = 1.2, *, painted: bool = True) -> ParticleSystem:
     """Radial explosion — the workhorse."""
     sys_ = ParticleSystem()
     n = max(4, int(count * ctx.scale))
@@ -85,6 +99,8 @@ def burst(ctx: EffectContext, pos: tuple[float, float], count: int = 60,
             size=ctx.rng.uniform(0.6, 1.3) * size,
             gravity=gravity, drag=1.2,
         ))
+    if painted:
+        _paint_particles(sys_.particles, "star")
     return sys_
 
 
@@ -146,7 +162,7 @@ _SHAPES = {
 def shaped_burst(ctx: EffectContext, pos: tuple[float, float], shape: str,
                  colors: list[tuple[int, int, int]] | None = None,
                  count: int = 90, spread: float = 260.0,
-                 life: float = 1.5) -> ParticleSystem:
+                 life: float = 1.5, *, painted: bool = True) -> ParticleSystem:
     """Explosion whose particles fly outward into a picture (heart/star/smiley):
     velocity is proportional to each template point, so with heavy drag the
     shape forms mid-air and lingers as it falls."""
@@ -165,6 +181,8 @@ def shaped_burst(ctx: EffectContext, pos: tuple[float, float], shape: str,
             size=ctx.rng.uniform(4.5, 6.5),
             gravity=60.0, drag=2.6,
         ))
+    if painted and shape in ("heart", "star"):
+        _paint_particles(sys_.particles, shape)
     return sys_
 
 
@@ -181,6 +199,7 @@ def confetti_rain(ctx: EffectContext, count: int = 140) -> ParticleSystem:
             size=ctx.rng.uniform(4, 9),
             gravity=140.0,
         ))
+    _paint_particles(sys_.particles, "petal")
     return sys_
 
 
@@ -221,6 +240,7 @@ class Balloons:
                 life=6.0, color=random_bright(ctx.rng),
                 size=ctx.rng.uniform(26, 44),
             ))
+        _paint_particles(self.parts, "balloon")
 
     def update(self, dt: float) -> bool:
         alive: list[Particle] = []
@@ -235,6 +255,13 @@ class Balloons:
     def draw(self, surface: pygame.Surface) -> None:
         for p in self.parts:
             x, y, r = int(p.x), int(p.y), int(p.size)
+            if p.sprite is not None:
+                body = p.sprite.frame(2.3 * r)
+                rect = body.get_rect(center=(x, y))
+                pygame.draw.line(surface, (200, 200, 200), (x, rect.bottom - 1),
+                                 (x, rect.bottom + 40), 2)
+                surface.blit(body, rect, special_flags=p.sprite.flags)
+                continue
             pygame.draw.line(surface, (200, 200, 200), (x, y + r), (x, y + r + 40), 2)
             pygame.draw.ellipse(surface, p.color, (x - r, y - int(r * 1.15), r * 2, int(r * 2.3)))
             hl = max(2, r // 4)
@@ -295,12 +322,15 @@ class Fireworks:
         vy: float
         fuse: float
         color: tuple[int, int, int]
+        glint: PaintedSprite | None
         age: float = 0.0
         exploded: bool = False
 
     @dataclass
     class _Burst:
         sys: ParticleSystem
+        origin: tuple[float, float]
+        bokeh: PaintedSprite | None
         age: float = 0.0
         crackled: bool = False
 
@@ -316,16 +346,17 @@ class Fireworks:
                 vy=-ctx.rng.uniform(0.9, 1.25) * ctx.height * 0.85,
                 fuse=ctx.rng.uniform(0.55, 0.95) + i * 0.18,
                 color=random_bright(ctx.rng),
+                glint=painted_sprite("glint", i),
             ))
 
     def _explode(self, r: "Fireworks._Rocket") -> ParticleSystem:
         if self.ctx.rng.random() < self.SHAPED_CHANCE:
             shape = self.ctx.rng.choice(("heart", "star", "smiley"))
             return shaped_burst(self.ctx, (r.x, r.y), shape,
-                                colors=[r.color], count=90)
+                                colors=[r.color], count=90, painted=False)
         return burst(self.ctx, (r.x, r.y), count=90,
                      colors=[r.color, (255, 255, 255)],
-                     speed=520, gravity=300, size=6, life=1.4)
+                     speed=520, gravity=300, size=6, life=1.4, painted=False)
 
     def _crackle(self, b: "Fireworks._Burst") -> None:
         """White glitter micro-pops at sampled live burst particles."""
@@ -357,10 +388,12 @@ class Fireworks:
                     vx=rng.uniform(-25, 25), vy=rng.uniform(20, 80),
                     life=rng.uniform(0.25, 0.5),
                     color=(255, 220, 140), size=3.0,
+                    sprite=r.glint,
                 ))
             if r.age >= r.fuse:
                 r.exploded = True
-                self.bursts.append(self._Burst(self._explode(r)))
+                bokeh = painted_sprite("bokeh", int(r.fuse * 1000), r.color)
+                self.bursts.append(self._Burst(self._explode(r), (r.x, r.y), bokeh))
         for b in self.bursts:
             b.age += dt
             if not b.crackled and b.age >= self.CRACKLE_AT:
@@ -372,6 +405,10 @@ class Fireworks:
                 or any(not r.exploded for r in self.rockets))
 
     def draw(self, surface: pygame.Surface) -> None:
+        for b in self.bursts:
+            if b.bokeh is not None and b.age < self.CRACKLE_AT:
+                diameter = 56 * (1.0 - b.age / self.CRACKLE_AT)
+                b.bokeh.draw(surface, *b.origin, diameter)
         self.trail.draw(surface)
         for r in self.rockets:
             if not r.exploded:
