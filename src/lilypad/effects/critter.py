@@ -20,14 +20,31 @@ Two rules shape the code:
   character a child is shoving with arrow keys should never get caught on
   scenery.
 
-No licensed characters; every pixel comes from pygame primitives.
+No licensed characters; the drawn route's pixels come from pygame primitives
+and the painted route's from the repo's own generated art.
+
+**Two routes.** ``effects.pip_art = "drawn"`` is the cel-shaded Pip described
+above. ``"painted"`` loads the ``[pip]`` and ``[pad]`` rows of
+``assets/painted/manifest.toml`` (idle/blink/cheer/eyes_white frames and one
+pad) and scales them into the very same ``(radius, pose)`` cache and the same
+box the drawn sprites occupy, so physics, ``floor_y`` and ``pad_reach`` never
+notice which route is active. Anything missing or undecodable logs once and
+falls back to the drawn Pip. ``eyes_white`` is a pupil-less frame; the pupils
+are two small discs drawn on top at draw time so they can look around.
 """
 
 from __future__ import annotations
 
+import logging
 import math
+import tomllib
+from pathlib import Path
 
 import pygame
+
+from . import assets
+
+log = logging.getLogger(__name__)
 
 # Cel palette: three flat greens, no gradients between them.
 BODY = (108, 206, 74)
@@ -47,9 +64,168 @@ PAD_DARK = (26, 82, 48)
 PAD_OUTLINE = (14, 40, 26)
 
 POSES = ("idle", "blink")
+#: Frames the painted route can supply. ``cheer`` and ``eyes_white`` are
+#: optional and alias ``idle`` when the art lacks them.
+PAINTED_POSES = ("idle", "blink", "cheer", "eyes_white")
 
 _sprite_cache: dict[tuple[int, str], pygame.Surface] = {}
 _pad_cache: dict[int, pygame.Surface] = {}
+
+# The painted sprite fills the drawn sprite's box (height 3.0 r) and the painted
+# pad the drawn pad's height (1.4 r), so layout maths is route-independent.
+_SPRITE_HEIGHT = 3.0
+_PAD_HEIGHT = 1.40
+#: Pupil disc radius, and how far it may roam from the eye centre, in units of r.
+_PUPIL_R = 0.13
+_PUPIL_TRAVEL = 0.12
+
+_pip_art = "drawn"
+_art_root: Path | None = None
+#: Decoded painted art, filled lazily: {"pip": _PaintedPip | None, "pad": Surface | None}.
+_painted: dict[str, object] = {}
+_manifest_cache: dict | None = None
+
+
+class _PaintedPip:
+    """Native-size painted frames plus the measured left-eye position."""
+
+    __slots__ = ("frames", "eye_at")
+
+    def __init__(self, frames: dict[str, pygame.Surface], eye_at) -> None:
+        self.frames = frames
+        self.eye_at = eye_at
+
+
+def set_pip_art(mode: str, root: Path | None = None) -> None:
+    """Select ``"painted"`` or ``"drawn"`` Pip before the Frog is built.
+
+    ``root`` is the asset root (the directory holding ``painted/``); by default
+    the package assets, or ``LILYPAD_ART_DIR`` in dev. Selecting a mode drops
+    every cached sprite and anything decoded for the previous one.
+    """
+    global _pip_art, _art_root, _manifest_cache
+    if mode not in ("painted", "drawn"):
+        raise ValueError(f"unknown pip art mode {mode!r}")
+    _pip_art, _art_root, _manifest_cache = mode, root, None
+    _painted.clear()
+    _sprite_cache.clear()
+    _pad_cache.clear()
+
+
+def _art_directory() -> Path:
+    return (_art_root if _art_root is not None else assets.asset_root()) / "painted"
+
+
+def _manifest() -> dict:
+    global _manifest_cache
+    if _manifest_cache is None:
+        directory = _art_directory()
+        data: dict = {}
+        try:
+            with (directory / "manifest.toml").open("rb") as stream:
+                data = tomllib.load(stream)
+            if type(data.get("schema")) is not int or data["schema"] != 1:
+                raise ValueError("expected schema = 1")
+        except (OSError, ValueError) as exc:
+            log.warning("Ignoring painted manifest in %s: %s", directory, exc)
+            data = {}
+        _manifest_cache = data
+    return _manifest_cache
+
+
+def _frame_file(name: object) -> Path:
+    relative = Path(str(name))
+    if (relative.anchor or ".." in relative.parts
+            or relative.suffix.lower() not in (".png", ".webp")):
+        raise ValueError(f"invalid painted frame path {name!r}")
+    return _art_directory() / relative
+
+
+def _rgba(frame: pygame.Surface) -> pygame.Surface:
+    if frame.get_bitsize() == 32 and frame.get_masks()[3]:
+        return frame
+    out = pygame.Surface(frame.get_size(), pygame.SRCALPHA)
+    out.blit(frame, (0, 0))
+    return out
+
+
+def _load_painted_pip() -> _PaintedPip | None:
+    row = _manifest().get("pip")
+    if row is None:
+        log.info("pip_art is painted but the manifest has no [pip] entry; drawing Pip")
+        return None
+    try:
+        native = row["native_height"]
+        if type(native) is not int or native <= 0:
+            raise ValueError("invalid native_height")
+        files = row["frames"]
+        frames = {}
+        for pose in PAINTED_POSES:
+            if pose in files:
+                frames[pose] = _rgba(assets.load_image(_frame_file(files[pose])))
+            elif pose in ("idle", "blink"):
+                raise KeyError(pose)
+        size = frames["idle"].get_size()
+        if size[1] != native or any(f.get_size() != size for f in frames.values()):
+            raise ValueError("frames must share the declared native canvas")
+        eye = row["eye_at"]
+        if (not isinstance(eye, list) or len(eye) != 2
+                or not all(type(v) in (int, float) and 0 <= v <= 1 for v in eye)):
+            raise ValueError("invalid eye_at coordinates")
+        return _PaintedPip(frames, (float(eye[0]), float(eye[1])))
+    except (KeyError, TypeError, OSError, ValueError, pygame.error,
+            NotImplementedError) as exc:
+        log.warning("Ignoring painted Pip, drawing him instead: %s", exc)
+        return None
+
+
+def _load_painted_pad() -> pygame.Surface | None:
+    row = _manifest().get("pad")
+    if row is None:
+        log.info("pip_art is painted but the manifest has no [pad] entry; drawing the pad")
+        return None
+    try:
+        native = row["native_height"]
+        if type(native) is not int or native <= 0:
+            raise ValueError("invalid native_height")
+        image = _rgba(assets.load_image(_frame_file(row["file"])))
+        if image.get_height() != native:
+            raise ValueError("pad must match its native_height")
+        return image
+    except (KeyError, TypeError, OSError, ValueError, pygame.error,
+            NotImplementedError) as exc:
+        log.warning("Ignoring painted pad, drawing it instead: %s", exc)
+        return None
+
+
+def _painted_pip() -> _PaintedPip | None:
+    """The painted Pip when that route is selected and valid, else None."""
+    if _pip_art != "painted":
+        return None
+    if "pip" not in _painted:
+        _painted["pip"] = _load_painted_pip()
+    return _painted["pip"]    # type: ignore[return-value]
+
+
+def _painted_pad() -> pygame.Surface | None:
+    if _pip_art != "painted":
+        return None
+    if "pad" not in _painted:
+        _painted["pad"] = _load_painted_pad()
+    return _painted["pad"]    # type: ignore[return-value]
+
+
+def painted_pip_active() -> bool:
+    """True when Pip is currently painted rather than drawn."""
+    return _painted_pip() is not None
+
+
+def _fit_height(native: pygame.Surface, height: int) -> pygame.Surface:
+    w, h = native.get_size()
+    if h != height:
+        native = pygame.transform.smoothscale(
+            native, (max(1, round(w * height / h)), height))
+    return native
 
 
 def _finish(surf: pygame.Surface) -> pygame.Surface:
@@ -121,12 +297,22 @@ def _stamp_outline(target: pygame.Surface, silhouette: pygame.Surface,
 def frog_sprite(r: int, pose: str = "idle") -> pygame.Surface:
     """Cached front-on Pip, ``r`` being the physics radius he is built around."""
     r = max(12, int(r))
-    if pose not in POSES:
+    art = _painted_pip()
+    if art is not None:
+        # Absent optional frames alias idle before the key is formed, so one
+        # cache entry serves them all.
+        if pose not in art.frames:
+            pose = "idle"
+    elif pose not in POSES:
         pose = "idle"
     key = (r, pose)
     hit = _sprite_cache.get(key)
     if hit is not None:
         return hit
+    if art is not None:
+        s = _finish(_fit_height(art.frames[pose], int(r * _SPRITE_HEIGHT)))
+        _sprite_cache[key] = s
+        return s
 
     w, h = int(r * 3.4), int(r * 3.0)
     s = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -236,6 +422,11 @@ def lily_pad_sprite(r: int) -> pygame.Surface:
     hit = _pad_cache.get(r)
     if hit is not None:
         return hit
+    art = _painted_pad()
+    if art is not None:
+        s = _finish(_fit_height(art, max(1, int(r * _PAD_HEIGHT))))
+        _pad_cache[r] = s
+        return s
 
     # Flatter than it is wide, and deliberately shallow: seen almost edge-on
     # from the toddler's viewpoint, and a taller pad would push its front notch
@@ -336,6 +527,7 @@ class Frog:
         self.just_bounced = False    # set each update; engine spawns ripples
         self._excited_until = 0.0    # celebration joy-hops while age < this
         self.dancing = False         # reward dance party — hops until told to stop
+        self.gaze: tuple[float, float] | None = None   # painted Pip's pupils
 
         #: Vertical gap from his centre to the soles of his feet.
         self._feet = self.r * 0.62
@@ -433,14 +625,52 @@ class Frog:
         self.pad.update(dt, self.x)
         return True
 
+    def look(self, dx: float | None, dy: float = 0.0) -> None:
+        """Aim the pupils (painted Pip only); ``look(None)`` stops looking.
+
+        ``dx`` and ``dy`` run from -1 to 1 across the pupils' range of travel.
+        Nothing calls this yet: it is the hook for eye tracking.
+        """
+        if dx is None:
+            self.gaze = None
+        else:
+            self.gaze = (max(-1.0, min(1.0, dx)), max(-1.0, min(1.0, dy)))
+
+    @property
+    def cheering(self) -> bool:
+        """Dancing at a party, or joy-hopping after a milestone."""
+        return self.dancing or self.age < self._excited_until
+
     @property
     def pose(self) -> str:
-        return "blink" if (self.age % 4.0) > 3.85 else "idle"
+        if (self.age % 4.0) > 3.85:
+            # A blink only shows on a Pip who is not mid-cheer.
+            if not (self.cheering and painted_pip_active()):
+                return "blink"
+        if painted_pip_active():
+            if self.cheering:
+                return "cheer"
+            if self.gaze is not None:
+                return "eyes_white"
+        return "idle"
+
+    def _draw_pupils(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        art = _painted_pip()
+        if art is None or "eyes_white" not in art.frames or self.gaze is None:
+            return
+        ex, ey = art.eye_at
+        travel = self.r * _PUPIL_TRAVEL
+        radius = max(2, round(self.r * _PUPIL_R))
+        for fx in (ex, 1.0 - ex):
+            centre = (round(rect.x + fx * rect.w + self.gaze[0] * travel),
+                      round(rect.y + ey * rect.h + self.gaze[1] * travel))
+            pygame.draw.circle(surface, PUPIL, centre, radius)
 
     def draw(self, surface: pygame.Surface) -> None:
         self.pad.draw(surface)
 
-        sprite = frog_sprite(self.r, self.pose)
+        pose = self.pose
+        sprite = frog_sprite(self.r, pose)
         if self.squash > 0.01:
             # Continuous, so it cannot be a cached pose. `scale` rather than
             # `smoothscale` — this runs for a handful of frames after every
@@ -453,6 +683,8 @@ class Frog:
         # shrinking toward his own middle.
         rect = sprite.get_rect(midbottom=(int(self.x), int(self.y + self._feet)))
         surface.blit(sprite, rect)
+        if pose == "eyes_white":
+            self._draw_pupils(surface, rect)
 
     def __len__(self) -> int:
         return 8

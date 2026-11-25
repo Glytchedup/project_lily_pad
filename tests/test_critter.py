@@ -290,3 +290,213 @@ def test_landing_on_his_pad_still_makes_a_splash():
             break
     else:
         pytest.fail("he landed back on his pad and made no ripples")
+
+
+# ------------------------------------------------------------ painted route
+PIP_COLOURS = {"idle": (200, 0, 0), "blink": (0, 200, 0), "cheer": (0, 0, 200),
+               "eyes_white": (250, 250, 250)}
+PAD_COLOUR = (200, 200, 0)
+PIP_NATIVE = (40, 50)       # canvas w, h
+PAD_NATIVE = (60, 20)
+
+
+def write_art(root, *, frames=("idle", "blink", "cheer", "eyes_white"), pip=True, pad=True):
+    """A synthetic ``painted/`` directory of flat opaque frames."""
+    directory = root / "painted"
+    directory.mkdir(exist_ok=True)
+    text = "schema = 1\n"
+    if pip:
+        for pose in frames:
+            image = pygame.Surface(PIP_NATIVE, pygame.SRCALPHA)
+            image.fill((*PIP_COLOURS[pose], 255))
+            (directory / "pip").mkdir(exist_ok=True)
+            pygame.image.save(image, directory / "pip" / f"{pose}.png")
+        listing = ", ".join(f'{p} = "pip/{p}.png"' for p in frames)
+        text += (f"[pip]\nnative_height = {PIP_NATIVE[1]}\nframes = {{ {listing} }}\n"
+                 'anchor = [0.5, 1.0]\neye_at = [0.33, 0.22]\n')
+    if pad:
+        image = pygame.Surface(PAD_NATIVE, pygame.SRCALPHA)
+        image.fill((*PAD_COLOUR, 255))
+        (directory / "pip").mkdir(exist_ok=True)
+        pygame.image.save(image, directory / "pip" / "pad.png")
+        text += f'[pad]\nfile = "pip/pad.png"\nnative_height = {PAD_NATIVE[1]}\n'
+    (directory / "manifest.toml").write_text(text, encoding="utf-8")
+
+
+@pytest.fixture
+def painted_pip(tmp_path, monkeypatch):
+    monkeypatch.setenv("LILYPAD_ART_DIR", str(tmp_path))
+    write_art(tmp_path)
+    critter.set_pip_art("painted")
+    yield tmp_path
+    critter.set_pip_art("drawn")
+
+
+def centre(surface):
+    return tuple(surface.get_at((surface.get_width() // 2, surface.get_height() // 2)))[:3]
+
+
+def settled(size=SIZE):
+    frog = Frog(size)
+    for _ in range(300):
+        frog.update(1 / 60)
+    frog.squash = 0.0
+    return frog
+
+
+def test_default_route_is_the_drawn_pip_with_nothing_to_load():
+    assert critter.painted_pip_active() is False
+    assert frog_sprite(40, "cheer") is frog_sprite(40, "idle")      # unknown pose -> idle
+
+
+def test_painted_poses_fill_the_drawn_box_and_share_the_cache(painted_pip):
+    idle = frog_sprite(40, "idle")
+    assert idle.get_height() == int(40 * 3.0)
+    assert idle.get_width() == round(PIP_NATIVE[0] * idle.get_height() / PIP_NATIVE[1])
+    for pose, colour in PIP_COLOURS.items():
+        sprite = frog_sprite(40, pose)
+        assert centre(sprite) == colour
+        assert frog_sprite(40, pose) is sprite
+    assert frog_sprite(41, "idle") is not idle
+    assert critter._sprite_cache[(40, "idle")] is idle      # the same (radius, pose) cache
+
+
+def test_switching_back_to_drawn_drops_the_painted_sprites(painted_pip):
+    painted = frog_sprite(40, "idle")
+    critter.set_pip_art("drawn")
+    drawn = frog_sprite(40, "idle")
+    assert drawn is not painted
+    assert drawn.get_size() == (int(40 * 3.4), int(40 * 3.0))
+    assert centre(drawn) != PIP_COLOURS["idle"]
+
+
+def test_optional_frames_alias_idle_before_the_cache_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("LILYPAD_ART_DIR", str(tmp_path))
+    write_art(tmp_path, frames=("idle", "blink"))
+    critter.set_pip_art("painted")
+    try:
+        assert frog_sprite(40, "cheer") is frog_sprite(40, "idle")
+        assert frog_sprite(40, "eyes_white") is frog_sprite(40, "idle")
+        assert (40, "cheer") not in critter._sprite_cache
+        frog = settled()
+        frog.dance(True)
+        assert frog.pose == "cheer"               # asks for it; the sprite is idle
+        frog.dance(False)
+        frog.look(1, 0)
+        surf = pygame.Surface(SIZE)
+        frog.draw(surf)                           # no eyes_white frame: no pupils, no crash
+    finally:
+        critter.set_pip_art("drawn")
+
+
+@pytest.mark.parametrize("problem", ["no manifest rows", "missing file", "wrong canvas"])
+def test_missing_or_bad_art_draws_pip_and_logs_once(tmp_path, monkeypatch, caplog, problem):
+    monkeypatch.setenv("LILYPAD_ART_DIR", str(tmp_path))
+    if problem == "no manifest rows":
+        (tmp_path / "painted").mkdir()
+        (tmp_path / "painted" / "manifest.toml").write_text("schema = 1\n", encoding="utf-8")
+    else:
+        write_art(tmp_path)
+        if problem == "missing file":
+            (tmp_path / "painted" / "pip" / "blink.png").unlink()
+            (tmp_path / "painted" / "pip" / "pad.png").unlink()
+        else:
+            odd = pygame.Surface((10, 10), pygame.SRCALPHA)
+            pygame.image.save(odd, tmp_path / "painted" / "pip" / "cheer.png")
+            pygame.image.save(odd, tmp_path / "painted" / "pip" / "pad.png")
+    caplog.set_level("INFO", logger="lilypad.effects.critter")
+    critter.set_pip_art("painted")
+    try:
+        for _ in range(3):
+            sprite = frog_sprite(40, "idle")
+            lily_pad_sprite(40)
+        assert sprite.get_size() == (int(40 * 3.4), int(40 * 3.0))      # the drawn one
+        assert critter.painted_pip_active() is False
+        assert len([r for r in caplog.records if "Pip" in r.message or "[pip]" in r.message]) == 1
+        assert len([r for r in caplog.records if "pad" in r.message]) == 1
+        assert lily_pad_sprite(40).get_width() == int(40 * 4.6)
+    finally:
+        critter.set_pip_art("drawn")
+
+
+def test_unknown_mode_is_rejected():
+    with pytest.raises(ValueError):
+        critter.set_pip_art("watercolour")
+
+
+def test_painted_pad_goes_through_lily_pad_sprite_and_pad_reach_measures_it(painted_pip):
+    frog = settled()
+    pad = lily_pad_sprite(frog.r)
+    assert centre(pad) == PAD_COLOUR
+    assert pad.get_height() == int(frog.r * 1.40)
+    assert pad.get_width() == round(PAD_NATIVE[0] * pad.get_height() / PAD_NATIVE[1])
+    assert pad.get_width() != int(frog.r * 4.6)         # its own shape, not the drawn ellipse
+    reach = critter.pad_reach(frog.r)
+    assert reach == pytest.approx(pad.get_height() * (critter._PAD_SINK + 0.5)
+                                  + frog.r * critter._PAD_BOB)
+    assert frog.floor_y == pytest.approx(SIZE[1] - reach - frog._feet)
+    surf = pygame.Surface(SIZE)
+    frog.draw(surf)
+    assert tuple(surf.get_at((int(frog.pad.x) - pad.get_width() // 2 + 3,
+                              int(frog.pad.y))))[:3] == PAD_COLOUR
+
+
+def test_painted_pip_leaves_physics_and_floor_untouched(painted_pip):
+    painted = settled()
+    critter.set_pip_art("drawn")
+    drawn = settled()
+    assert (painted.r, painted.floor_y, painted.hop_impulse) == (
+        drawn.r, drawn.floor_y, drawn.hop_impulse)
+    assert (painted.x, painted.y) == pytest.approx((drawn.x, drawn.y))
+
+
+def test_cheer_during_the_party_dance_and_celebrations(painted_pip):
+    frog = settled()
+    assert frog.pose == "idle"
+    frog.dance(True)
+    assert frog.pose == "cheer"
+    frog.age = 3.9                                  # a blink never interrupts the cheer
+    assert frog.pose == "cheer"
+    frog.dance(False)
+    assert frog.pose == "blink"
+    frog.age = 100.0
+    frog.celebrate(2.0)
+    assert frog.pose == "cheer"
+    frog.age += 2.5
+    assert frog.pose == "idle"
+    surf = pygame.Surface(SIZE)
+    frog.dance(True)
+    frog.draw(surf)
+    top = frog.y + frog._feet - int(frog.r * 3.0)
+    assert tuple(surf.get_at((int(frog.x), int(top) + 20)))[:3] == PIP_COLOURS["cheer"]
+
+
+def test_drawn_pip_never_cheers_or_looks_around():
+    frog = settled()
+    frog.dance(True)
+    frog.look(1, 1)
+    assert frog.pose == "idle"
+    frog.age = 3.9
+    assert frog.pose == "blink"
+
+
+def test_pupils_are_two_discs_on_the_eyes_white_frame(painted_pip):
+    frog = settled()
+    frog.look(0.5, -0.5)
+    assert frog.pose == "eyes_white"
+    surf = pygame.Surface(SIZE)
+    frog.draw(surf)
+    sprite = frog_sprite(frog.r, "eyes_white")
+    rect = sprite.get_rect(midbottom=(int(frog.x), int(frog.y + frog._feet)))
+    travel = frog.r * critter._PUPIL_TRAVEL
+    dark = []
+    for fx in (0.33, 1 - 0.33):
+        spot = (round(rect.x + fx * rect.w + 0.5 * travel),
+                round(rect.y + 0.22 * rect.h - 0.5 * travel))
+        assert tuple(surf.get_at(spot))[:3] == critter.PUPIL
+        dark.append(spot)
+    assert dark[0][0] < frog.x < dark[1][0]             # one pupil per side of the face
+    frog.look(None)
+    assert frog.pose == "idle"
+    frog.look(9, -9)
+    assert frog.gaze == (1.0, -1.0)                     # clamped
