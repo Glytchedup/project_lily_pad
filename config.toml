@@ -57,11 +57,11 @@ reward_window = 10.0
 # key cues drop under it — loud music, soft typing. Both 0.0 .. 1.0.
 party_volume = 0.95
 party_duck = 0.25
-# Include packaged music in the reward playlist (no-op until built).
+# Include packaged music in the reward playlist.
 bundled_tracks = true
-# Preferred reward music: "folder_first", "bundled" or "generated" (no-op until built).
+# Preferred reward music: "folder_first", "bundled" or "generated".
 reward_source = "folder_first"
-# Time the fireflies and cheering Lily to beats when the reward track has a beat map.
+# Synchronize the keyboard, characters and fireflies to the reward track (120 BPM without a map).
 party_show = true
 
 [display]
@@ -113,15 +113,15 @@ pip_art = "painted"
 max_sprite_width = 0.60
 # Draw moving sprites over the trails.
 clean_sprites = true
-# Enable encounters between animals and Pip (no-op until built).
+# Enable encounters between animals and Pip.
 ecosystem = true
-# Show storybook cards during "encore", "attract", "both" or "off" (no-op until built).
+# Show storybook cards during "encore", "attract", "both" or "off".
 storybook = "both"
-# Effect artwork: "painted" or "glow" (no-op until built).
+# Effect artwork: "painted" or "glow".
 fx_style = "painted"
-# Collect animal portraits in the session album (no-op until built).
+# Collect animal portraits in the session album.
 album = true
-# Celebrate completing the alphabet with the Grand Parade (no-op until built).
+# Celebrate completing the alphabet with the Grand Parade.
 parade = true
 
 [scene]
@@ -156,5 +156,5 @@ mirror_animals = true
 # Key names follow Linux evdev naming without the KEY_ prefix.
 combo = ["LEFTSHIFT", "RIGHTSHIFT", "BACKSPACE"]
 hold_seconds = 5.0
-# Seconds to show the session summary on exit, 0 disables it (no-op until built).
+# Seconds to show the session summary after the parent escape combo, 0 disables it.
 summary_seconds = 8.0

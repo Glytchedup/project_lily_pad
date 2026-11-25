@@ -21,9 +21,10 @@ from .config import Config, load
 from .effects import animal_art, animals, critter
 from .effects.assets import asset_root
 from .effects.engine import ANIMAL_TYPES, EffectEngine
+from .effects.glow import set_fx_style
 from .effects.layout import layout_for
 from .input.base import KeyEvent
-from .input.mapper import KeyMapper
+from .input.mapper import KeyMapper, classify
 
 SEED = 42
 # Six taps/s stays below the rate-triggered mash wash, so heavy exercises
@@ -31,6 +32,7 @@ SEED = 42
 _SCRIPTS = {
     "heavy": (6, ("G", "O", "W", "C", "B", "SPACE", "5", "ENTER", "F7", "R", "RIGHT")),
     "party": (2, ("G", "ENTER", "D", "SPACE", "3", "F9")),
+    "parade": (0, ()),
     "idle": (0, ()),
 }
 
@@ -52,7 +54,29 @@ def _sprite_cache_bytes() -> int:
     return sum(s.get_bytesize() * s.get_width() * s.get_height() for s in sprites)
 
 
+def _parade_cache_bytes(parade):
+    """Temporary parade pixels, excluding poses borrowed from the resident cast."""
+    resident = set(animal_art._animal_cache.values()) | set(animal_art._flip_cache.values())
+    surfaces = {sprite.get_abs_parent() for sprite in parade._frames.values()}
+    return sum(s.get_pitch() * s.get_height() for s in surfaces - resident)
+
+
 def _peak_rss_bytes() -> int | None:
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [("size", wintypes.DWORD), ("page_faults", wintypes.DWORD),
+                        ("peak_working_set", ctypes.c_size_t), ("other", ctypes.c_size_t * 7)]
+
+        counters = ProcessMemoryCounters()
+        counters.size = ctypes.sizeof(counters)
+        process = ctypes.windll.kernel32.GetCurrentProcess
+        process.restype = wintypes.HANDLE
+        if ctypes.windll.psapi.GetProcessMemoryInfo(
+                wintypes.HANDLE(process()), ctypes.byref(counters), counters.size):
+            return counters.peak_working_set
     try:
         import psutil
     except ImportError:
@@ -101,6 +125,7 @@ def _measure(engine: EffectEngine, screen: pygame.Surface, scenario: str,
     next_tap = 0
     frame_starts, frame_ms, spawns = [], [], []
     min_scale = engine.ctx.scale
+    peak_parade_bytes = last_pose_count = 0
     replay_frames = math.ceil(seconds * fps)
     start = time.perf_counter()
 
@@ -125,6 +150,9 @@ def _measure(engine: EffectEngine, screen: pygame.Surface, scenario: str,
         now = frame / fps
         if scenario == "party" and frame == 0:
             engine.start_party(now)
+        if scenario == "parade" and frame == 0:
+            engine.letters_seen.update("ABCDEFGHIJKLMNOPQRSTUVWXY")
+            dispatch(classify("Z"))
         while replaying and keys and next_tap * fps <= frame * rate:
             key = keys[next_tap % len(keys)]
             engine.wake(now)
@@ -137,11 +165,18 @@ def _measure(engine: EffectEngine, screen: pygame.Surface, scenario: str,
             dispatch(action)
         engine.update(dt, now)
         engine.draw(screen)
+        if engine.album is not None:
+            engine.album.draw(screen)
         pygame.display.flip()
         cost = time.perf_counter() - began
         frame_starts.append(began - start)
         frame_ms.append(cost * 1000)
         engine.note_frame_time(cost)
+        parade = engine.parade or engine.trio
+        pose_count = len(parade._frames) if parade is not None else 0
+        if pose_count > last_pose_count:
+            peak_parade_bytes = max(peak_parade_bytes, _parade_cache_bytes(parade))
+        last_pose_count = pose_count
         if replaying:
             min_scale = min(min_scale, engine.ctx.scale)
         # Pacing (including any scheduler delay) never enters the work timer.
@@ -164,6 +199,7 @@ def _measure(engine: EffectEngine, screen: pygame.Surface, scenario: str,
         "frame_ms": percentiles, "animal_spawns": windows,
         "worst_spawn_frame_ms": max((w["worst_ms"] for w in windows), default=None),
         "sprite_cache_bytes": _sprite_cache_bytes(), "peak_rss_bytes": _peak_rss_bytes(),
+        "peak_additional_parade_sprite_bytes": peak_parade_bytes,
     }
 
 
@@ -206,16 +242,14 @@ def main(argv: list[str] | None = None) -> int:
         root = asset_root(kiosk=kiosk)
         animal_art.set_art_mode(cfg.effects.animal_art, root=root)
         critter.set_pip_art(cfg.effects.pip_art, root=root)
+        set_fx_style(cfg.effects.fx_style, root=root)
         animals.prewarm(h, screen_width=w, max_sprite_width=cfg.effects.max_sprite_width,
                        layout=layout_for(cfg.scene.world))
-        engine = EffectEngine((w, h), rng=random.Random(SEED),
-                              max_particles=cfg.effects.max_particles,
-                              fps=cfg.display.fps, idle_timeout=cfg.display.idle_timeout,
-                              sleep_timeout=cfg.display.sleep_timeout, trails=cfg.effects.trails,
-                              milestone_every=cfg.effects.milestone_every,
-                              clean_sprites=cfg.effects.clean_sprites, scene=cfg.scene,
-                              root=root, lily_seed=SEED, mirror_animals=cfg.lighting.mirror_animals)
-        report = _measure(engine, screen, args.scenario, args.seconds, cfg)
+        engine = EffectEngine.from_config((w, h), cfg, root=root, rng=random.Random(SEED), lily_seed=SEED)
+        try:
+            report = _measure(engine, screen, args.scenario, args.seconds, cfg)
+        finally:
+            engine.close()
         report["reflection_cache_bytes"] = engine.reflections.bytes_used
         report["config"] = str(config_path) if config_path else None
     finally:

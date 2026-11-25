@@ -1,0 +1,4 @@
+- Pip greets passing animals, ducks and rides. An arrow immediately returns control to the child. Three presses of the same letter open its narrated storybook page, and new sightings fill the sticker album.
+- Reward parties play a parent track, a bundled anthem or a generated tune according to the music settings. The keyboard, Pip, Lily and fireflies share the beat. Drop markers trigger fireworks, and every eighth bar can bring a trio across the pond.
+- Completing the alphabet starts the Grand Parade when the painted cast is available. Pip rides the brachiosaurus, the farm animals cheer, and a heart firework and fanfare close the procession.
+- The parent escape combo can show a timed session card. Watching a party counts toward play time and the longest streak. The app, capture tool and renderer benchmark now load the configured painted FX kit.

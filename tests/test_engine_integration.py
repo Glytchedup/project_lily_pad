@@ -2,12 +2,13 @@
 bubbles, ripples, milestones, and the new registry wiring."""
 
 import random
+import time
 from unittest.mock import Mock
 
 import pygame
 import pytest
 
-from lilypad.__main__ import PlaygroundAudio, _mirror_frame
+from lilypad.__main__ import PlaygroundAudio, PlaygroundLighting, _mirror_frame
 from lilypad.audio.engine import AudioEngine
 from lilypad.audio.tracks import BeatClock, BeatMap
 from lilypad.config import SceneConfig
@@ -462,6 +463,7 @@ def test_painted_peekaboo_cut_stays_below_the_viewport_through_both_jumps(pond_e
 
 def test_reward_track_samples_its_own_sidecar_and_clears_clock(tmp_path, monkeypatch):
     import json
+
     from test_audio_engine_voice import write_clip
 
     song = tmp_path / "music" / "song.wav"
@@ -505,3 +507,278 @@ def test_approved_painted_cycle_rates(gait, floater, hz):
     assert schedule(gait, .49 / hz, floater) == "idle"
     assert schedule(gait, .51 / hz, floater) == "step"
     assert schedule(gait, 1.1 / hz, floater) == "idle"
+
+
+@pytest.mark.parametrize("key", ["LEFT", "RIGHT", "UP", "DOWN"])
+def test_arrow_cancels_directed_elephant_ride_in_input_frame(key):
+    e = make_engine(ecosystem=True)
+    animal = animals.AnimalCrossing(e.ctx, "elephant")
+    animal.update(animal.DURATION / 2)
+    e.frog.x = animal.x
+    e.effects.append(animal)
+    e.update(0, now=0)
+    assert e.frog.riding and e.frog.x == animal.back_anchor()[0]
+    e.spawn(classify(key), now=.1)
+    assert not e.frog.riding
+    e.update(.016, now=.116)
+    assert not e.frog.riding
+
+
+def test_storybook_encore_is_pond_layer_and_party_clears_it(tmp_path):
+    from test_scenery import make_art as make_pond
+
+    from lilypad.effects.letters import GiantLetter
+
+    make_pond(tmp_path, count=1)
+    folder = tmp_path / "storybook"
+    folder.mkdir()
+    card = pygame.Surface((16, 9))
+    card.fill((83, 46, 59))
+    pygame.image.save(card, folder / "C.png")
+    (folder / "manifest.toml").write_text('schema=1\n[cards.C]\nfile="C.png"\nanimal="cow"')
+    e = make_engine(storybook="both", scene=SceneConfig(reflections=False, lily=False),
+                    root=tmp_path, trails=False)
+    book = e.storybook
+    shown = []
+    book.on_show.append(lambda *args: shown.append(args))
+    try:
+        for t in (0, .1, .2):
+            e.spawn(classify("C"), t)
+        limit = time.monotonic() + 2
+        while not book.showing and time.monotonic() < limit:
+            e.update(0, now=.2)
+            time.sleep(.001)
+        assert shown == [("C", "cow", "encore")]
+        screen = surf()
+        e.draw(screen)
+        e.update(.45, now=.65)
+        e.draw(screen)
+        assert e._scene.get_at((3, 3)) == card.get_at((0, 0))
+        glyphs = [a for a in e.effects if isinstance(a, GiantLetter)]
+        assert len(glyphs) == 3
+        for glyph in glyphs:
+            glyph.draw = Mock(wraps=glyph.draw)
+        e.draw(screen)
+        for glyph in glyphs:
+            glyph.draw.assert_called_once_with(screen)
+        e.start_party(1)
+        for t in (1.1, 1.2, 1.3):
+            e.spawn(classify("C"), t)
+            e.update(.1, now=t)
+        assert book.showing is None and e.pond._painted.card is None
+        assert len(shown) == 1
+    finally:
+        e.close()
+
+
+def test_alphabet_parade_replaces_old_party_and_fires_finale_once(monkeypatch):
+    from lilypad.effects.parade import GrandParade
+    from lilypad.effects.particles import Balloons, ParticleSystem
+
+    e = make_engine(parade=True)
+    # Only cast availability and sprite I/O are stubbed. The real procession,
+    # the mount deadline and finale advance on the engine's simulation clock.
+    monkeypatch.setattr(animals, "resolved_mode", lambda _: "painted")
+    monkeypatch.setattr("lilypad.effects.painted.aspect", lambda _: 1.3)
+    monkeypatch.setattr("lilypad.effects.painted.eye_at", lambda _: (.8, .3))
+    art = pygame.Surface((30, 24), pygame.SRCALPHA)
+    art.fill((180, 70, 30))
+    monkeypatch.setattr(animals, "animal_sprite_facing", lambda *a: art)
+    e.letters_seen.update("ABCDEFGHIJKLMNOPQRSTUVWXY")
+    e.spawn(classify("Z"), 0)
+    assert isinstance(e.parade, GrandParade) and not e.letters_seen
+    assert e.praise == "alphabet_complete" and not e.consume_celebration()
+    assert not any(isinstance(a, Balloons) for a in e.effects)
+    for i in range(300):
+        e.update(1 / 60, i / 60)
+        if e.frog.riding:
+            break
+    assert e.frog.riding and e.parade.pip_anchor() is not None
+    e.spawn(classify("LEFT"), 5)
+    for _ in range(5):
+        e.update(1 / 60, 5)
+        assert not e.frog.riding
+    e.update(22, now=25)
+    assert e.parade is None and isinstance(e.effects[-1], ParticleSystem)
+    assert e.consume_celebration() and not e.consume_celebration()
+
+
+def test_missing_parade_falls_back_to_old_alphabet_reward(monkeypatch):
+    from lilypad.effects.particles import Balloons
+    monkeypatch.setattr(animals, "resolved_mode", lambda _: "drawn")
+    e = make_engine(parade=True)
+    assert e._celebrate(True, 0)
+    assert e.parade is None and e.consume_celebration()
+    assert any(isinstance(effect, Balloons) for effect in e.effects)
+
+
+def test_party_lighting_and_drop_consume_the_current_clock_once():
+    from lilypad.lighting.mock import MockLightingBackend
+    from lilypad.lighting.show import PartyShow
+    e = make_engine(party_show=True)
+    lighting = PlaygroundLighting(MockLightingBackend(), e, mirror_animals=False)
+    clock = BeatClock(BeatMap(120, 0, (0, .5, 1), (0,), (.5,)))
+    e.start_party(0, clock)
+    assert e.show.beat_clock is e.frog._beat_clock is clock
+    clock.resync(550)
+    e.update(.01, .01)
+    count = len(e.effects)
+    e.update(.01, .02)
+    assert len(e.effects) == count and e._last_drop == 1
+    lighting.set_mash(True)
+    lighting.tick(.02)
+    assert lighting.backend.last_grid == PartyShow(clock).frame(.02)
+    lighting.key_pressed("A", .06)
+    lighting.tick(.06)
+    assert lighting.backend.last_grid != e.lighting_frame()
+    e.end_party(1)
+    assert e.show is None and e.lighting_frame() is None
+    e.start_party(2)
+    e.update(.25, 2.25)
+    assert e.beat_clock.beat_phase == pytest.approx(.5)
+
+
+@pytest.mark.parametrize("preference,folder,allow_bundled,chosen", [
+    ("folder_first", True, True, "parent"),
+    ("folder_first", False, True, "anthem"),
+    ("bundled", True, True, "anthem"),
+    ("bundled", True, False, "parent"),
+    ("folder_first", False, False, "generated"),
+    ("generated", True, True, "generated"),
+])
+def test_reward_resolves_playback_and_map_together(tmp_path, monkeypatch, preference,
+                                                   folder, allow_bundled, chosen):
+    import json
+
+    from test_audio_engine_voice import write_clip
+
+    from lilypad.audio.tunes import TUNE_NAMES
+
+    parent = tmp_path / "parent" / "mine.wav"
+    anthem = tmp_path / "music" / "anthem.wav"
+    generated = tmp_path / f"tune_{TUNE_NAMES[0]}.wav"
+    paths = {"parent": parent, "anthem": anthem, "generated": generated}
+    write_clip(anthem, 2)
+    write_clip(generated, 2)
+    if folder:
+        write_clip(parent, 2)
+    (anthem.parent / "manifest.toml").write_text('[tracks.a]\nfile="anthem.wav"')
+    anthem.with_suffix(".wav.beats.json").write_text(json.dumps(
+        {"bpm": 90, "offset": 0, "beats": [0, .666667], "downbeats": [0], "drops": []}))
+    monkeypatch.setattr("lilypad.audio.engine.asset_root", lambda **_: tmp_path)
+    audio = PlaygroundAudio(tmp_path, tunes="reward", autogen=False, bundled_tracks=allow_bundled,
+                            reward_source=preference, background_folder=parent.parent)
+    try:
+        load = Mock(wraps=pygame.mixer.music.load)
+        monkeypatch.setattr(pygame.mixer.music, "load", load)
+        audio._start_party(0)
+        audio.tick(3)
+        assert audio.party_active and (audio.beat_clock is not None) == (chosen == "anthem")
+        load.assert_called_once_with(str(paths[chosen]))
+    finally:
+        audio.close()
+
+
+def test_audio_clock_coasts_between_mixer_reads_and_corrects_each_bar(tmp_path, monkeypatch):
+    from test_audio_engine_voice import write_clip
+    song = tmp_path / "parent" / "song.wav"
+    write_clip(song, 2)
+    song.with_suffix(".wav.beats.json").write_text(
+        '{"bpm":120,"offset":0,"beats":[0,0.5],"downbeats":[0],"drops":[]}')
+    audio = PlaygroundAudio(tmp_path, tunes="reward", autogen=False, background_folder=song.parent)
+    position = Mock(side_effect=[20, 2050, -1])
+    monkeypatch.setattr(pygame.mixer.music, "get_pos", position)
+    monkeypatch.setattr(audio, "_music_playing", lambda: True)
+    try:
+        audio._start_party(0)
+        for i in range(241):
+            audio.tick(3 + i / 60)
+        assert position.call_count == 3
+        assert audio.beat_clock.bar == 2
+        assert 0 < audio.beat_clock.beat_phase < .2
+    finally:
+        audio.close()
+
+
+def test_trio_reserves_three_animal_slots_once_per_eight_bars(monkeypatch):
+    from lilypad.effects.engine import MAX_ANIMALS
+    from lilypad.effects.parade import GrandParade
+    e = make_engine(party_show=True)
+    clock = BeatClock()
+    trio = Mock()
+    create = Mock(return_value=trio)
+    monkeypatch.setattr(GrandParade, "create", create)
+    e.start_party(0, clock)
+    clock.resync(16_000)
+    for t in (16, 16.1, 16.2):
+        e.update(.1, now=t)
+    assert e.trio is trio and create.call_count == 1
+    assert create.call_args.kwargs["party_bar"] % 8 == 0
+    for letter in "GOWL":
+        e.spawn(classify(letter), 16.2)
+    assert e.animal_count() == MAX_ANIMALS
+    e.end_party(17)
+    assert e.trio is None and e.animal_count() == 2
+
+
+def test_storybook_sound_uses_matching_phrase_and_one_cue_per_show(tmp_path, monkeypatch):
+    audio = PlaygroundAudio(tmp_path, mute=True, key_notes=False)
+    now = [10.]
+    audio._narrator = Mock()
+    audio.voice_loader = Mock()
+    monkeypatch.setattr(audio, "_clock", lambda: now[0])
+    play, speak = Mock(), Mock(return_value=True)
+    monkeypatch.setattr(audio, "_play", play)
+    monkeypatch.setattr(audio, "_speak", speak)
+    audio.on_action(classify("C"))
+    audio.storybook_shown("C", "cow", "encore")
+    play.assert_called_once_with("moo", "boing")
+    audio._tick_narrator(now[0])
+    audio.voice_loader.get_packaged.assert_called_once_with("phrases", "C")
+    now[0] += 1
+    audio.storybook_shown("C", "cow", "attract")
+    assert play.call_count == 2
+
+
+def test_gaze_follows_newest_locatable_effect_only_at_supported_scale():
+    from lilypad.effects.particles import Rings
+
+    for enabled, scale, follows in ((True, .5, True), (True, .49, False), (False, 1, False)):
+        e = make_engine(ecosystem=enabled)
+        e.ctx.scale = scale
+        e.effects.extend((Rings(e.ctx, (10, 10)), Rings(e.ctx, (550, 80))))
+        e.update(0, now=0)
+        if follows:
+            assert e.frog.gaze[0] > 0 and e.frog.gaze[1] < 0
+        else:
+            assert e.frog.gaze is None
+
+
+def test_parade_moon_follows_the_plate_and_respects_cards_and_sky_dip(tmp_path):
+    from test_scenery import make_art
+
+    make_art(tmp_path, count=2)
+    centers = [(22, 9), (74, 13)]
+    for i, center in enumerate(centers):
+        plate = pygame.Surface((100, 50))
+        plate.fill((10, 18, 22))
+        pygame.draw.circle(plate, (150, 150, 150), center, 4)
+        pygame.image.save(plate, tmp_path / f"world/plate{i}.png")
+    e = EffectEngine((100, 50), root=tmp_path,
+                     scene=SceneConfig(mood_minutes=.25, reflections=False, lily=False))
+    e.parade = Mock()
+    e._moon_glow = e._parade_moon()
+    overlay = pygame.Surface(e.size)
+    e._draw_pond_extras(overlay)
+    assert overlay.get_at(centers[0]).r > 0
+    e.pond.set_card(pygame.Surface(e.size))
+    overlay.fill("black")
+    e._draw_pond_extras(overlay)
+    assert overlay.get_at(centers[0]).r == 0
+    e.pond.set_card(None)
+    e.pond.update(17)
+    e._draw_pond_extras(overlay)
+    assert overlay.get_at(centers[0]).r == 0
+    e.pond.update(2.1)
+    e._draw_pond_extras(overlay)
+    assert overlay.get_at(centers[0]).r == 0 < overlay.get_at(centers[1]).r

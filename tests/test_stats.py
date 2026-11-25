@@ -62,13 +62,24 @@ def test_animals_and_actions_both_tick_activity():
     assert s.time_played == 55
 
 
-def test_party_counts_but_never_bridges_a_gap():
+def test_party_duration_bridges_a_gap_without_double_counting_presses():
     s = PlayStats()
     s.on_action(letter("a"), 0)
+    s.on_party(10, 150)
+    s.on_action(letter("a"), 90)
+    s.on_action(letter("b"), 180)
+    s.on_party(300, 75)
+    assert s.parties == 2 and s.time_played == 255 and s.longest_streak == 180
+
+
+def test_streamed_party_counts_only_time_watched_even_when_exiting_mid_track():
+    s = PlayStats()
+    s.on_action(letter("b"), 5)
     s.on_party(10)
-    s.on_party(20)
-    s.on_action(letter("b"), 200)              # silence through a party still breaks the run
-    assert s.parties == 2 and s.time_played == 0 and s.longest_streak == 0
+    s.party_playing(120)
+    s.on_action(letter("a"), 120)
+    s.party_playing(130)
+    assert s.parties == 1 and s.time_played == s.longest_streak == 125
 
 
 def test_only_real_letter_keys_count_as_letters_found():

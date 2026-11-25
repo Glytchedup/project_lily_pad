@@ -17,8 +17,11 @@ import sys
 import time
 from pathlib import Path
 
-from .audio.engine import AudioEngine
-from .audio.tracks import BeatClock, load_beat_map
+from .audio.engine import PHRASE_WINDOW, AudioEngine
+from .effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES
+from .lighting.base import LightingEngine
+from .stats import PlayStats
+from .summary import run_summary
 
 log = logging.getLogger("lilypad")
 
@@ -29,18 +32,28 @@ class PlaygroundAudio(AudioEngine):
     """Connect the narrator's existing reward event and the actual playing track to the scene."""
 
     def __init__(self, *args, party_show=True, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, party_show=party_show, **kwargs)
         self._parties = self._alphabets = 0
         self._last_wow = float("-inf")
         self._wow_at = None
-        self.beat_clock = None
-        # Read sidecars before input starts, including those alongside a parent's playlist.
-        self._maps = {}
-        if party_show and self.tunes == "reward":
-            for path in self._playlist:
-                beatmap = load_beat_map(path)
-                if beatmap:
-                    self._maps[path] = beatmap
+        self._letter_cue = (None, float("-inf"))
+
+    def on_action(self, action):
+        super().on_action(action)
+        if action.kind == "letter":
+            self._letter_cue = (ANIMAL_LETTERS.get(action.letter.upper()), self._clock())
+
+    def storybook_shown(self, letter, animal, source):
+        now = self._clock()
+        if self.phrases and self._narrator is not None:
+            self._phrase_wanted = (letter, now + PHRASE_WINDOW)
+        # A prefetched encore often opens in the very input frame that
+        # sounded its animal. Layering a second copy would double its level.
+        last_animal, sounded = self._letter_cue
+        if source == "encore" and animal == last_animal and now - sounded < .1:
+            return
+        if cue := ANIMAL_VOICES.get(animal):
+            self._play(cue, "boing")
 
     def narrate(self, event, now=None):
         now = self._clock() if now is None else now
@@ -56,22 +69,8 @@ class PlaygroundAudio(AudioEngine):
                 event = "lily_all"
         return super().narrate(event, now)
 
-    def _party_track(self, now):
-        super()._party_track(now)
-        if self._maps:
-            path = (self._playlist[self._playlist_index] if self._playlist_from_folder
-                    else self._tune_path(self._tune_index))
-            beatmap = self._maps.get(path)
-            self.beat_clock = BeatClock(beatmap) if beatmap else None
-
     def tick(self, now):
         super().tick(now)
-        if self.beat_clock is not None:
-            if self.party_active:
-                import pygame
-                self.beat_clock.resync(pygame.mixer.music.get_pos())
-            else:
-                self.beat_clock = None
         if self._wow_at is not None:
             elapsed = now - self._wow_at
             if elapsed > 6 or not self.party_active:
@@ -79,6 +78,45 @@ class PlaygroundAudio(AudioEngine):
             elif elapsed >= 1.5 and self._praise_wanted is None:
                 super().narrate("lily_wow", now)
                 self._last_wow, self._wow_at = now, None
+
+
+class _SceneTracks(dict):
+    """Supply a background layer through the lighting compositor's track protocol.
+
+    Only animal entries occupy tracked slots. The compositor requests pixels
+    at its own frame rate, then paints animals, blooms and key feedback above.
+    """
+
+    def __init__(self, scene):
+        super().__init__()
+        self.scene = scene
+
+    def values(self):
+        if self.scene.show is not None or self.scene.parade is not None:
+            yield self
+        yield from super().values()
+
+    def pixels(self, now):
+        for r, row in enumerate(self.scene.lighting_frame()):
+            for c, colour in enumerate(row):
+                yield r, c, colour
+
+
+class PlaygroundLighting(LightingEngine):
+    def __init__(self, backend, scene, **kwargs):
+        super().__init__(backend, **kwargs)
+        self._tracks = _SceneTracks(scene)
+        self._mash_held = False
+
+    def set_mash(self, on):
+        self._mash_held = on
+
+    def tick(self, now):
+        # The standalone mash strobe bypasses all other layers. Keep the
+        # choreography and individual key flashes visible throughout the show.
+        scene = self._tracks.scene
+        super().set_mash(self._mash_held and scene.show is None and scene.parade is None)
+        super().tick(now)
 
 
 def _mirror_frame(engine, lighting, previous, now):
@@ -296,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     from .effects.engine import EffectEngine
     from .escape import EscapeHatch
     from .input.mapper import KeyMapper
-    from .lighting import LightingEngine, make_backend
+    from .lighting import make_backend
 
     cfg = load_config(_find_config(args.config))
 
@@ -323,15 +361,17 @@ def main(argv: list[str] | None = None) -> int:
     from .effects.animal_art import set_art_mode
     from .effects.animals import prewarm
     from .effects.assets import asset_root
+    from .effects.glow import set_fx_style
     from .effects.layout import layout_for
     root = asset_root(kiosk=kiosk)
     set_art_mode(cfg.effects.animal_art, root=root)
     critter.set_pip_art(cfg.effects.pip_art, root=root)
+    set_fx_style(cfg.effects.fx_style, root=root)
     prewarm(size[1], screen_width=size[0], max_sprite_width=cfg.effects.max_sprite_width,
             layout=layout_for(cfg.scene.world))
 
     # Input backend
-    if args.smoke:
+    if args.smoke is not None:
         from .input.synthetic import SyntheticInputBackend
         input_backend = SyntheticInputBackend(duration=args.smoke)
     elif kiosk:
@@ -344,7 +384,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Lighting: kiosk defaults to config/auto; dev defaults to mock
     lighting_pref = args.lighting or (cfg.lighting.backend if kiosk else "mock")
-    lighting = LightingEngine(make_backend(lighting_pref),
+    engine = EffectEngine.from_config(size, cfg, root=root, lily_seed=42 if args.smoke else None)
+    lighting = PlaygroundLighting(make_backend(lighting_pref), engine,
                               fps=cfg.lighting.fps,
                               brightness=cfg.lighting.brightness,
                               mirror_animals=cfg.lighting.mirror_animals)
@@ -363,27 +404,35 @@ def main(argv: list[str] | None = None) -> int:
                         reward_seconds=cfg.music.reward_seconds,
                         reward_presses=cfg.music.reward_presses,
                         reward_window=cfg.music.reward_window,
+                        bundled_tracks=cfg.music.bundled_tracks, reward_source=cfg.music.reward_source,
                         party_volume=cfg.music.party_volume,
                         party_duck=cfg.music.party_duck)
 
     mapper = KeyMapper(chord_window=cfg.effects.chord_window)
     escape = EscapeHatch(combo=cfg.escape.combo,
                          hold_seconds=cfg.escape.hold_seconds)
-    engine = EffectEngine(size,
-                          max_particles=cfg.effects.max_particles,
-                          idle_timeout=cfg.display.idle_timeout,
-                          fps=cfg.display.fps,
-                          trails=cfg.effects.trails,
-                          milestone_every=cfg.effects.milestone_every,
-                          sleep_timeout=cfg.display.sleep_timeout,
-                          clean_sprites=cfg.effects.clean_sprites,
-                          scene=cfg.scene, root=root, lily_seed=42 if args.smoke else None,
-                          mirror_animals=cfg.lighting.mirror_animals)
+    stats = PlayStats()
+    engine.on_animal = stats.on_animal
+    if engine.storybook is not None:
+        engine.storybook.on_show.append(audio.storybook_shown)
 
     clock = pygame.time.Clock()
     tracked = set()
     running = True
+    escaped = False
     exit_code = 0
+
+    def handle(action, now):
+        stats.on_action(action, now)
+        audio.on_action(action)
+        engine.spawn(action, now)
+        if engine.praise:
+            audio.narrate(engine.praise, now)
+            engine.praise = None
+        if action.kind == "mash_start":
+            lighting.set_mash(True)
+        elif action.kind == "mash_end":
+            lighting.set_mash(False)
 
     try:
         while running and not _stop_requested:
@@ -393,6 +442,8 @@ def main(argv: list[str] | None = None) -> int:
             # count against the frame budget or degradation can never recover.
             frame_start = time.perf_counter()
             now = time.monotonic()
+            if engine.party:
+                stats.party_playing(now)
 
             events = input_backend.poll()
             if getattr(input_backend, "quit_requested", False):
@@ -406,17 +457,6 @@ def main(argv: list[str] | None = None) -> int:
                     if ev.type == pygame.QUIT:
                         running = False
 
-            def handle(action):
-                engine.spawn(action, now)
-                audio.on_action(action)
-                if engine.praise:
-                    audio.narrate(engine.praise, now)
-                    engine.praise = None
-                if action.kind == "mash_start":
-                    lighting.set_mash(True)
-                elif action.kind == "mash_end":
-                    lighting.set_mash(False)
-
             for ev in events:
                 if ev.pressed:
                     # Wake on the raw event, before the mapper decides whether
@@ -426,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
                     engine.attract_key(ev.name)
                     lighting.key_pressed(ev.name, now)
                 for action in mapper.feed(ev):
-                    handle(action)
+                    handle(action, now)
                 if ev.pressed:
                     if woke:
                         audio.narrate("lily_hi", now)
@@ -434,28 +474,32 @@ def main(argv: list[str] | None = None) -> int:
             # Time-based: keys held past the threshold become rainbow comets,
             # and rate-triggered mash mode exits once tapping slows.
             for action in mapper.poll_holds(now):
-                handle(action)
+                handle(action, now)
             if engine.consume_celebration():
                 audio.on_celebration()
-
-            if escape.update(input_backend.held_keys(), now):
+            if running and escape.update(input_backend.held_keys(), now):
                 log.info("parent escape combo held — exiting cleanly")
-                running = False
+                escaped = True
+                break
 
-            engine.update(dt, now)
-            # Background tunes are the soundtrack to an empty room: attract
-            # mode fades them in, the next keypress fades them straight out.
-            audio.set_idle(engine.attract is not None)
+            if not cfg.music.party_show:
+                # Preserve the classic fanfare's first frame and its RNG order.
+                engine.update(dt, now)
+                audio.set_idle(engine.attract is not None)
             audio.tick(now)
             # The audio engine owns the reward meter (it owns the music), so
             # it says when the party starts; the effect engine says what a
             # party looks like. The party ends when the track does.
             if audio.consume_party_started():
+                stats.on_party(now)
                 engine.start_party(now, audio.beat_clock)
             elif engine.party and not audio.party_active:
                 engine.end_party(now)
-            elif engine.party and engine.beat_clock is not audio.beat_clock:
+            elif engine.party and audio.beat_clock is not None and engine.beat_clock is not audio.beat_clock:
                 engine.set_party_clock(audio.beat_clock)
+            if cfg.music.party_show:
+                engine.update(dt, now)
+                audio.set_idle(engine.attract is not None)
             # Dark screen, dark keyboard.
             lighting.set_sleep(engine.asleep)
             engine.draw(screen)
@@ -463,12 +507,25 @@ def main(argv: list[str] | None = None) -> int:
             # a sleeping screen — the whole point of sleep is a dark room.
             if not engine.asleep:
                 _draw_party_meter(screen, audio.reward_progress)
+                if engine.album is not None:
+                    engine.album.draw(screen)
             _draw_escape_cue(screen, escape.hold_progress(now))
             pygame.display.flip()
             if cfg.lighting.mirror_animals:
                 tracked = _mirror_frame(engine, lighting, tracked, now)
             lighting.tick(now)
             engine.note_frame_time(time.perf_counter() - frame_start)
+        if escaped and args.smoke is None and cfg.escape.summary_seconds > 0 and not _stop_requested:
+            try:
+                def summary_poll():
+                    input_backend.poll()
+                    quit_event = kiosk and any(ev.type == pygame.QUIT for ev in pygame.event.get())
+                    return bool(_stop_requested or quit_event or getattr(input_backend, "quit_requested", False))
+
+                run_summary(screen, stats, time.monotonic() + cfg.escape.summary_seconds,
+                            summary_poll, root=root)
+            except Exception:
+                log.exception("summary failed; exiting")
     except KeyboardInterrupt:
         log.info("interrupted")
     except Exception:
@@ -478,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
         input_backend.stop()
         lighting.close()
         audio.close()
+        engine.close()
         pygame.quit()
     return exit_code
 

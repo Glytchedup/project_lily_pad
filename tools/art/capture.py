@@ -121,17 +121,32 @@ def cast_sheet(pygame, names, out):
 
 
 def scene(pygame, surface, cfg, scenario, pond, out):
-    from lilypad.effects import animals
     from lilypad.effects.engine import EffectEngine
-    from lilypad.input.mapper import Action
     size = surface.get_size()
     extra = {}
     if "clean_sprites" in inspect.signature(EffectEngine).parameters:
         extra["clean_sprites"] = cfg.effects.clean_sprites
-    eng = EffectEngine(size, rng=random.Random(SEED), fps=cfg.display.fps,
-                       trails=True if scenario == "fireworks" else cfg.effects.trails,
-                       max_particles=cfg.effects.max_particles, milestone_every=cfg.effects.milestone_every,
-                       sleep_timeout=cfg.display.sleep_timeout, idle_timeout=cfg.display.idle_timeout, **extra)
+    if hasattr(EffectEngine, "from_config") and pond is None:
+        from lilypad.effects.assets import asset_root
+        eng = EffectEngine.from_config(size, cfg, rng=random.Random(SEED), lily_seed=SEED,
+                                       root=asset_root(kiosk=False))
+        if scenario == "fireworks":
+            eng.trails = eng._trails_live = True
+    else:
+        eng = EffectEngine(size, rng=random.Random(SEED), fps=cfg.display.fps,
+                           trails=True if scenario == "fireworks" else cfg.effects.trails,
+                           max_particles=cfg.effects.max_particles, milestone_every=cfg.effects.milestone_every,
+                           sleep_timeout=cfg.display.sleep_timeout, idle_timeout=cfg.display.idle_timeout, **extra)
+    try:
+        _scene_frames(pygame, surface, eng, scenario, pond, out)
+    finally:
+        if hasattr(eng, "close"):
+            eng.close()
+
+
+def _scene_frames(pygame, surface, eng, scenario, pond, out):
+    from lilypad.effects import animals
+    from lilypad.input.mapper import Action
     eng.wake(0.)
     if pond is not None:
         eng.pond = pond
@@ -169,6 +184,8 @@ def scene(pygame, surface, cfg, scenario, pond, out):
     for tick in range(1, max(captures)+1):
         eng.update(1/FPS, tick/FPS)
         eng.draw(surface)
+        if getattr(eng, "album", None) is not None:
+            eng.album.draw(surface)
         if tick in captures:
             pygame.image.save(surface, out / (captures[tick]+".png"))
 
@@ -200,8 +217,12 @@ def run(args):
         surface = pygame.display.set_mode(size)
         args.out.mkdir(parents=True, exist_ok=True)
         if hasattr(critter, "set_pip_art"):
+            from lilypad.effects import glow
             from lilypad.effects.assets import asset_root
-            critter.set_pip_art(cfg.effects.pip_art, root=asset_root(kiosk=False))
+            root = asset_root(kiosk=False)
+            critter.set_pip_art(cfg.effects.pip_art, root=root)
+            if hasattr(glow, "set_fx_style"):
+                glow.set_fx_style(cfg.effects.fx_style, root=root)
         if args.pip_override:
             pip_source(pygame, args.pip_override)
         if args.pip or args.all:

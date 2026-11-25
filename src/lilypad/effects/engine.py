@@ -13,24 +13,30 @@ from pathlib import Path
 
 import pygame
 
-from ..config import SceneConfig
+from ..audio.tracks import BeatClock
+from ..config import Config, SceneConfig
 from ..input.mapper import Action
 from ..lighting.keymap import COLS, ROWS, position
+from ..lighting.show import PartyShow, parade_chase
 from . import animals, critter, painted
+from .album import create_album
 from .ambient import AttractMode, CelebrationPulse, ChaosOverlay
 from .animals import AnimalCrossing, PeekabooAnimal
 from .base import Effect, EffectContext
 from .bubbles import BubbleField
 from .comet import Comet
 from .critter import Frog
+from .ecosystem import AnimalView, Director
 from .letters import GiantLetter
 from .layout import CLASSIC, layout_for
 from .lily import load_lily
 from .numbers import CountAlong
-from .particles import Fireworks, Rings, burst
+from .parade import GrandParade
+from .particles import Balloons, Fireworks, ParticleSystem, Rings, SpiralBurst, burst, shaped_burst
 from .reflection import ReflectionCache
 from .registry import celebration, effects_for
 from .scenery import PondBackground
+from .storybook import Storybook
 
 BACKGROUND = (6, 8, 12)  # near-black; pure black feels "off", this glows
 
@@ -66,7 +72,7 @@ _CLEAN_PASSES = (
     ("fx", ("backdrop", "particles", "comets", "bubbles", "rings", "attract")),
     ("screen", ("present",)),
     ("screen", ("reflections", "lily", "flyers", "ground", "swimmers", "lip",
-                "frog", "peekaboo", "glyphs")),
+                "frog", "peekaboo", "glyphs", "parade", "rider")),
     ("screen", ("pulses", "chaos")),
 )
 _CROSSING_LAYERS = {"fly": "flyers", "swim": "swimmers"}
@@ -85,6 +91,35 @@ def _layer(effect: Effect) -> str:
     return "particles"
 
 
+def _gaze_position(effect):
+    if isinstance(effect, AnimalCrossing):
+        return effect.x, effect.y if effect.airborne else effect.y - effect.height / 2
+    if isinstance(effect, PeekabooAnimal):
+        return effect.x, effect.y - effect.jump + effect.height / 2
+    if isinstance(effect, Comet):
+        return effect.x, effect.y
+    if isinstance(effect, CountAlong):
+        return effect.digit.pos
+    if isinstance(effect, Fireworks):
+        rocket = next((r for r in effect.rockets if not r.exploded), None)
+        if rocket is not None:
+            return rocket.x, rocket.y
+        return effect.bursts[-1].origin if effect.bursts else None
+    elif isinstance(effect, ParticleSystem):
+        points = effect.particles
+    elif isinstance(effect, BubbleField):
+        points = effect.bubbles
+    elif isinstance(effect, Balloons):
+        points = effect.parts
+    elif isinstance(effect, SpiralBurst):
+        points = effect.sys.particles
+    else:
+        return getattr(effect, "pos", None)
+    if points:
+        return points[0].x, points[0].y
+    return None
+
+
 def _foot_margin(row: dict, idle: pygame.Surface) -> int:
     """Pixels below the registered foot. Old manifests put 1.0 at the canvas edge."""
     h = idle.get_height()
@@ -99,13 +134,27 @@ def _foot_margin(row: dict, idle: pygame.Surface) -> int:
 
 
 class EffectEngine:
+    @classmethod
+    def from_config(cls, size, cfg: Config, *, root, rng=None, lily_seed=None):
+        """Use the same scene and feature switches in the app, benchmark and captures."""
+        fx = cfg.effects
+        return cls(size, rng=rng, root=root, lily_seed=lily_seed, scene=cfg.scene,
+                   max_particles=fx.max_particles, trails=fx.trails, clean_sprites=fx.clean_sprites,
+                   milestone_every=fx.milestone_every, fps=cfg.display.fps,
+                   idle_timeout=cfg.display.idle_timeout, sleep_timeout=cfg.display.sleep_timeout,
+                   mirror_animals=cfg.lighting.mirror_animals, ecosystem=fx.ecosystem,
+                   storybook=fx.storybook, parade=fx.parade, album=fx.album,
+                   party_show=cfg.music.party_show)
+
     def __init__(self, size: tuple[int, int], max_particles: int = 900,
                  idle_timeout: float = 60.0, fps: int = 60,
                  rng: random.Random | None = None,
                  trails: bool = True, milestone_every: int = 50,
                  sleep_timeout: float = 300.0, clean_sprites: bool = False,
                  *, scene: SceneConfig | None = None, root: Path | None = None,
-                 lily_seed: int | None = None, mirror_animals: bool = False) -> None:
+                 lily_seed: int | None = None, mirror_animals: bool = False,
+                 ecosystem: bool = False, storybook: str = "off", parade: bool = False,
+                 party_show: bool = False, album: bool = False) -> None:
         self.size = size
         self.max_particles = max_particles
         self.idle_timeout = idle_timeout
@@ -130,6 +179,23 @@ class EffectEngine:
             if self.lily is not None:
                 self._register_lily_feet()
         self.beat_clock = None
+        self.director = Director(self.ctx) if ecosystem else None
+        self.storybook = Storybook(size, storybook, pond=self.pond, root=root) if storybook != "off" else None
+        self.album = create_album(album, size, root)
+        if self.album is not None:
+            self.album.prewarm(animals.animal_names())
+        self.on_animal = None
+        self.parade_enabled = parade
+        self.parade = self.trio = None
+        self._parade_boarded = False
+        self._parade_finale = False
+        self._moon_glow = None
+        self._rider_sprite = None
+        self.party_show_enabled = party_show
+        self.show = None
+        self._free_clock = None
+        self._party_elapsed = 0.0
+        self._last_drop = self._last_trio_bar = -1
         self.reflections = ReflectionCache(bool(self.painted and scene.reflections))
         self._foot_margins = {}
         if scene is not None:
@@ -235,6 +301,8 @@ class EffectEngine:
 
         if action.kind in _PRESS_KINDS:
             self._note_press(action, now)
+        elif action.kind == "chord" and self.storybook is not None:
+            self.storybook.press(None, now, party_active=self.party)
 
         if action.kind == "arrow":
             self.frog.shove(action.direction)
@@ -281,6 +349,10 @@ class EffectEngine:
                 spawned = [e for e in spawned if not isinstance(e, ANIMAL_TYPES)]
             for effect in spawned:
                 if isinstance(effect, ANIMAL_TYPES):
+                    if self.album is not None:
+                        self.album.note_animal(effect.name, (effect.x, effect.y))
+                    if self.on_animal is not None:
+                        self.on_animal(effect.name, now)
                     if self.lily:
                         self.lily.on_animal_start()
                     if isinstance(effect, PeekabooAnimal) and effect.name in self._foot_margins:
@@ -331,13 +403,20 @@ class EffectEngine:
         """
         now = time.monotonic() if now is None else now
         self.party = True
+        self._party_elapsed = 0.0
+        self._last_drop = self._last_trio_bar = -1
+        if self.party_show_enabled:
+            self._free_clock = BeatClock()
+            self.show = PartyShow()
+        if self.storybook is not None:
+            self.storybook.clear()
+            self.storybook.press(None, now)
         self.wake(now)
         self.attract = None
         self._last_celebration = now
         self.effects.extend(celebration(self.ctx, big=True))
         if not self.painted:
             self.effects.append(CelebrationPulse(self.ctx, duration=PARTY_PULSE))
-        self.frog.dance(True)
         self.set_party_clock(beat_clock)
         self._celebration_pending = True
 
@@ -352,18 +431,25 @@ class EffectEngine:
         """
         self.party = False
         self.last_action_time = now
-        self.frog.dance(False)
+        self.show = self.trio = self._free_clock = None
         self.set_party_clock(None)
 
     def set_party_clock(self, clock) -> None:
-        self.beat_clock = clock
+        self.beat_clock = clock or self._free_clock
+        if self.show is not None:
+            self.show.beat_clock = self.beat_clock
+            self._last_drop = self._last_trio_bar = -1
+        self.frog.dance(self.party, beat_clock=self.beat_clock)
         if self.lily:
-            self.lily.set_party(self.party, clock)
+            self.lily.set_party(self.party, self.beat_clock)
 
     def _note_press(self, action: Action, now: float) -> None:
         """Milestone bookkeeping: every Nth press parties, and completing the
         alphabet parties harder (VISUAL_REVIEW.md #10)."""
         self.press_count += 1
+        if self.storybook is not None:
+            key = action.letter if action.kind == "letter" and not self.party else None
+            self.storybook.press(key, now, party_active=self.party)
         if action.kind == "letter" and action.letter in ALPHABET:
             self.letters_seen.add(action.letter)
             if self.letters_seen >= ALPHABET:
@@ -397,6 +483,25 @@ class EffectEngine:
                 # next affordable milestone should party at full strength.
                 return False
         self._last_celebration = now
+        if big and self.parade_enabled:
+            parade = GrandParade.create(self.ctx, layout=self.layout, frog=self.frog,
+                                        on_finish=self._finish_parade)
+            if parade is not None:
+                self.trio = None
+                self.parade = parade
+                self._parade_boarded = False
+                self.frog.cancel_ride()
+                self._moon_glow = self._parade_moon()
+                # The procession is on the far bank. Match J22's rider scale
+                # and register the visible soles directly on the moving head.
+                rider = critter.frog_sprite(self.frog.r, "cheer")
+                height = max(1, round(self.ctx.height * .095))
+                rider = pygame.transform.smoothscale_by(rider, height / rider.get_height())
+                self._rider_sprite = rider.subsurface(rider.get_bounding_rect())
+                if self.lily:
+                    self.lily.cheer(parade.duration)
+                self.praise = "alphabet_complete"
+                return True
         self.effects.extend(celebration(self.ctx, big=big))
         if not self.painted:
             self.effects.append(CelebrationPulse(self.ctx, duration=2.5))
@@ -407,6 +512,55 @@ class EffectEngine:
         self._celebration_pending = True
         return True
 
+    def _parade_moon(self):
+        # Plates have different moon positions. Locate the brightest patch of
+        # sky once when the parade starts, without scanning display-size pixels.
+        if self.painted:
+            plate = self.pond._painted.current.plate
+            sky = plate.subsurface((0, 0, plate.get_width(), max(1, plate.get_height() // 2)))
+            sample = pygame.transform.smoothscale(sky, (48, 16))
+            x, y = max(((x, y) for y in range(16) for x in range(48)),
+                       key=lambda xy: sum(sample.get_at(xy)[:3]))
+            center = (round((x + .5) * sky.get_width() / 48),
+                      round((y + .5) * sky.get_height() / 16))
+        else:
+            plate = self.pond._variants[self.pond._index]
+            center = self.pond._sky["moon"][:2]
+        radius = max(8, round(self.ctx.height * .09))
+        rect = pygame.Rect(0, 0, 2 * radius, 2 * radius)
+        rect.center = center
+        rect = rect.clip(plate.get_rect())
+        # Add back only the already-bright paint, preserving the crescent's
+        # exact outline and keeping the surrounding night sky dark.
+        glow = plate.subsurface(rect).copy()
+        glow.fill((60, 60, 60), special_flags=pygame.BLEND_RGB_SUB)
+        glow.fill((130, 130, 120), special_flags=pygame.BLEND_RGB_MULT)
+        return id(plate), glow, rect
+
+    def _finish_parade(self):
+        self._parade_finale = True
+
+    def _draw_rider(self, screen):
+        anchor = self.parade.pip_anchor()
+        if anchor is not None:
+            screen.blit(self._rider_sprite, self._rider_sprite.get_rect(midbottom=anchor))
+
+    def _riding_in_parade(self):
+        return self.parade is not None and self.frog._anchor == self.parade.pip_anchor
+
+    def lighting_frame(self):
+        """Choreography below the normal key flashes, ripples and animal coats."""
+        procession = self.parade or self.trio
+        lead = procession.lead_x_frac() if procession is not None else None
+        if self.show is not None:
+            if self.beat_clock.is_drop:
+                lead = None  # a drop lights even a keyboard following a trio
+            return self.show.frame(self._party_elapsed, lead_x_frac=lead)
+        if self.parade is not None:
+            t = self.parade.age
+            return parade_chase(t, (2 * t) % 1, int(t / 2), False, x_frac=lead)
+        return None
+
     def consume_celebration(self) -> bool:
         """Main loop polls this to fire the celebration audio cue."""
         pending, self._celebration_pending = self._celebration_pending, False
@@ -415,7 +569,8 @@ class EffectEngine:
     # ------------------------------------------------------------------ frame
 
     def animal_count(self) -> int:
-        return sum(1 for e in self.effects if isinstance(e, ANIMAL_TYPES))
+        return (3 if self.trio is not None else 0) + sum(
+            1 for e in self.effects if isinstance(e, ANIMAL_TYPES))
 
     def particle_count(self) -> int:
         # The engine-owned mash overlay deliberately does NOT count here:
@@ -444,6 +599,10 @@ class EffectEngine:
         log.info("screen asleep after %.0fs with no keypresses — any key wakes it",
                  self.sleep_timeout)
         self.asleep = True
+        if self.storybook is not None:
+            self.storybook.clear()
+            self.storybook.press(None, self.last_action_time)
+        self.parade = self.trio = self._moon_glow = self._rider_sprite = None
         if self.lily:
             self.lily.sleep()
         self.blooms.clear()
@@ -452,6 +611,56 @@ class EffectEngine:
         self.chaos = None
         self.effects.clear()
         self.comets.clear()
+
+    def close(self):
+        if self.storybook is not None:
+            self.storybook.close()
+
+    def _update_show(self, dt):
+        self._party_elapsed += dt
+        clock = self.beat_clock
+        if clock is self._free_clock:
+            clock.advance(dt)
+        if clock.is_drop and clock.beat_index > self._last_drop:
+            self._last_drop = clock.beat_index
+            self.effects.append(shaped_burst(self.ctx, self.ctx.random_pos(.25), "star"))
+        bar = clock.bar
+        if bar > 0 and bar % 8 == 0 and bar > self._last_trio_bar:
+            self._last_trio_bar = bar
+            if self.parade is None and self.animal_count() <= MAX_ANIMALS - 3:
+                # J22 indexes trios by groups of eight bars. Randomize the
+                # group on each eligible downbeat, keeping its three gaits.
+                group = self.ctx.rng.randrange(1, 27)
+                self.trio = GrandParade.create(self.ctx, layout=self.layout, party_bar=group * 8)
+
+    def _encounters(self, dt):
+        live = {id(e): e for e in self.effects if isinstance(e, AnimalCrossing)}
+        views = (AnimalView.from_crossing(a) for a in live.values())
+        for intent in self.director.tick(dt, views, self.frog):
+            animal = live[intent.animal_id]
+            if intent.kind == "greet":
+                for partner in (animal, live[intent.other_id]):
+                    partner.pause(AnimalCrossing.GREET_DURATION)
+                    partner.greet_bounce()
+            elif intent.kind == "pip_duck":
+                self.frog.duck((animal.width + 2 * self.frog.r) / animal.speed)
+            elif intent.kind == "pip_jump":
+                self.frog.jump_over()
+            elif intent.kind == "pip_wave":
+                self.frog.wave()
+            elif intent.kind == "pip_ride":
+                def anchor(a=animal):
+                    if a in self.effects:
+                        return a.back_anchor(ground_margin=self._foot_margins.get(a.name))
+                    return None
+                direction = -1 if animal.going_left else 1
+                to_middle = (self.ctx.width / 2 - animal.x) * direction / animal.speed
+                self.frog.ride(anchor, self.frog.age + max(.6, to_middle))
+        for effect in reversed(self.effects):
+            pos = _gaze_position(effect)
+            if pos is not None:
+                self.frog.look_at(*pos)
+                break
 
     def update(self, dt: float, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -463,6 +672,25 @@ class EffectEngine:
             self._fall_asleep()
             return
         self.pond.update(dt)
+        if self.show is not None:
+            self._update_show(dt)
+        # Filter expired crossings before the Director or a mount samples
+        # them. The original update order remains intact in classic mode.
+        encounters = self.director is not None and self.ctx.scale >= .5
+        if encounters:
+            self.effects = [e for e in self.effects if not isinstance(e, AnimalCrossing) or e.update(dt)]
+            self._encounters(dt)
+        if self.trio is not None and not self.trio.update(dt):
+            self.trio = None
+        if self.parade is not None:
+            if not self.parade.update(dt):
+                self.parade = self._moon_glow = self._rider_sprite = None
+            elif not self._parade_boarded:
+                anchor = self.parade.pip_anchor()
+                if anchor is not None and self.frog.r <= anchor[0] <= self.ctx.width - self.frog.r:
+                    self.frog.cancel_ride()
+                    self.frog.ride(self.parade.pip_anchor, self.frog.age + 8.)
+                    self._parade_boarded = True
         if self.lily:
             self.lily.update(dt)
         self.frog.update(dt)
@@ -489,7 +717,13 @@ class EffectEngine:
         if self.mirror_animals:
             rockets = [r for effect in self.effects if isinstance(effect, Fireworks)
                        for r in effect.rockets if not r.exploded]
-        self.effects = [e for e in self.effects if e.update(dt)]
+        self.effects = [e for e in self.effects
+                        if (encounters and isinstance(e, AnimalCrossing)) or e.update(dt)]
+        if self._parade_finale:
+            self._parade_finale = False
+            self.effects.append(shaped_burst(self.ctx, (self.ctx.width / 2, self.ctx.height * .35),
+                                             "heart", count=110, spread=300))
+            self._celebration_pending = True
         if self.mirror_animals:
             self.blooms = [(r.x / self.ctx.width, r.y / self.ctx.height, r.color)
                            for r in rockets if r.exploded]
@@ -516,11 +750,16 @@ class EffectEngine:
         # means the child is actively pressing — that's not "idle" even
         # though no new actions arrive.
         if (self.attract is None and self.chaos is None and not self.comets
-                and not self.party
+                and not self.party and self.parade is None
                 and now - self.last_action_time >= self.idle_timeout):
             self.attract = AttractMode(self.ctx)
         if self.attract is not None:
             self.attract.update(dt)
+        if self.storybook is not None:
+            self.storybook.update(dt, party_active=self.party, attract_active=self.attract is not None)
+        if self.album is not None:
+            self.album.set_attract(self.attract is not None)
+            self.album.update(dt)
 
     def draw(self, surface: pygame.Surface) -> None:
         if self.asleep:
@@ -549,6 +788,7 @@ class EffectEngine:
 
         self._fx = None
         self.pond.draw(self._scene)
+        self._draw_pond_extras(self._scene)
         if trails_live and self.chaos is None:
             self._draw_veil(surface)
         else:
@@ -567,7 +807,12 @@ class EffectEngine:
                 self._draw_ground(effect, surface)
             else:
                 effect.draw(surface)
-        self.frog.draw(surface)
+        rider = self._riding_in_parade()
+        (self.frog.pad.draw if rider else self.frog.draw)(surface)
+        if procession := self.parade or self.trio:
+            procession.draw(surface)
+        if rider:
+            self._draw_rider(surface)
         for pulse in pulses:
             pulse.draw(surface)
         if self.chaos is not None:
@@ -640,6 +885,20 @@ class EffectEngine:
                 target.blit(glow, glow.get_rect(center=(int(x) + dx, int(y))),
                             special_flags=pygame.BLEND_ADD)
 
+    def _draw_pond_extras(self, target):
+        if self.parade is not None and self._moon_glow is not None:
+            world = self.pond._painted
+            # During the sky dip or a storybook page, the normal moon can
+            # be completely hidden. Never stamp it back onto that sky.
+            if world is None or (world.card is None and world.elapsed <= world.period):
+                if world is not None and id(world.current.plate) != self._moon_glow[0]:
+                    self._moon_glow = self._parade_moon()
+                _, image, rect = self._moon_glow
+                dest = rect.move(world.shake_x, 0) if world is not None and world.shake_x else rect
+                target.blit(image, dest, special_flags=pygame.BLEND_RGB_ADD)
+        if self.storybook is not None:
+            self.storybook.draw(target)
+
     def _draw_clean(self, screen: pygame.Surface, trails_live: bool) -> None:
         backdrop = self._draw_veil if trails_live and self.chaos is None else self._draw_opaque_scene
         buffered = self.clean_sprites and trails_live
@@ -654,6 +913,7 @@ class EffectEngine:
         painters["pond"].append(self.pond.draw)
         if self.painted and self.party and self.beat_clock is not None:
             painters["pond"].append(self._draw_beat)
+        painters["pond"].append(self._draw_pond_extras)
         painters["backdrop"].append(backdrop)
         if buffered:
             painters["present"].append(self._present_fx)
@@ -661,7 +921,12 @@ class EffectEngine:
             painters["reflections"].append(self._draw_reflections)
         if self.lily:
             painters["lily"].append(self.lily.draw)
-        painters["frog"].append(self.frog.draw)  # draws its pad first
+        rider = self._riding_in_parade()
+        painters["frog"].append(self.frog.pad.draw if rider else self.frog.draw)
+        if rider:
+            painters["rider"].append(self._draw_rider)
+        if procession := self.parade or self.trio:
+            painters["parade"].append(procession.draw)
         if self.attract is not None:
             painters["attract"].append(self.attract.draw)
         if self.chaos is not None:
