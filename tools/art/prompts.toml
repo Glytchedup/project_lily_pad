@@ -1,0 +1,16 @@
+subject = "A friendly {animal} for a toddler's bedtime picture book: {cues}."
+style_ref = "Match the painting style, palette, brushwork, keyline weight and eye treatment of the reference images exactly. The references show other subjects; paint only the {animal}."
+side = "Full body, strict side view facing right, feet level as if standing on an invisible flat floor, nothing under the feet: no ground, no grass, no water, no cast shadow. Centered with generous empty margin on a perfectly flat, uniform {bg} background with no texture, vignette or gradient. Absolutely no text, letters, numbers, logos, frame or watermark."
+front = "Full body, straight-on front view, facing the viewer, symmetrical pose, feet level as if standing on an invisible flat floor, nothing under the feet: no ground, no grass, no water, no cast shadow. Centered with generous empty margin on a perfectly flat, uniform {bg} background with no texture, vignette or gradient. Absolutely no text, letters, numbers, logos, frame or watermark."
+sheet = "A character pose sheet of the SAME {animal} in three panels in one row, evenly spaced, identical size, scale, colors and markings in every panel, all facing right, feet on the same invisible baseline: (1) standing neutral, eye open; (2) identical pose with the eye gently closed in a soft happy curve; (3) {step}. No panel borders, no labels."
+blink_edit = "Edit this image: gently close the animal's eye into a soft, happy curved lid line. Change nothing else at all: same pose, framing, size, colors, keyline and background."
+step_edit = "Edit this image: change only the legs (or wings) to {step}. Keep the head, body, colors, size, framing and background exactly the same."
+world_plate = "A wide painted night pond for a toddler's bedtime picture book, {mood}. Composition for 1920×1080: sky from the top down to y≈560 px; a low far shore of reeds and soft willows along y≈560–670; calm open water from y≈670 to the bottom with gentle moonlight glints. Keep it dark and quiet: deep navy, teal and violet values. Nothing is brighter than a soft moon and a few small stars. Large calm areas with no detail between y≈300 and 700 where characters will walk. No animals, no people, no text."
+far_shore = "Paint only the far shore reeds and willows from the reference, as a long horizontal strip isolated on a flat {bg} background, same light and values."
+near_water = "Paint only the near-water lip with lily pads and cattails from the reference, as a long horizontal strip isolated on a flat {bg} background, same light and values."
+storybook = "A full-bleed storybook page: the same {animal} as the reference, large and left of center, at home in {habitat} at night under a soft moon. Simple calm composition, dark values (deep navy, teal, violet). Only the moon and the animal's rim light are bright. No text."
+
+[steps]
+walk = "mid-stride, near front leg and far back leg swung forward, the other two back"
+hop = "mid-leap, body stretched, legs extended"
+fly = "the same pose with wings swept fully down"
