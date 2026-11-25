@@ -1,6 +1,9 @@
+import tomllib
+from pathlib import Path
+
 import pytest
 
-from lilypad.config import load
+from lilypad.config import Config, load
 
 
 def test_defaults_without_file():
@@ -122,3 +125,114 @@ def test_repo_config_declares_the_music_section():
     cfg = load("config.toml")
     assert cfg.music.tunes in ("idle", "always", "off", "active", "reward")
     assert cfg.music.key_notes is True
+
+
+# Each row pins the public setting, its default and the classic-play value.
+PAINTED_SETTINGS = (
+    ("effects.animal_art", "painted", "traced"),
+    ("effects.pip_art", "painted", "drawn"),
+    ("effects.max_sprite_width", 0.60, 0.0),
+    ("effects.clean_sprites", True, False),
+    ("effects.ecosystem", True, False),
+    ("effects.storybook", "both", "off"),
+    ("effects.fx_style", "painted", "glow"),
+    ("effects.album", True, False),
+    ("effects.parade", True, False),
+    ("scene.world", "painted", "drawn"),
+    ("scene.parallax", True, False),
+    ("scene.reflections", True, False),
+    ("scene.fireflies", True, False),
+    ("scene.mood_minutes", 5.0, 5.0),  # drawn scenery cycles every 300 s
+    ("audio.voice", "narrator", "espeak"),
+    ("audio.phrases", True, False),
+    ("audio.count_aloud", True, False),
+    ("music.bundled_tracks", True, False),
+    ("music.reward_source", "folder_first", "folder_first"),
+    ("music.party_show", True, False),
+    ("lighting.mirror_animals", True, False),
+    ("escape.summary_seconds", 8.0, 0.0),
+)
+
+
+def setting(cfg, name):
+    section, key = name.split(".")
+    return getattr(getattr(cfg, section), key)
+
+
+@pytest.mark.parametrize("name,default,legacy", PAINTED_SETTINGS)
+def test_painted_settings_in_defaults_and_both_profiles(name, default, legacy):
+    assert setting(Config(), name) == setting(load(), name) == default
+    section, key = name.split(".")
+    for filename, expected in (("config.toml", default), ("config.legacy.toml", legacy)):
+        path = Path(__file__).resolve().parents[1] / filename
+        assert tomllib.loads(path.read_text(encoding="utf-8"))[section][key] == expected
+        value = setting(load(path), name)
+        assert type(value) is type(expected)
+        assert value == expected
+
+
+def load_setting(tmp_path, name, literal):
+    section, key = name.split(".")
+    path = tmp_path / "setting.toml"
+    path.write_text(f"[{section}]\n{key} = {literal}\n", encoding="utf-8")
+    return load(path)
+
+
+@pytest.mark.parametrize("name,default,legacy", PAINTED_SETTINGS)
+def test_painted_settings_reject_wrong_types(tmp_path, name, default, legacy):
+    # A quoted boolean is truthy in Python, and a TOML bool is an int subclass.
+    wrong = {bool: '"false"', float: 'true', str: '["painted"]'}[type(default)]
+    with pytest.raises(ValueError, match=name):
+        load_setting(tmp_path, name, wrong)
+
+
+@pytest.mark.parametrize("name,allowed", [
+    ("effects.animal_art", ("painted", "traced", "drawn")),
+    ("effects.pip_art", ("painted", "drawn")),
+    ("effects.storybook", ("encore", "attract", "both", "off")),
+    ("effects.fx_style", ("painted", "glow")),
+    ("scene.world", ("painted", "drawn")),
+    ("audio.voice", ("narrator", "espeak")),
+    ("music.reward_source", ("folder_first", "bundled", "generated")),
+])
+def test_painted_choices(tmp_path, name, allowed):
+    for choice in allowed:
+        assert setting(load_setting(tmp_path, name, f'"{choice}"'), name) == choice
+    with pytest.raises(ValueError, match=name):
+        load_setting(tmp_path, name, '"unknown"')
+
+
+@pytest.mark.parametrize("entries,expected", [
+    ("", "painted"),
+    ("silhouettes = true", "painted"),
+    ("silhouettes = false", "drawn"),
+    ('silhouettes = false\nanimal_art = "traced"', "traced"),
+])
+def test_silhouettes_compatibility(tmp_path, entries, expected):
+    path = tmp_path / "art.toml"
+    path.write_text(f"[effects]\n{entries}\n", encoding="utf-8")
+    assert load(path).effects.animal_art == expected
+
+
+@pytest.mark.parametrize("name,literal,expected", [
+    ("effects.max_sprite_width", "-1", 0.0),
+    ("effects.max_sprite_width", "0.33", 0.33),
+    ("effects.max_sprite_width", "2", 1.0),
+    ("escape.summary_seconds", "-1", 0.0),
+    ("escape.summary_seconds", "2.5", 2.5),
+    ("scene.mood_minutes", "0.5", 0.5),
+])
+def test_painted_numeric_settings(tmp_path, name, literal, expected):
+    assert setting(load_setting(tmp_path, name, literal), name) == expected
+
+
+@pytest.mark.parametrize("name,literal", [
+    ("effects.max_sprite_width", "nan"),
+    ("escape.summary_seconds", "inf"),
+    ("scene.mood_minutes", "-inf"),
+    ("scene.mood_minutes", "0"),
+    ("scene.mood_minutes", "-1"),
+])
+def test_painted_invalid_numbers(tmp_path, name, literal):
+    with pytest.raises(ValueError, match=name):
+        load_setting(tmp_path, name, literal)

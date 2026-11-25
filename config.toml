@@ -7,6 +7,12 @@
 mute = false
 # 0.0 .. 1.0
 volume = 0.65
+# Speech source: "narrator" or "espeak" (no-op until built).
+voice = "narrator"
+# Speak short phrases for animals and letters (no-op until built).
+phrases = true
+# Count number-key shapes aloud (no-op until built).
+count_aloud = true
 
 [music]
 # Every key plays a note of the C major pentatonic scale, laid out like a piano
@@ -51,6 +57,12 @@ reward_window = 10.0
 # key cues drop under it — loud music, soft typing. Both 0.0 .. 1.0.
 party_volume = 0.95
 party_duck = 0.25
+# Include packaged music in the reward playlist (no-op until built).
+bundled_tracks = true
+# Preferred reward music: "folder_first", "bundled" or "generated" (no-op until built).
+reward_source = "folder_first"
+# Synchronize the party effects with the music (no-op until built).
+party_show = true
 
 [display]
 # Dev-mode window size; kiosk mode always uses the display's native fullscreen mode.
@@ -93,6 +105,36 @@ milestone_every = 50
 # Ignored if this machine's SDL_image cannot rasterise SVG; it falls back to
 # the drawn animals and says so in the log.
 silhouettes = true
+# Animal art: "painted", "traced" or "drawn". Overrides silhouettes (no-op until built).
+animal_art = "painted"
+# Pip and his pad: "painted" or "drawn" (no-op until built).
+pip_art = "painted"
+# Maximum sprite width as a fraction of screen width, 0 disables the cap (no-op until built).
+max_sprite_width = 0.60
+# Draw moving sprites over the trails (no-op until built).
+clean_sprites = true
+# Enable encounters between animals and Pip (no-op until built).
+ecosystem = true
+# Show storybook cards during "encore", "attract", "both" or "off" (no-op until built).
+storybook = "both"
+# Effect artwork: "painted" or "glow" (no-op until built).
+fx_style = "painted"
+# Collect animal portraits in the session album (no-op until built).
+album = true
+# Celebrate completing the alphabet with the Grand Parade (no-op until built).
+parade = true
+
+[scene]
+# Scene art and layout: "painted" pond or "drawn" classic (no-op until built).
+world = "painted"
+# Drift painted scenery layers at different speeds (no-op until built).
+parallax = true
+# Reflect walkers and Pip in the pond (no-op until built).
+reflections = true
+# Show fireflies over the painted pond (no-op until built).
+fireflies = true
+# Minutes between painted mood changes, must be positive (no-op until built).
+mood_minutes = 5.0
 
 [lighting]
 # Backend: "auto" tries razer_hid, then openrazer, then mock.
@@ -102,9 +144,13 @@ backend = "auto"
 brightness = 0.9
 # Lighting frame rate (keyboard USB updates per second).
 fps = 30
+# Mirror on-screen animals on the keyboard LEDs (no-op until built).
+mirror_animals = true
 
 [escape]
 # Parent escape hatch: hold ALL of these keys together for `hold_seconds`.
 # Key names follow Linux evdev naming without the KEY_ prefix.
 combo = ["LEFTSHIFT", "RIGHTSHIFT", "BACKSPACE"]
 hold_seconds = 5.0
+# Seconds to show the session summary on exit, 0 disables it (no-op until built).
+summary_seconds = 8.0
