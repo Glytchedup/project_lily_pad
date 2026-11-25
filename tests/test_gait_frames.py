@@ -131,25 +131,25 @@ def test_hop_step_threshold_is_the_quarter_arc():
 
 
 @pytest.mark.parametrize("age,pose", [
-    (0.00, "idle"), (0.20, "step"), (0.40, "idle"), (0.50, "step"), (1.40, "idle"),
+    (0.00, "idle"), (0.30, "step"), (0.60, "idle"), (0.80, "step"), (1.10, "idle"),
 ])
-def test_fly_flaps_at_3_hz(age, pose):
+def test_fly_flaps_at_2_hz(age, pose):
     assert AnimalCrossing.pose_for("fly", age) == pose
 
 
 @pytest.mark.parametrize("age,pose", [
-    (0.0, "idle"), (0.2, "idle"), (0.5, "step"), (0.8, "step"),
-    (1.5, "step"), (1.8, "idle"), (2.6, "idle"),
+    (0.0, "idle"), (0.3, "idle"), (0.8, "step"), (1.1, "step"),
+    (1.5, "idle"), (2.0, "step"),
 ])
-def test_swim_swishes_at_1_2_hz(age, pose):
+def test_swim_swishes_at_0_8_hz(age, pose):
     assert AnimalCrossing.pose_for("swim", age) == pose
 
 
 @pytest.mark.parametrize("age,pose", [
-    (0.0, "idle"), (0.2, "idle"), (0.4, "step"), (0.6, "step"),
-    (0.7, "idle"), (1.3, "step"),
+    (0.0, "idle"), (0.3, "idle"), (0.6, "step"), (0.75, "step"),
+    (1.2, "idle"), (1.7, "step"),
 ])
-def test_floater_pulses_at_1_5_hz(age, pose):
+def test_floater_pulses_at_1_hz(age, pose):
     assert AnimalCrossing.pose_for("fly", age, floater=True) == pose
 
 
@@ -227,7 +227,7 @@ def _frame(effect):
 @pytest.mark.parametrize("name,gait,age,expected", [
     ("giraffe", "walk", 0.1, IDLE), ("giraffe", "walk", 0.5, STEP),
     ("giraffe", "walk", 0.95, BLINK),
-    ("owl", "fly", 0.05, IDLE), ("owl", "fly", 0.2, STEP), ("owl", "fly", 2.2, BLINK),
+    ("owl", "fly", 0.05, IDLE), ("owl", "fly", 0.3, STEP), ("owl", "fly", 2.2, BLINK),
     ("rabbit", "hop", 0.31, STEP), ("rabbit", "hop", 0.04, IDLE),
 ])
 def test_painted_gait_blits_the_scheduled_frame(trial, name, gait, age, expected):

@@ -17,9 +17,80 @@ import sys
 import time
 from pathlib import Path
 
+from .audio.engine import AudioEngine
+from .audio.tracks import BeatClock, load_beat_map
+
 log = logging.getLogger("lilypad")
 
 DEFAULT_CONFIG_PATHS = ("/etc/lilypad/config.toml", "config.toml")
+
+
+class PlaygroundAudio(AudioEngine):
+    """Connect the narrator's existing reward event and the actual playing track to the scene."""
+
+    def __init__(self, *args, party_show=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._parties = self._alphabets = 0
+        self._last_wow = float("-inf")
+        self._wow_at = None
+        self.beat_clock = None
+        # Read sidecars before input starts, including those alongside a parent's playlist.
+        self._maps = {}
+        if party_show and self.tunes == "reward":
+            for path in self._playlist:
+                beatmap = load_beat_map(path)
+                if beatmap:
+                    self._maps[path] = beatmap
+
+    def narrate(self, event, now=None):
+        now = self._clock() if now is None else now
+        if event == "party_start":
+            self._parties += 1
+            if self._parties % 2 == 0:
+                event = "lily_party"
+            if self._parties % 3 == 0 and now - self._last_wow >= 120:
+                self._wow_at = now
+        elif event == "alphabet_complete":
+            self._alphabets += 1
+            if self._alphabets % 2 == 0:
+                event = "lily_all"
+        return super().narrate(event, now)
+
+    def _party_track(self, now):
+        super()._party_track(now)
+        if self._maps:
+            path = (self._playlist[self._playlist_index] if self._playlist_from_folder
+                    else self._tune_path(self._tune_index))
+            beatmap = self._maps.get(path)
+            self.beat_clock = BeatClock(beatmap) if beatmap else None
+
+    def tick(self, now):
+        super().tick(now)
+        if self.beat_clock is not None:
+            if self.party_active:
+                import pygame
+                self.beat_clock.resync(pygame.mixer.music.get_pos())
+            else:
+                self.beat_clock = None
+        if self._wow_at is not None:
+            elapsed = now - self._wow_at
+            if elapsed > 6 or not self.party_active:
+                self._wow_at = None
+            elif elapsed >= 1.5 and self._praise_wanted is None:
+                super().narrate("lily_wow", now)
+                self._last_wow, self._wow_at = now, None
+
+
+def _mirror_frame(engine, lighting, previous, now):
+    live = list(engine.tracked())
+    current = {row[0] for row in live}
+    for token in previous - current:
+        lighting.untrack(token)
+    for row in live:
+        lighting.track(*row, now)
+    for x, y, colour in engine.blooms:
+        lighting.bloom(x, y, colour, now)
+    return current
 
 
 def _default_mode() -> str:
@@ -221,7 +292,6 @@ def main(argv: list[str] | None = None) -> int:
     # Must come after the env var is set:
     import pygame
 
-    from .audio.engine import AudioEngine
     from .config import load as load_config
     from .effects.engine import EffectEngine
     from .escape import EscapeHatch
@@ -249,11 +319,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Must happen before the first sprite is cached, and after the display
     # exists so the probe can build a real surface.
+    from .effects import critter
     from .effects.animal_art import set_art_mode
     from .effects.animals import prewarm
     from .effects.assets import asset_root
     from .effects.layout import layout_for
-    set_art_mode(cfg.effects.animal_art, root=asset_root(kiosk=kiosk))
+    root = asset_root(kiosk=kiosk)
+    set_art_mode(cfg.effects.animal_art, root=root)
+    critter.set_pip_art(cfg.effects.pip_art, root=root)
     prewarm(size[1], screen_width=size[0], max_sprite_width=cfg.effects.max_sprite_width,
             layout=layout_for(cfg.scene.world))
 
@@ -273,11 +346,14 @@ def main(argv: list[str] | None = None) -> int:
     lighting_pref = args.lighting or (cfg.lighting.backend if kiosk else "mock")
     lighting = LightingEngine(make_backend(lighting_pref),
                               fps=cfg.lighting.fps,
-                              brightness=cfg.lighting.brightness)
+                              brightness=cfg.lighting.brightness,
+                              mirror_animals=cfg.lighting.mirror_animals)
 
-    audio = AudioEngine(Path("assets/sounds/generated") if not kiosk
+    audio = PlaygroundAudio(Path("assets/sounds/generated") if not kiosk
                         else Path("/opt/lilypad/sounds"),
                         mute=cfg.audio.mute, volume=cfg.audio.volume,
+                        voice=cfg.audio.voice, phrases=cfg.audio.phrases,
+                        count_aloud=cfg.audio.count_aloud, party_show=cfg.music.party_show,
                         key_notes=cfg.music.key_notes,
                         tunes=cfg.music.tunes,
                         tune_volume=cfg.music.tune_volume,
@@ -300,9 +376,12 @@ def main(argv: list[str] | None = None) -> int:
                           trails=cfg.effects.trails,
                           milestone_every=cfg.effects.milestone_every,
                           sleep_timeout=cfg.display.sleep_timeout,
-                          clean_sprites=cfg.effects.clean_sprites)
+                          clean_sprites=cfg.effects.clean_sprites,
+                          scene=cfg.scene, root=root, lily_seed=42 if args.smoke else None,
+                          mirror_animals=cfg.lighting.mirror_animals)
 
     clock = pygame.time.Clock()
+    tracked = set()
     running = True
     exit_code = 0
 
@@ -330,6 +409,9 @@ def main(argv: list[str] | None = None) -> int:
             def handle(action):
                 engine.spawn(action, now)
                 audio.on_action(action)
+                if engine.praise:
+                    audio.narrate(engine.praise, now)
+                    engine.praise = None
                 if action.kind == "mash_start":
                     lighting.set_mash(True)
                 elif action.kind == "mash_end":
@@ -340,11 +422,15 @@ def main(argv: list[str] | None = None) -> int:
                     # Wake on the raw event, before the mapper decides whether
                     # this key means anything: a key that produces no action
                     # (a lone Shift) still means somebody is at the keyboard.
-                    engine.wake(now)
-                    audio.notify_activity(now)
+                    woke = engine.wake(now)
+                    engine.attract_key(ev.name)
                     lighting.key_pressed(ev.name, now)
                 for action in mapper.feed(ev):
                     handle(action)
+                if ev.pressed:
+                    if woke:
+                        audio.narrate("lily_hi", now)
+                    audio.notify_activity(now)
             # Time-based: keys held past the threshold become rainbow comets,
             # and rate-triggered mash mode exits once tapping slows.
             for action in mapper.poll_holds(now):
@@ -365,9 +451,11 @@ def main(argv: list[str] | None = None) -> int:
             # it says when the party starts; the effect engine says what a
             # party looks like. The party ends when the track does.
             if audio.consume_party_started():
-                engine.start_party(now)
+                engine.start_party(now, audio.beat_clock)
             elif engine.party and not audio.party_active:
                 engine.end_party(now)
+            elif engine.party and engine.beat_clock is not audio.beat_clock:
+                engine.set_party_clock(audio.beat_clock)
             # Dark screen, dark keyboard.
             lighting.set_sleep(engine.asleep)
             engine.draw(screen)
@@ -377,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
                 _draw_party_meter(screen, audio.reward_progress)
             _draw_escape_cue(screen, escape.hold_progress(now))
             pygame.display.flip()
+            if cfg.lighting.mirror_animals:
+                tracked = _mirror_frame(engine, lighting, tracked, now)
             lighting.tick(now)
             engine.note_frame_time(time.perf_counter() - frame_start)
     except KeyboardInterrupt:

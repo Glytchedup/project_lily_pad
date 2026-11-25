@@ -117,9 +117,9 @@ PEEKABOO_CAST: frozenset[str] = frozenset({"cow", "duck", "pig", "sheep"})
 # footfall rate (the bob is |sin| at 1.3 Hz, two troughs per cycle). Flyers,
 # swimmers and floaters run a full idle-then-step cycle at their rate.
 WALK_STEP_HZ = 2.6
-FLY_FLAP_HZ = 3.0
-SWIM_SWISH_HZ = 1.2
-FLOAT_PULSE_HZ = 1.5
+FLY_FLAP_HZ = 2.0
+SWIM_SWISH_HZ = 0.8
+FLOAT_PULSE_HZ = 1.0
 #: A hopper shows its stretched frame while sin(pi * phase) is above this.
 HOP_STEP_ARC = 0.25
 

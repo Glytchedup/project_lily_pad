@@ -1,19 +1,382 @@
-# Each [group.key] table names one "file" relative to this directory (OGG,
-# WAV or MP3). Keys are uppercase letters, decimal counts 1–10, or line IDs.
-# Examples to uncomment when the corresponding audio is bundled:
-# [letters.G]
-# file = "letters/G.ogg"
-# [phrases.G]
-# file = "phrases/G.ogg"            # "G is for Giraffe!"
-# [animals.giraffe]
-# file = "animals/giraffe.ogg"
-# [numbers.3]
-# file = "numbers/3.ogg"           # counting cadence
-# [endings.3]
-# file = "endings/3.ogg"           # emphatic final count
-# [praise.party_start]
-# file = "praise/party_start.ogg"
-#
-# A missing or undecodable letter or phrase uses the installed espeak
-# voice/<letter>.wav. Numbers and endings use voice/<number>.wav. Animal
-# names and praise have no espeak recording and are skipped if unavailable.
+# Paths are relative to this voice directory.
+
+[animals.alligator]
+file = "animals/alligator.ogg"
+
+[animals.bear]
+file = "animals/bear.ogg"
+
+[animals.brachiosaurus]
+file = "animals/brachiosaurus.ogg"
+
+[animals.cow]
+file = "animals/cow.ogg"
+
+[animals.duck]
+file = "animals/duck.ogg"
+
+[animals.elephant]
+file = "animals/elephant.ogg"
+
+[animals.fox]
+file = "animals/fox.ogg"
+
+[animals.giraffe]
+file = "animals/giraffe.ogg"
+
+[animals.horse]
+file = "animals/horse.ogg"
+
+[animals.iguana]
+file = "animals/iguana.ogg"
+
+[animals.jellyfish]
+file = "animals/jellyfish.ogg"
+
+[animals.koala]
+file = "animals/koala.ogg"
+
+[animals.lion]
+file = "animals/lion.ogg"
+
+[animals.monkey]
+file = "animals/monkey.ogg"
+
+[animals.narwhal]
+file = "animals/narwhal.ogg"
+
+[animals.owl]
+file = "animals/owl.ogg"
+
+[animals.pig]
+file = "animals/pig.ogg"
+
+[animals.pterodactyl]
+file = "animals/pterodactyl.ogg"
+
+[animals.quail]
+file = "animals/quail.ogg"
+
+[animals.rabbit]
+file = "animals/rabbit.ogg"
+
+[animals.sheep]
+file = "animals/sheep.ogg"
+
+[animals.stegosaurus]
+file = "animals/stegosaurus.ogg"
+
+[animals.trex]
+file = "animals/trex.ogg"
+
+[animals.triceratops]
+file = "animals/triceratops.ogg"
+
+[animals.unicorn]
+file = "animals/unicorn.ogg"
+
+[animals.velociraptor]
+file = "animals/velociraptor.ogg"
+
+[animals.whale]
+file = "animals/whale.ogg"
+
+[animals.xrayfish]
+file = "animals/xrayfish.ogg"
+
+[animals.yak]
+file = "animals/yak.ogg"
+
+[animals.zebra]
+file = "animals/zebra.ogg"
+
+[endings.1]
+file = "endings/1.ogg"
+
+[endings.10]
+file = "endings/10.ogg"
+
+[endings.2]
+file = "endings/2.ogg"
+
+[endings.3]
+file = "endings/3.ogg"
+
+[endings.4]
+file = "endings/4.ogg"
+
+[endings.5]
+file = "endings/5.ogg"
+
+[endings.6]
+file = "endings/6.ogg"
+
+[endings.7]
+file = "endings/7.ogg"
+
+[endings.8]
+file = "endings/8.ogg"
+
+[endings.9]
+file = "endings/9.ogg"
+
+[letters.A]
+file = "letters/A.ogg"
+
+[letters.B]
+file = "letters/B.ogg"
+
+[letters.C]
+file = "letters/C.ogg"
+
+[letters.D]
+file = "letters/D.ogg"
+
+[letters.E]
+file = "letters/E.ogg"
+
+[letters.F]
+file = "letters/F.ogg"
+
+[letters.G]
+file = "letters/G.ogg"
+
+[letters.H]
+file = "letters/H.ogg"
+
+[letters.I]
+file = "letters/I.ogg"
+
+[letters.J]
+file = "letters/J.ogg"
+
+[letters.K]
+file = "letters/K.ogg"
+
+[letters.L]
+file = "letters/L.ogg"
+
+[letters.M]
+file = "letters/M.ogg"
+
+[letters.N]
+file = "letters/N.ogg"
+
+[letters.O]
+file = "letters/O.ogg"
+
+[letters.P]
+file = "letters/P.ogg"
+
+[letters.Q]
+file = "letters/Q.ogg"
+
+[letters.R]
+file = "letters/R.ogg"
+
+[letters.S]
+file = "letters/S.ogg"
+
+[letters.T]
+file = "letters/T.ogg"
+
+[letters.U]
+file = "letters/U.ogg"
+
+[letters.V]
+file = "letters/V.ogg"
+
+[letters.W]
+file = "letters/W.ogg"
+
+[letters.X]
+file = "letters/X.ogg"
+
+[letters.Y]
+file = "letters/Y.ogg"
+
+[letters.Z]
+file = "letters/Z.ogg"
+
+[numbers.1]
+file = "numbers/1.ogg"
+
+[numbers.10]
+file = "numbers/10.ogg"
+
+[numbers.2]
+file = "numbers/2.ogg"
+
+[numbers.3]
+file = "numbers/3.ogg"
+
+[numbers.4]
+file = "numbers/4.ogg"
+
+[numbers.5]
+file = "numbers/5.ogg"
+
+[numbers.6]
+file = "numbers/6.ogg"
+
+[numbers.7]
+file = "numbers/7.ogg"
+
+[numbers.8]
+file = "numbers/8.ogg"
+
+[numbers.9]
+file = "numbers/9.ogg"
+
+[phrases.A]
+file = "phrases/A.ogg"
+
+[phrases.B]
+file = "phrases/B.ogg"
+
+[phrases.C]
+file = "phrases/C.ogg"
+
+[phrases.D]
+file = "phrases/D.ogg"
+
+[phrases.E]
+file = "phrases/E.ogg"
+
+[phrases.F]
+file = "phrases/F.ogg"
+
+[phrases.G]
+file = "phrases/G.ogg"
+
+[phrases.H]
+file = "phrases/H.ogg"
+
+[phrases.I]
+file = "phrases/I.ogg"
+
+[phrases.J]
+file = "phrases/J.ogg"
+
+[phrases.K]
+file = "phrases/K.ogg"
+
+[phrases.L]
+file = "phrases/L.ogg"
+
+[phrases.M]
+file = "phrases/M.ogg"
+
+[phrases.N]
+file = "phrases/N.ogg"
+
+[phrases.O]
+file = "phrases/O.ogg"
+
+[phrases.P]
+file = "phrases/P.ogg"
+
+[phrases.Q]
+file = "phrases/Q.ogg"
+
+[phrases.R]
+file = "phrases/R.ogg"
+
+[phrases.S]
+file = "phrases/S.ogg"
+
+[phrases.T]
+file = "phrases/T.ogg"
+
+[phrases.U]
+file = "phrases/U.ogg"
+
+[phrases.V]
+file = "phrases/V.ogg"
+
+[phrases.W]
+file = "phrases/W.ogg"
+
+[phrases.X]
+file = "phrases/X.ogg"
+
+[phrases.Y]
+file = "phrases/Y.ogg"
+
+[phrases.Z]
+file = "phrases/Z.ogg"
+
+[praise.alphabet_complete]
+file = "praise/alphabet_complete.ogg"
+
+[praise.amazing]
+file = "praise/amazing.ogg"
+
+[praise.bravo]
+file = "praise/bravo.ogg"
+
+[praise.fantastic]
+file = "praise/fantastic.ogg"
+
+[praise.good_job]
+file = "praise/good_job.ogg"
+
+[praise.great_job]
+file = "praise/great_job.ogg"
+
+[praise.high_five]
+file = "praise/high_five.ogg"
+
+[praise.hooray]
+file = "praise/hooray.ogg"
+
+[praise.keep_going]
+file = "praise/keep_going.ogg"
+
+[praise.lily_all]
+file = "praise/lily_all.ogg"
+
+[praise.lily_great]
+file = "praise/lily_great.ogg"
+
+[praise.lily_hi]
+file = "praise/lily_hi.ogg"
+
+[praise.lily_party]
+file = "praise/lily_party.ogg"
+
+[praise.lily_wow]
+file = "praise/lily_wow.ogg"
+
+[praise.look_at_that]
+file = "praise/look_at_that.ogg"
+
+[praise.milestone]
+file = "praise/milestone.ogg"
+
+[praise.nice]
+file = "praise/nice.ogg"
+
+[praise.party_end]
+file = "praise/party_end.ogg"
+
+[praise.party_start]
+file = "praise/party_start.ogg"
+
+[praise.so_clever]
+file = "praise/so_clever.ogg"
+
+[praise.super]
+file = "praise/super.ogg"
+
+[praise.well_done]
+file = "praise/well_done.ogg"
+
+[praise.wow]
+file = "praise/wow.ogg"
+
+[praise.yay]
+file = "praise/yay.ogg"
+
+[praise.you_found_it]
+file = "praise/you_found_it.ogg"

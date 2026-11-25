@@ -162,6 +162,11 @@ PRAISE_LINES: dict[str, str] = {
     "keep_going": "Keep going!",
     "high_five": "High five!",
     "look_at_that": "Look at that!",
+    "lily_hi": "Hi, Lily!",
+    "lily_great": "Great job, Lily!",
+    "lily_party": "Lily, it's party time!",
+    "lily_wow": "Wow, Lily!",
+    "lily_all": "Lily found all the animals!",
 }
 
 

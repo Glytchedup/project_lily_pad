@@ -7,11 +7,11 @@
 mute = false
 # 0.0 .. 1.0
 volume = 0.65
-# Speech source: "narrator" or "espeak" (no-op until built).
+# Speech source: "narrator" or "espeak".
 voice = "narrator"
-# Speak short phrases for animals and letters (no-op until built).
+# Speak short phrases for animals and letters.
 phrases = true
-# Count number-key shapes aloud (no-op until built).
+# Count number-key shapes aloud.
 count_aloud = true
 
 [music]
@@ -61,7 +61,7 @@ party_duck = 0.25
 bundled_tracks = true
 # Preferred reward music: "folder_first", "bundled" or "generated" (no-op until built).
 reward_source = "folder_first"
-# Synchronize the party effects with the music (no-op until built).
+# Time the fireflies and cheering Lily to beats when the reward track has a beat map.
 party_show = true
 
 [display]
@@ -105,13 +105,13 @@ milestone_every = 50
 # Ignored if this machine's SDL_image cannot rasterise SVG; it falls back to
 # the drawn animals and says so in the log.
 silhouettes = true
-# Animal art: "painted", "traced" or "drawn". Overrides silhouettes (no-op until built).
+# Animal art: "painted", "traced" or "drawn". Overrides silhouettes.
 animal_art = "painted"
-# Pip and his pad: "painted" or "drawn" (no-op until built).
+# Pip and his pad: "painted" or "drawn".
 pip_art = "painted"
-# Maximum sprite width as a fraction of screen width, 0 disables the cap (no-op until built).
+# Maximum sprite width as a fraction of screen width, 0 disables the cap.
 max_sprite_width = 0.60
-# Draw moving sprites over the trails (no-op until built).
+# Draw moving sprites over the trails.
 clean_sprites = true
 # Enable encounters between animals and Pip (no-op until built).
 ecosystem = true
@@ -125,19 +125,19 @@ album = true
 parade = true
 
 [scene]
-# Scene art and layout: "painted" pond or "drawn" classic (no-op until built).
+# Scene art and layout: "painted" pond or "drawn" classic.
 world = "painted"
-# Drift painted scenery layers at different speeds (no-op until built).
+# Drift painted scenery layers at different speeds.
 parallax = true
-# Reflect walkers and Pip in the pond (no-op until built).
+# Reflect walkers and hoppers below the bank.
 reflections = true
-# Show fireflies over the painted pond (no-op until built).
+# Show fireflies over the painted pond.
 fireflies = true
-# Minutes between painted mood changes, must be positive (no-op until built).
+# Minutes between painted mood changes, must be positive.
 mood_minutes = 5.0
-# Lily, the child in the pond, sits at a spot and moves now and then (no-op until built).
+# Lily, the child in the pond, sits at a spot and moves now and then.
 lily = true
-# Seconds awake between her moves to a new spot, must be positive (no-op until built).
+# Seconds awake between her moves to a new spot, must be positive.
 lily_move_seconds = 75
 
 [lighting]
@@ -148,7 +148,7 @@ backend = "auto"
 brightness = 0.9
 # Lighting frame rate (keyboard USB updates per second).
 fps = 30
-# Mirror on-screen animals on the keyboard LEDs (no-op until built).
+# Mirror on-screen animals on the keyboard LEDs.
 mirror_animals = true
 
 [escape]
