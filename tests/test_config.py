@@ -143,6 +143,8 @@ PAINTED_SETTINGS = (
     ("scene.reflections", True, False),
     ("scene.fireflies", True, False),
     ("scene.mood_minutes", 5.0, 5.0),  # drawn scenery cycles every 300 s
+    ("scene.lily", True, False),
+    ("scene.lily_move_seconds", 75.0, 75.0),
     ("audio.voice", "narrator", "espeak"),
     ("audio.phrases", True, False),
     ("audio.count_aloud", True, False),
@@ -221,6 +223,7 @@ def test_silhouettes_compatibility(tmp_path, entries, expected):
     ("escape.summary_seconds", "-1", 0.0),
     ("escape.summary_seconds", "2.5", 2.5),
     ("scene.mood_minutes", "0.5", 0.5),
+    ("scene.lily_move_seconds", "12", 12.0),
 ])
 def test_painted_numeric_settings(tmp_path, name, literal, expected):
     assert setting(load_setting(tmp_path, name, literal), name) == expected
@@ -232,6 +235,9 @@ def test_painted_numeric_settings(tmp_path, name, literal, expected):
     ("scene.mood_minutes", "-inf"),
     ("scene.mood_minutes", "0"),
     ("scene.mood_minutes", "-1"),
+    ("scene.lily_move_seconds", "0"),
+    ("scene.lily_move_seconds", "-5"),
+    ("scene.lily_move_seconds", "nan"),
 ])
 def test_painted_invalid_numbers(tmp_path, name, literal):
     with pytest.raises(ValueError, match=name):

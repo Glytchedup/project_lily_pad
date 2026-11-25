@@ -69,6 +69,8 @@ class SceneConfig:
     reflections: bool = True
     fireflies: bool = True
     mood_minutes: float = 5.0
+    lily: bool = True
+    lily_move_seconds: float = 75.0
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,11 @@ def load(path: str | Path | None = None) -> Config:
     if mood_minutes <= 0:
         raise ValueError(f"scene.mood_minutes must be positive, got {mood_minutes!r}")
 
+    lily_move_seconds = _number(data, "scene.lily_move_seconds", SceneConfig.lily_move_seconds)
+    if lily_move_seconds <= 0:
+        raise ValueError(
+            f"scene.lily_move_seconds must be positive, got {lily_move_seconds!r}")
+
     return Config(
         audio=AudioConfig(
             mute=bool(audio.get("mute", False)),
@@ -220,6 +227,8 @@ def load(path: str | Path | None = None) -> Config:
             reflections=_flag(data, "scene.reflections", SceneConfig.reflections),
             fireflies=_flag(data, "scene.fireflies", SceneConfig.fireflies),
             mood_minutes=mood_minutes,
+            lily=_flag(data, "scene.lily", SceneConfig.lily),
+            lily_move_seconds=lily_move_seconds,
         ),
         lighting=LightingConfig(
             backend=backend,

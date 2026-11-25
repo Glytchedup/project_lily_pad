@@ -133,6 +133,10 @@ reflections = false
 fireflies = false
 # Minutes between painted mood changes, must be positive (no-op until built).
 mood_minutes = 5.0
+# Lily, the child in the pond, sits at a spot and moves now and then (no-op until built).
+lily = false
+# Seconds awake between her moves to a new spot, must be positive (no-op until built).
+lily_move_seconds = 75
 
 [lighting]
 # Backend: "auto" tries razer_hid, then openrazer, then mock.
