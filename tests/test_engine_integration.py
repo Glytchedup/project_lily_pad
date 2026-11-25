@@ -2,16 +2,23 @@
 bubbles, ripples, milestones, and the new registry wiring."""
 
 import random
+from unittest.mock import Mock
 
 import pygame
+import pytest
 
+from lilypad.__main__ import PlaygroundAudio, _mirror_frame
+from lilypad.audio.engine import AudioEngine
+from lilypad.audio.tracks import BeatClock, BeatMap
+from lilypad.config import SceneConfig
+from lilypad.effects import animals
 from lilypad.effects.animals import PeekabooAnimal
 from lilypad.effects.base import EffectContext
 from lilypad.effects.bubbles import BubbleField
 from lilypad.effects.comet import Comet
 from lilypad.effects.engine import EffectEngine
 from lilypad.effects.registry import celebration, effects_for
-from lilypad.input.mapper import Action
+from lilypad.input.mapper import Action, classify
 
 SIZE = (640, 480)
 
@@ -320,3 +327,167 @@ def test_comet_scales_with_resolution():
     big = Comet(EffectContext(size=(3840, 2160), rng=random.Random(5)))
     assert big.radius > small.radius * 2.5
     assert big.speed > small.speed * 2.0
+
+
+@pytest.fixture
+def pond_engine(tmp_path, monkeypatch):
+    from test_lily import make_art as make_lily
+    from test_scenery import make_art as make_pond
+    from lilypad.effects import painted
+    from lilypad.effects.layout import POND
+
+    make_lily(tmp_path)
+    make_pond(tmp_path, count=1)
+    # Prewarm a synthetic cast row at its production spawn height.
+    monkeypatch.setattr(animals, "animal_names", lambda: ("giraffe",))
+    monkeypatch.setattr(animals, "_layout", POND)
+    monkeypatch.setattr(animals, "_max_sprite_width", 0.0)
+    monkeypatch.setattr(animals, "resolved_mode", lambda name: "painted")
+    monkeypatch.setattr(painted, "_rows", lambda: {"giraffe": {"anchor": [0.5, 1.0]}})
+
+    def sprite(name, height, pose, left, width):
+        art = pygame.Surface((36, height), pygame.SRCALPHA)
+        art.fill((224, 64, 32), (0, 0, 36, height - 7))
+        return art
+
+    monkeypatch.setattr(animals, "_scene_sprite", sprite)
+    return EffectEngine((640, 360), rng=random.Random(11), scene=SceneConfig(),
+                        root=tmp_path, lily_seed=20, mirror_animals=True,
+                        clean_sprites=True, trails=False)
+
+
+def test_integrated_bank_places_feet_and_mirror_in_adjacent_rows(pond_engine):
+    e = pond_engine
+    e.spawn(classify("G"), now=0)
+    animal = next(a for a in e.effects if isinstance(a, animals.AnimalCrossing))
+    e.effects = [animal]
+    animal.x, animal.y = 202, e.ctx.height * e.layout.ground
+    bank = int(animal.y)
+    screen = pygame.Surface(e.size)
+    e.draw(screen)
+    assert screen.get_at((202, bank - 1))[:3] == (224, 64, 32)
+    assert screen.get_at((202, bank + 5)) != e._scene.get_at((202, bank + 5))
+    e.ctx.scale = 0.59
+    e.update(0, now=0)
+    animal.x, animal.y = 202, bank
+    e.draw(screen)
+    assert e.pond._painted.flat
+    assert screen.get_at((202, bank + 5)) == e._scene.get_at((202, bank + 5))
+    e.ctx.scale = 0.6
+    e.update(0, now=0)
+    assert not e.pond._painted.flat
+
+
+def test_pond_key_stomp_lily_and_beat_lifecycle(pond_engine):
+    from lilypad.effects.ambient import CelebrationPulse
+    from lilypad.effects.particles import Rings
+    e = pond_engine
+    e.attract_key("SPACE")
+    assert e.pond._flies.remaining > 0
+    assert e.pond._flies.target == (7.5 * 640 / 22, 5.5 * 360 / 6)
+    e.spawn(classify("F7"), now=0)
+    assert e.pond._painted.shake_left > 0
+    assert next(a.pos[1] for a in e.effects if isinstance(a, Rings)) == e.ctx.height * e.layout.ground
+    e._celebrate(False, 20)
+    assert e.praise == "lily_great" and e.lily.cheering
+    clock = BeatClock(BeatMap(120, 0, (0, .5, 1), (0,), ()))
+    e.start_party(30, clock)
+    assert e.lily.party and e.lily._beat is clock
+    assert not any(isinstance(a, CelebrationPulse) for a in e.effects)
+    screen = pygame.Surface(e.size)
+    e.draw(screen)
+    on_beat = pygame.image.tobytes(e._scene, "RGB")
+    clock.advance(0.25)
+    e.draw(screen)
+    off_beat = pygame.image.tobytes(e._scene, "RGB")
+    assert on_beat != off_beat
+    e.set_party_clock(None)
+    e.draw(screen)
+    assert pygame.image.tobytes(e._scene, "RGB") == off_beat
+    e.end_party(40)
+    e.update(.1, now=40 + e.sleep_timeout)
+    assert e.lily.asleep and e.wake(400) and not e.lily.asleep
+
+
+def test_keyboard_mirror_keeps_tokens_and_emits_each_rocket_once():
+    e = make_engine(mirror_animals=True)
+    e.spawn(classify("G"), now=0)
+    e.spawn(classify("ENTER"), now=0)
+    lighting = Mock()
+    previous = set()
+    for frame in range(220):
+        now = frame / 60
+        e.update(1 / 60, now)
+        previous = _mirror_frame(e, lighting, previous, now)
+    calls = [call.args for call in lighting.track.call_args_list]
+    token = calls[0][0]
+    assert all(row[0] is token and row[1] == "giraffe" for row in calls)
+    assert calls[1][2] != calls[0][2] and 0 < calls[0][4]
+    assert not previous
+    lighting.untrack.assert_called_once_with(token)
+    assert lighting.bloom.call_count == 3
+
+
+def test_translucent_lip_covers_the_swimmer_before_pip(pond_engine):
+    e = pond_engine
+    swimmer = animals.AnimalCrossing(e.ctx, "whale")
+    e.effects = [swimmer]
+    swimmer.x, swimmer.y = 225, 300
+    screen = pygame.Surface(e.size)
+    e.draw(screen)
+    probe = (225, 303)
+    above = (225, 275)
+    assert screen.get_at(above)[:3] == (224, 64, 32)
+    expected = pygame.Surface(e.size)
+    swimmer.draw(expected)
+    e.pond.draw_near_water(expected)
+    assert screen.get_at(probe) == expected.get_at(probe)
+    assert screen.get_at(probe) != screen.get_at(above)
+    assert screen.get_clip() == screen.get_rect()
+
+
+def test_reward_track_samples_its_own_sidecar_and_clears_clock(tmp_path, monkeypatch):
+    import json
+    from test_audio_engine_voice import write_clip
+
+    song = tmp_path / "music" / "song.wav"
+    write_clip(song, 2)
+    song.with_suffix(".wav.beats.json").write_text(json.dumps({
+        "bpm": 120, "offset": 0.0, "beats": [0, .5, 1], "downbeats": [0], "drops": [],
+    }), encoding="utf8")
+    audio = PlaygroundAudio(tmp_path, tunes="reward", autogen=False, background_folder=song.parent)
+    try:
+        audio._start_party(0)
+        assert audio.beat_clock is None
+        monkeypatch.setattr(pygame.mixer.music, "get_pos", lambda: 625)
+        audio.tick(10)
+        assert audio.beat_clock.beat_index == 1 and audio.beat_clock.beat_phase == .25
+        monkeypatch.setattr(audio, "_music_playing", lambda: False)
+        audio.tick(11)
+        assert audio.beat_clock is None
+    finally:
+        audio.close()
+
+
+def test_party_and_alphabet_narration_alternate_without_duplicate_events(tmp_path, monkeypatch):
+    spoken = []
+    monkeypatch.setattr(AudioEngine, "narrate", lambda _, event, now: spoken.append((event, now)))
+    audio = PlaygroundAudio(tmp_path, mute=True, tunes="reward", voice="narrator")
+    for t in (0, 10, 20, 30, 40, 50, 130, 140, 150):
+        audio._start_party(t)
+        audio.tick(t + 2)
+    party_lines = [event for event, _ in spoken if event != "lily_wow"]
+    assert party_lines == ["party_start", "lily_party"] * 4 + ["party_start"]
+    assert [t for event, t in spoken if event == "lily_wow"] == [22, 152]
+    audio.narrate("alphabet_complete", 200)
+    audio.narrate("alphabet_complete", 250)
+    assert spoken[-2:] == [("alphabet_complete", 200), ("lily_all", 250)]
+
+
+@pytest.mark.parametrize("gait,floater,hz", [("fly", False, 2), ("swim", False, .8),
+                                               ("fly", True, 1)])
+def test_approved_painted_cycle_rates(gait, floater, hz):
+    schedule = animals.AnimalCrossing.pose_for
+    assert schedule(gait, .49 / hz, floater) == "idle"
+    assert schedule(gait, .51 / hz, floater) == "step"
+    assert schedule(gait, 1.1 / hz, floater) == "idle"

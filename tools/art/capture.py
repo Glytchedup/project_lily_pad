@@ -199,6 +199,9 @@ def run(args):
     try:
         surface = pygame.display.set_mode(size)
         args.out.mkdir(parents=True, exist_ok=True)
+        if hasattr(critter, "set_pip_art"):
+            from lilypad.effects.assets import asset_root
+            critter.set_pip_art(cfg.effects.pip_art, root=asset_root(kiosk=False))
         if args.pip_override:
             pip_source(pygame, args.pip_override)
         if args.pip or args.all:

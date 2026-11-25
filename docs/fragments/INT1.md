@@ -1,0 +1,3 @@
+- Painted walkers stand at the measured pond bank with rippling reflections. Foreground water passes over swimmers, dinosaur specials shake the shore, and fireflies gather near the key that was pressed.
+- Pip sits on his painted pad. Lily moves between six places, waves at arriving animals, cheers during celebrations and sleeps with the screen. A reward track with a beat map times her cheers and the fireflies.
+- The narrator has 127 recorded lines, including five for Lily. Crossing animals and firework bursts now appear on the keyboard. The painted pond celebrates with fireworks and confetti without the solid party border.

@@ -18,7 +18,7 @@ import pygame
 
 from .__main__ import _default_mode, _find_config
 from .config import Config, load
-from .effects import animal_art, animals
+from .effects import animal_art, animals, critter
 from .effects.assets import asset_root
 from .effects.engine import ANIMAL_TYPES, EffectEngine
 from .effects.layout import layout_for
@@ -128,6 +128,7 @@ def _measure(engine: EffectEngine, screen: pygame.Surface, scenario: str,
         while replaying and keys and next_tap * fps <= frame * rate:
             key = keys[next_tap % len(keys)]
             engine.wake(now)
+            engine.attract_key(key)
             for pressed in (True, False):
                 for action in mapper.feed(KeyEvent(key, pressed, now)):
                     dispatch(action)
@@ -202,7 +203,9 @@ def main(argv: list[str] | None = None) -> int:
         if screen.get_size() != args.size:
             parser.error(f"display opened at {screen.get_size()}, requested {args.size}")
         w, h = screen.get_size()
-        animal_art.set_art_mode(cfg.effects.animal_art, root=asset_root(kiosk=kiosk))
+        root = asset_root(kiosk=kiosk)
+        animal_art.set_art_mode(cfg.effects.animal_art, root=root)
+        critter.set_pip_art(cfg.effects.pip_art, root=root)
         animals.prewarm(h, screen_width=w, max_sprite_width=cfg.effects.max_sprite_width,
                        layout=layout_for(cfg.scene.world))
         engine = EffectEngine((w, h), rng=random.Random(SEED),
@@ -210,8 +213,10 @@ def main(argv: list[str] | None = None) -> int:
                               fps=cfg.display.fps, idle_timeout=cfg.display.idle_timeout,
                               sleep_timeout=cfg.display.sleep_timeout, trails=cfg.effects.trails,
                               milestone_every=cfg.effects.milestone_every,
-                              clean_sprites=cfg.effects.clean_sprites)
+                              clean_sprites=cfg.effects.clean_sprites, scene=cfg.scene,
+                              root=root, lily_seed=SEED, mirror_animals=cfg.lighting.mirror_animals)
         report = _measure(engine, screen, args.scenario, args.seconds, cfg)
+        report["reflection_cache_bytes"] = engine.reflections.bytes_used
         report["config"] = str(config_path) if config_path else None
     finally:
         pygame.quit()
