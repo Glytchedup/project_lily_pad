@@ -327,8 +327,9 @@ def test_unreadable_painted_strip_falls_back(drawn, tmp_path):
     assert Album(SIZE, root=tmp_path).painted_strip is False
 
 
-def test_shipped_album_manifest_is_header_only():
-    assert album.album_assets() == {}
+def test_shipped_album_manifest_has_the_painted_card():
+    assets = album.album_assets()
+    assert set(assets) == {"card"} and assets["card"].is_file()
 
 
 def test_legacy_config_creates_nothing(drawn):
