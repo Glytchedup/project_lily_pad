@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from collections import defaultdict
 
 import pygame
 
@@ -50,13 +51,37 @@ ALPHABET = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 # synthetic companions (chord, mash_*, hold_*) ride along with a base press.
 _PRESS_KINDS = {"letter", "number", "space", "enter", "special", "sparkle", "arrow"}
 
+# Each row names its destination and its painters in back-to-front order.
+# New layers (for example reflections before flyers) belong in this table.
+_CLEAN_PASSES = (
+    ("scene", ("pond",)),
+    ("fx", ("backdrop", "particles", "comets", "bubbles", "rings", "attract")),
+    ("screen", ("present",)),
+    ("screen", ("flyers", "ground", "swimmers", "frog", "peekaboo", "glyphs")),
+    ("screen", ("pulses", "chaos")),
+)
+_CROSSING_LAYERS = {"fly": "flyers", "swim": "swimmers"}
+_EFFECT_LAYERS = (
+    (PeekabooAnimal, "peekaboo"), (GLYPH_TYPES, "glyphs"), (CelebrationPulse, "pulses"),
+    (Comet, "comets"), (BubbleField, "bubbles"), (Rings, "rings"),
+)
+
+
+def _layer(effect: Effect) -> str:
+    if isinstance(effect, AnimalCrossing):
+        return _CROSSING_LAYERS.get(effect.gait, "ground")
+    for types, layer in _EFFECT_LAYERS:
+        if isinstance(effect, types):
+            return layer
+    return "particles"
+
 
 class EffectEngine:
     def __init__(self, size: tuple[int, int], max_particles: int = 900,
                  idle_timeout: float = 60.0, fps: int = 60,
                  rng: random.Random | None = None,
                  trails: bool = True, milestone_every: int = 50,
-                 sleep_timeout: float = 300.0) -> None:
+                 sleep_timeout: float = 300.0, clean_sprites: bool = False) -> None:
         self.size = size
         self.max_particles = max_particles
         self.idle_timeout = idle_timeout
@@ -68,6 +93,8 @@ class EffectEngine:
         self.frog = Frog(size)
         self.pond = PondBackground(self.ctx)
         self.trails = trails
+        self.clean_sprites = clean_sprites
+        self._fx: pygame.Surface | None = None
         self.milestone_every = milestone_every
         self.chaos: ChaosOverlay | None = None
         self.party = False       # reward dance party (see start_party)
@@ -300,6 +327,7 @@ class EffectEngine:
         log.info("screen asleep after %.0fs with no keypresses — any key wakes it",
                  self.sleep_timeout)
         self.asleep = True
+        self._fx = None  # waking begins with the current pond, free of old trails
         self.attract = None
         self.chaos = None
         self.effects.clear()
@@ -375,7 +403,6 @@ class EffectEngine:
         # instead of opaque is what leaves motion trails (VISUAL_REVIEW.md #4):
         # last frame's lights linger and fade INTO the scene over ~10 frames.
         self._frame_no += 1
-        self.pond.draw(self._scene)
         # The veil is a fixed cost the particle ladder can't shrink, so the
         # ladder sheds it directly: trails drop out when degradation is deep
         # and come back once the frame budget recovers (with hysteresis).
@@ -387,25 +414,17 @@ class EffectEngine:
         # Trails also pause while the mash chaos overlay is live: the veil
         # re-blends the full-screen hue wash every frame, compounding it into
         # a solid saturated screen that swallows the pond and every effect.
-        if self.trails and self._trails_live and self.chaos is None:
-            self._scene.set_alpha(TRAIL_ALPHA)
-            surface.blit(self._scene, (0, 0))
-            # Integer alpha-blending truncates, so the veil alone stalls a few
-            # levels away from the scene and leaves permanent ghost silhouettes.
-            # A small subtract breaks the floor for bright residue, and a MAX
-            # blit of the scene snaps anything that fell below it back exactly.
-            # Running this pass every few frames (instead of every frame) cuts
-            # its ~2 ms cost to ~0.5 ms; residue just fades a beat slower.
-            if self._frame_no % GHOSTBUST_EVERY == 0:
-                # 9/step clears the "ghost ladder" large opaque sprites
-                # (peekaboo animals) leave when rising through the veil.
-                surface.fill((9, 9, 9), special_flags=pygame.BLEND_RGB_SUB)
-                self._scene.set_alpha(None)
-                surface.blit(self._scene, (0, 0),
-                             special_flags=pygame.BLEND_RGB_MAX)
+        trails_live = self.trails and self._trails_live
+        if self.clean_sprites and trails_live:
+            self._draw_clean(surface)
+            return
+
+        self._fx = None
+        self.pond.draw(self._scene)
+        if trails_live and self.chaos is None:
+            self._draw_veil(surface)
         else:
-            self._scene.set_alpha(None)
-            surface.blit(self._scene, (0, 0))
+            self._draw_opaque_scene(surface)
         if self.attract is not None:
             self.attract.draw(surface)
         # Full-screen pulses draw above the frog, same depth as the mash
@@ -422,6 +441,49 @@ class EffectEngine:
             pulse.draw(surface)
         if self.chaos is not None:
             self.chaos.draw(surface)
+
+    def _draw_opaque_scene(self, surface: pygame.Surface) -> None:
+        self._scene.set_alpha(None)
+        surface.blit(self._scene, (0, 0))
+
+    def _draw_veil(self, surface: pygame.Surface) -> None:
+        self._scene.set_alpha(TRAIL_ALPHA)
+        surface.blit(self._scene, (0, 0))
+        # Integer alpha blending stalls a few levels away from the scene.
+        # Subtract to break that floor, then snap dim pixels back to the pond.
+        if self._frame_no % GHOSTBUST_EVERY == 0:
+            surface.fill((9, 9, 9), special_flags=pygame.BLEND_RGB_SUB)
+            self._scene.set_alpha(None)
+            surface.blit(self._scene, (0, 0), special_flags=pygame.BLEND_RGB_MAX)
+
+    def _present_fx(self, screen: pygame.Surface) -> None:
+        screen.blit(self._fx, (0, 0))
+
+    def _draw_clean(self, screen: pygame.Surface) -> None:
+        backdrop = self._draw_veil
+        if self._fx is None:
+            self._fx = pygame.Surface(self.size).convert()
+            backdrop = self._draw_opaque_scene
+        elif self.chaos is not None:
+            backdrop = self._draw_opaque_scene
+
+        targets = {"scene": self._scene, "fx": self._fx, "screen": screen}
+        painters = defaultdict(list)
+        painters["pond"].append(self.pond.draw)
+        painters["backdrop"].append(backdrop)
+        painters["present"].append(self._present_fx)
+        painters["frog"].append(self.frog.draw)  # draws its pad first
+        if self.attract is not None:
+            painters["attract"].append(self.attract.draw)
+        if self.chaos is not None:
+            painters["chaos"].append(self.chaos.draw)
+        for effect in self.effects:
+            painters[_layer(effect)].append(effect.draw)
+
+        for target, layers in _CLEAN_PASSES:
+            for layer in layers:
+                for paint in painters[layer]:
+                    paint(targets[target])
 
     # ----------------------------------------------------- graceful degrade
 
