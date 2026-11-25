@@ -15,6 +15,7 @@ import math
 import pygame
 
 from .base import EffectContext
+from .glow import painted_sprite
 from .particles import Particle, ParticleSystem
 
 _BUCKET = 4  # px — radius bucketing step, keeps the sprite cache tiny
@@ -43,6 +44,9 @@ def bubble_sprite(radius: int) -> pygame.Surface:
     radius is invisible on screen.
     """
     bucket = max(_BUCKET, (int(radius) // _BUCKET) * _BUCKET)
+    painted = painted_sprite("bubble", bucket // _BUCKET)
+    if painted is not None:
+        return painted.frame(2 * radius)
     cached = _sprite_cache.get(bucket)
     if cached is not None:
         return cached
@@ -139,12 +143,16 @@ class BubbleField:
         for b in self.bubbles:
             sprite = bubble_sprite(int(b.radius))
             remaining = b.life - b.age
-            if remaining < _FADE_TIME:
-                alpha = max(0, int(255 * (remaining / _FADE_TIME)))
-                sprite = sprite.copy()
-                sprite.set_alpha(alpha)
             rect = sprite.get_rect(center=(int(b.x), int(b.y)))
-            surface.blit(sprite, rect)
+            if remaining < _FADE_TIME:
+                previous = sprite.get_alpha()
+                sprite.set_alpha(max(0, int(255 * remaining / _FADE_TIME)))
+                try:
+                    surface.blit(sprite, rect)
+                finally:
+                    sprite.set_alpha(previous)  # the next bubble can share this frame
+            else:
+                surface.blit(sprite, rect)
         self.droplets.draw(surface)
 
     def pop_near(self, pos: tuple[float, float],
