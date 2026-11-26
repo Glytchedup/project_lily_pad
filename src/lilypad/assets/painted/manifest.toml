@@ -279,13 +279,13 @@ view = "side"
 
 [animals.velociraptor]
 anchor = [0.5, 0.936231884057971]
-back_at = [0.5025575447570333, 0.06086956521739131]
-eye_at = [0.6232489986374514, 0.18424069794521775]
+back_at = [0.5942622950819673, 0.10144927536231885]
+eye_at = [0.7096200279578091, 0.2123896191439164]
 faces_left = false
 frames = { blink = "velociraptor/blink.webp", idle = "velociraptor/idle.webp", step = "velociraptor/step.webp" }
 native_height = 345
 prompt_id = "sheet-side-v1"
-source_hash = "sha256:9ae3ee20531f42133d13844aaa529887a55ae90202aa3e33c127e750c7bff69a"
+source_hash = "sha256:2be6137252be6aaba8780b4b8392d78fa2aea1840785829f8963bbc3a73b9e8d"
 view = "side"
 
 [animals.whale]
