@@ -15,7 +15,7 @@ from ..input.mapper import Action
 from .animals import animal_effect, animal_for_letter, random_dinosaur
 from .base import BRIGHT_PALETTE, Effect, EffectContext
 from .bubbles import BubbleField
-from .letters import GiantLetter
+from .letters import GiantLetter, painted_letters
 from .layout import CLASSIC, Layout
 from .numbers import CountAlong
 from .particles import (
@@ -34,16 +34,20 @@ Factory = Callable[[EffectContext, Action], list[Effect]]
 
 
 def _letter(ctx: EffectContext, action: Action) -> list[Effect]:
-    letter = GiantLetter(ctx, action.letter)
-    out: list[Effect] = [burst(ctx, letter.pos, count=45, speed=340), letter]
     # Animal letters bring their animal along ("C is for cow — moo!"),
     # and B blows bubbles. The letter still shows; the friend joins it.
     # (.upper() matches the audio engine's normalization — evdev names are
     # uppercase, but don't rely on every backend agreeing.)
     upper = action.letter.upper()
     animal = animal_for_letter(upper)
+    # Reserve the path of this key's own animal before placing its letter
+    # and burst. Legacy keeps spawning them in their original RNG order.
+    arriving = animal_effect(ctx, animal) if animal and painted_letters() else None
+    space = ctx.arrival_space(arriving) if arriving is not None and ctx.arrival_space else None
+    letter = GiantLetter(ctx, action.letter, arrival_space=space)
+    out: list[Effect] = [burst(ctx, letter.pos, count=45, speed=340), letter]
     if animal is not None:
-        out.append(animal_effect(ctx, animal))
+        out.append(arriving if arriving is not None else animal_effect(ctx, animal))
     if upper == "B":
         out.append(BubbleField(ctx, count=8))
     return out

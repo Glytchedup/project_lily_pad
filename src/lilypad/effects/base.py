@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Callable, Protocol
 
 import pygame
 
@@ -40,6 +40,9 @@ class EffectContext:
     size: tuple[int, int]          # screen size
     rng: random.Random
     scale: float = 1.0             # degradation factor 0.25..1.0 (particle counts)
+    occupied: Callable[[], list[pygame.Rect]] = list
+    # A letter's own animal is not yet live when its factory asks for a spot.
+    arrival_space: Callable[[Effect], list[pygame.Rect]] | None = None
 
     @property
     def width(self) -> int:

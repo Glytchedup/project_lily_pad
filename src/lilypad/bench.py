@@ -18,7 +18,7 @@ import pygame
 
 from .__main__ import _default_mode, _find_config
 from .config import Config, load
-from .effects import animal_art, animals, critter
+from .effects import animal_art, animals, critter, letters
 from .effects.assets import asset_root
 from .effects.engine import ANIMAL_TYPES, EffectEngine
 from .effects.glow import set_fx_style
@@ -242,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
         root = asset_root(kiosk=kiosk)
         animal_art.set_art_mode(cfg.effects.animal_art, root=root)
         critter.set_pip_art(cfg.effects.pip_art, root=root)
+        letters.set_letter_art(cfg.effects.animal_art, root=root)
         set_fx_style(cfg.effects.fx_style, root=root)
         animals.prewarm(h, screen_width=w, max_sprite_width=cfg.effects.max_sprite_width,
                        layout=layout_for(cfg.scene.world))

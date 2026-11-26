@@ -5,6 +5,7 @@ graceful degradation."""
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
 from collections import defaultdict
@@ -161,7 +162,8 @@ class EffectEngine:
         self.sleep_timeout = sleep_timeout
         self.asleep = False
         self.frame_budget = 1.0 / max(1, fps)
-        self.ctx = EffectContext(size=size, rng=rng or random.Random())
+        self.ctx = EffectContext(size=size, rng=rng or random.Random(),
+                                 occupied=self._occupied, arrival_space=self._arrival_space)
         self.effects: list[Effect] = []
         self.frog = Frog(size)
         if critter.painted_pip_active():
@@ -181,6 +183,9 @@ class EffectEngine:
         self.beat_clock = None
         self.director = Director(self.ctx) if ecosystem else None
         self.storybook = Storybook(size, storybook, pond=self.pond, root=root) if storybook != "off" else None
+        self._last_card = self._outgoing_card = None
+        if self.storybook is not None:
+            self.storybook.on_show.append(self._remember_card)
         self.album = create_album(album, size, root)
         if self.album is not None:
             self.album.prewarm(animals.animal_names())
@@ -225,6 +230,116 @@ class EffectEngine:
         self._frame_no = 0
         self._frame_ema = self.frame_budget
         self._chaos_spawn_accum = 0.0
+
+    def _crossing_path(self, animal: AnimalCrossing) -> pygame.Rect:
+        """Sweep the next 1.5 s without ticking a gait, its dust or its RNG."""
+        seconds = max(0., min(1.5, animal.total - animal.age) - animal._pause_left)
+        travel = seconds * animal.speed * (-1 if animal.going_left else 1)
+        x1, x2 = sorted((animal.x, animal.x + travel))
+        w = max(sprite.get_width() for sprite in animal._sprites.values())
+        h = max(sprite.get_height() for sprite in animal._sprites.values())
+        if animal.airborne:
+            mid, wave = ((animal._air_y, animal.FLY_WAVE) if animal.gait == "fly"
+                         else (animal._swim_y, animal.SWIM_WAVE))
+            top = mid - wave * animal.height - h / 2
+            bottom = mid + wave * animal.height + h / 2
+        else:
+            ground = animal._ground + (self._foot_margins.get(animal.name, 0)
+                                       if self.clean_sprites else 0)
+            lift = .42 if animal.gait == "hop" else .035
+            top, bottom = ground - lift * animal.height - h, ground
+        if animal.age - animal._greet_start < animal.GREET_DURATION:
+            top -= .14 * animal.height
+        x = math.floor(x1 - w / 2)
+        y = math.floor(top)
+        return pygame.Rect(x, y, math.ceil(x2 + w / 2) - x, math.ceil(bottom) - y)
+
+    def _animal_space(self, animal: AnimalCrossing | PeekabooAnimal) -> list[pygame.Rect]:
+        sprite = animal._sprites[animal.pose]
+        if isinstance(animal, AnimalCrossing):
+            sweep = self._crossing_path(animal)
+            current = animal._sprite_rect(sprite)
+            if self.clean_sprites and not animal.airborne and animal.name in self._foot_margins:
+                current.bottom = round(animal.y) + self._foot_margins[animal.name]
+            return [sweep] if sweep.contains(current) else [sweep, current]
+        bob = math.sin(animal.age * math.tau * 1.6) * animal.height * .022
+        sway = math.sin(animal.age * math.tau * .85) * animal.height * .018
+        rect = sprite.get_rect(midtop=(int(animal.x + sway), int(animal.y + bob - animal.jump)))
+        if animal.age < animal.RISE_TIME:
+            # Reserve the risen portrait before its first visible pixel.
+            rect.top = int(animal._y_rest - .25 * animal.height)
+            rect.height = self.ctx.height - rect.top
+            rect.inflate_ip(2 * math.ceil(.018 * animal.height), 0)
+        return [rect]
+
+    def _arrival_space(self, animal: Effect) -> list[pygame.Rect]:
+        if not isinstance(animal, ANIMAL_TYPES) or self.animal_count() >= MAX_ANIMALS:
+            return []
+        rects = self._animal_space(animal)
+        album = self.album
+        if album is not None and animal.name not in album.seen and not album._wants_down():
+            rects.append(pygame.Rect(0, 0, self.ctx.width, album.strip_h))
+        return rects
+
+    def _remember_card(self, letter, animal, source):
+        # showing clears before the outgoing animal has finished dissolving.
+        self._outgoing_card = self._last_card if self.storybook._installed else None
+        self._last_card = letter
+
+    def _pip_rect(self) -> pygame.Rect | None:
+        frog = self.frog
+        if self._riding_in_parade():
+            anchor = self.parade.pip_anchor()
+            return self._rider_sprite.get_rect(midbottom=anchor) if anchor is not None else None
+        sprite = critter.frog_sprite(frog.r, frog.pose)
+        body = sprite.get_rect()
+        if frog.age < frog._duck_until:
+            body = frog._duck_sprites.get(sprite, sprite).get_rect()
+        elif frog.squash > .01:
+            body.size = (max(2, int(body.w * (1 + .22 * frog.squash))),
+                         max(2, int(body.h * (1 - .22 * frog.squash))))
+        body.midbottom = int(frog.x), int(frog.y + frog._feet)
+        return body
+
+    def _occupied(self) -> list[pygame.Rect]:
+        """Visible scene footprints and the paths an arriving glyph must leave clear."""
+        screen = pygame.Rect((0, 0), self.size)
+        pad = self.frog.pad
+        rects = [critter.lily_pad_sprite(pad.r).get_rect(center=(int(pad.x), int(pad.y)))]
+        body = self._pip_rect()
+        if body is not None:
+            rects.append(body)
+        if self.lily is not None and not self.lily.asleep:
+            lily = self.lily
+            art, (x, y) = lily.spot.poses[lily.pose]
+            rects.append(art.get_rect(topleft=(x, y + (lily._bob() if lily.cheering else 0))))
+            if lily.spot.pad:
+                art, at = lily.spot.pad
+                rects.append(art.get_rect(topleft=at))
+        if self.storybook:
+            card = self.storybook.showing
+            cards = {card}
+            if self.storybook.dissolving:
+                cards.add(self._outgoing_card if card else self._last_card)
+            for letter in cards - {None}:
+                # Shipped pages alternate: A's alligator is left, B's bear right.
+                third = math.ceil(screen.w / 3)
+                left = screen.w - third if (ord(letter) - ord("A")) % 2 else 0
+                rects.append(pygame.Rect(left, 0, third, screen.h))
+        album = self.album
+        if album is not None:
+            if album._wants_down():
+                rects.append(pygame.Rect(0, 0, screen.w, album.strip_h))
+            elif album.visible:
+                rects.append(pygame.Rect(0, round(album._offset), screen.w, album.strip_h))
+        for effect in self.effects:
+            if isinstance(effect, ANIMAL_TYPES):
+                rects.extend(self._animal_space(effect))
+            elif isinstance(effect, GiantLetter):
+                rects.append(effect.footprint)
+            elif isinstance(effect, CountAlong):
+                rects.append(effect.digit.footprint)
+        return [r.clip(screen) for r in rects if r.colliderect(screen)]
 
     def _register_lily_feet(self) -> None:
         # A flush canvas anchor on an older Lily pack means "use idle alpha".

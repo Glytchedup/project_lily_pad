@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 POND = (14, 26, 44)
 FPS = 60
 SEED = 319
-SCENARIOS = ("walk", "hop", "crossing", "peekaboo", "fireworks", "party", "count")
+SCENARIOS = ("walk", "hop", "crossing", "peekaboo", "fireworks", "party", "count", "letters")
 
 
 class StaticPond:
@@ -151,6 +151,7 @@ def _scene_frames(pygame, surface, eng, scenario, pond, out):
     if pond is not None:
         eng.pond = pond
     surface.fill((0, 0, 0))  # the real trail veil reads the previous frame
+    presses = {}
     if scenario == "walk":
         eng.effects.append(animals.animal_effect(eng.ctx, "giraffe"))
         captures = {18:"walk-0.3", 102:"walk-1.7", 180:"walk-3.0"}
@@ -158,7 +159,7 @@ def _scene_frames(pygame, surface, eng, scenario, pond, out):
         rabbit = animals.animal_effect(eng.ctx, "rabbit")
         eng.effects.append(rabbit)
         captures = {math.ceil(2*rabbit.HOP_PERIOD*FPS): "hop-landing"}
-    elif scenario == "crossing":
+    elif scenario in ("crossing", "letters"):
         bear = animals.animal_effect(eng.ctx, "bear")
         fox = animals.animal_effect(eng.ctx, "fox")
         # Select a deterministic opposite-facing spawn using the real factory;
@@ -167,6 +168,10 @@ def _scene_frames(pygame, surface, eng, scenario, pond, out):
             fox = animals.animal_effect(eng.ctx, "fox")
         eng.effects.extend((bear, fox))
         captures = {round(1.45*FPS): "two-crossing"}
+        if scenario == "letters":
+            presses = {round(.66 * FPS): "C", round(1.28 * FPS): "S"}
+            captures = {round(1.21 * FPS): "crossing-letter-C",
+                        round(1.84 * FPS): "crossing-letters-CS"}
     elif scenario == "peekaboo":
         cow = animals.animal_effect(eng.ctx, "cow")
         eng.effects.append(cow)
@@ -182,6 +187,9 @@ def _scene_frames(pygame, surface, eng, scenario, pond, out):
         eng.spawn(Action("number", key="5", count=5), 0.)
         captures = {round(1.4*FPS): "count-five"}
     for tick in range(1, max(captures)+1):
+        if tick in presses:
+            letter = presses[tick]
+            eng.spawn(Action("letter", key=letter, letter=letter), tick / FPS)
         eng.update(1/FPS, tick/FPS)
         eng.draw(surface)
         if getattr(eng, "album", None) is not None:
@@ -217,10 +225,12 @@ def run(args):
         surface = pygame.display.set_mode(size)
         args.out.mkdir(parents=True, exist_ok=True)
         if hasattr(critter, "set_pip_art"):
-            from lilypad.effects import glow
+            from lilypad.effects import glow, letters
             from lilypad.effects.assets import asset_root
             root = asset_root(kiosk=False)
             critter.set_pip_art(cfg.effects.pip_art, root=root)
+            if hasattr(letters, "set_letter_art"):
+                letters.set_letter_art(cfg.effects.animal_art, root=root)
             if hasattr(glow, "set_fx_style"):
                 glow.set_fx_style(cfg.effects.fx_style, root=root)
         if args.pip_override:
