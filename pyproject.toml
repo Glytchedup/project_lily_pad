@@ -41,6 +41,7 @@ lilypad = ["assets/silhouettes/*.svg", "assets/silhouettes/*.md"]
 "lilypad.assets.fx" = ["**/*.webp", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
 "lilypad.assets.voice" = ["**/*.webp", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
 "lilypad.assets.letters" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md"]
+"lilypad.assets.eyes" = ["**/*.webp", "**/*.png", "**/*.toml", "**/*.md"]
 "lilypad.assets.album" = ["**/*.webp", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.toml", "**/*.md"]
 "lilypad.assets.music" = ["**/*.webp", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.toml", "**/*.md", "**/*.json", "**/*.wav", "**/*.ogg", "**/*.mp3"]
 
