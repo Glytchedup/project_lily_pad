@@ -313,7 +313,8 @@ class GiantLetter:
                 y = round(y * rect.h / h)
             xs = rect.x + left, rect.x + right
             cy = rect.y + y
-            r = max(2, min(r, (right - left) // 2 - 1))
+            # Big googly eyes read as a face at a glance; they may nearly touch (owner: "upgrade the eyes").
+            r = max(2, min(rect.height // 9, int((right - left) * 0.62)))
         return xs, cy, r
 
     def _blink(self) -> float:
