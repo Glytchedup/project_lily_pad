@@ -10,13 +10,144 @@ circles, and — only during the short pop-in — an integer scale.
 from __future__ import annotations
 
 import colorsys
+import logging
 import math
+import random
+import tomllib
+from bisect import bisect_left
+from functools import cache, lru_cache
+from pathlib import Path
+from string import ascii_uppercase
 
 import pygame
 
+from . import assets
 from .base import EffectContext, random_bright
 
 _font_cache: dict[int, pygame.font.Font] = {}
+_painted = False
+_stickers: dict[str, pygame.Surface] = {}
+log = logging.getLogger(__name__)
+
+
+def set_letter_art(mode: str, root: Path | None = None) -> None:
+    """Select the glyph route; root contains letters/manifest.toml."""
+    global _painted
+    if mode not in {"painted", "traced", "drawn"}:
+        raise ValueError(f"Unknown letter art mode: {mode}")
+    _painted = mode == "painted"
+    _stickers.clear()
+    _scaled_sticker.cache_clear()
+    _pop_frames.cache_clear()
+    if not _painted:
+        return
+    directory = (root if root is not None else assets.asset_root()) / "letters"
+    try:
+        with (directory / "manifest.toml").open("rb") as stream:
+            manifest = tomllib.load(stream)
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError) as exc:
+        log.warning("Ignoring letter manifest in %s: %s", directory, exc)
+        return
+    rows = manifest.get("letters", {})
+    if manifest.get("schema") != 1 or not isinstance(rows, dict):
+        return
+    for letter in ascii_uppercase:
+        if letter not in rows:
+            continue
+        try:
+            path = Path(rows[letter]["file"])
+            if path.anchor or ".." in path.parts:
+                raise ValueError("file must be relative to the letter manifest")
+            art = assets.load_image(directory / path)
+            bounds = art.get_bounding_rect(min_alpha=1)
+            if not bounds or not art.get_bounding_rect(min_alpha=128):
+                raise ValueError("empty sticker")
+            _stickers[letter] = art.subsurface(bounds)
+        except (KeyError, TypeError, ValueError, OSError, pygame.error, NotImplementedError) as exc:
+            log.warning("Ignoring painted letter %s: %s", letter, exc)
+
+
+def painted_letters() -> bool:
+    """Placement follows the requested mode even when a sticker falls back."""
+    return _painted
+
+
+def _width_at(native: tuple[int, int], height: int) -> int:
+    return max(1, round(native[0] * height / native[1]))
+
+
+def _eye_anchors(art: pygame.Surface) -> tuple[int, int, int]:
+    """Find two inked columns on the upper stroke, including split strokes like M."""
+    w, h = art.get_size()
+    rows = sorted(range(h), key=lambda y: abs(y - h * .14))
+    for y in rows:
+        ink = [x for x in range(w) if art.get_at((x, y)).a >= 128]
+        if ink:
+            return ink[len(ink) // 4], ink[3 * len(ink) // 4], y
+    # At very small display sizes, smoothing may soften all of the opaque ink.
+    return w // 3, 2 * w // 3, round(h * .14)
+
+
+@cache
+def _scaled_sticker(letter: str, height: int):
+    native = _stickers[letter]
+    size = _width_at(native.get_size(), height), height
+    art = pygame.transform.smoothscale(native, size) if size != native.get_size() else native
+    return art, _eye_anchors(art)
+
+
+# A short set of reusable pop poses, including the exact hold and overshoot.
+# Keep only a handful of large pop sets between presses on the 1 GB Pi.
+_POP_SCALES = (.05, .18, .32, .46, .60, .74, .88, 1., 1.075, 1.15)
+_POP_CUTS = tuple((a + b) / 2 for a, b in zip(_POP_SCALES, _POP_SCALES[1:]))
+
+
+@lru_cache(maxsize=6)
+def _pop_frames(art: pygame.Surface) -> tuple[pygame.Surface, ...]:
+    w, h = art.get_size()
+    return tuple(art if scale == 1 else pygame.transform.scale(
+        art, (max(1, int(w * scale)), max(1, int(h * scale))))
+        for scale in _POP_SCALES)
+
+
+_CANDIDATES = (tuple((x, y) for y in (.14, .27, .40) for x in (.08, .35, .65, .92))
+               + ((.08, .68), (.92, .68)))
+
+
+def _footprint(w: int, h: int) -> pygame.Rect:
+    """Envelope of the centred pop and the hold-phase sway, including narrow glyphs."""
+    return pygame.Rect(0, 0, max(math.ceil(1.15 * w), w + 2 * math.ceil(.012 * h)),
+                       math.ceil(1.15 * h))
+
+
+def _place(ctx: EffectContext, native: tuple[int, int], height: int,
+           occupied: list[pygame.Rect]) -> tuple[tuple[int, int], int]:
+    screen = pygame.Rect((0, 0), ctx.size)
+    tie = ctx.rng.random()  # one draw even for a unique fit or a completely full screen
+    best_score = (math.inf, 0)
+    spots = []
+    for fraction in (1., .925, .85):
+        h = math.ceil(height * fraction)
+        box = _footprint(_width_at(native, h), h)
+        for fx, fy in _CANDIDATES:
+            box.center = round(screen.w * fx), round(screen.h * fy)
+            box.clamp_ip(screen)
+            inside = box.clip(screen)
+            area = box.w * box.h - inside.w * inside.h
+            for rect in occupied:
+                hit = inside.clip(rect)
+                area += hit.w * hit.h
+            score = area, -h  # largest equally clear size wins
+            if score < best_score:
+                spots.clear()
+                best_score = score
+            if score == best_score:
+                spots.append((box.center, h))
+        if best_score[0] == 0:
+            break
+    return spots[int(tie * len(spots))]
 
 
 def _font(size: int) -> pygame.font.Font:
@@ -75,8 +206,8 @@ def render_glyph(text: str, size: int, color: tuple[int, int, int],
 class GiantLetter:
     """A huge letter pops in, wobbles with googly eyes, fades out.
 
-    The glyph is rendered once at full size; the pop-in animates with cheap
-    integer scaling only during the first ~0.3 s, then blits are direct.
+    Painted mode blits cached pop poses for the first ~0.3 s. The original
+    font route keeps its continuous integer scaling during that interval.
     The hold-phase wobble is a position bob/sway rather than a rotation —
     rotating a ~650 px RGBA surface every frame is the kind of cost the Pi
     frame budget exists to forbid, and the bob reads just as alive.
@@ -92,15 +223,41 @@ class GiantLetter:
                  color: tuple[int, int, int] | None = None,
                  height_frac: float = 0.6,
                  eyes: bool = True,
-                 hold_time: float | None = None) -> None:
-        self.color = color or random_bright(ctx.rng)
+                 hold_time: float | None = None,
+                 arrival_space: list[pygame.Rect] | None = None) -> None:
+        # The font's optional white-outline reroll must not affect placement
+        # or the next effect when a painted file is present, missing or bad.
+        art_rng = random.Random(ctx.rng.random()) if _painted else ctx.rng
+        self.color = color or random_bright(art_rng)
         size = int(ctx.height * height_frac)
-        rainbow = ctx.rng.random() < self.RAINBOW_CHANCE
-        self.glyph = render_glyph(text, size, self.color, ctx.rng, rainbow)
-        self.pos = pos or (
-            ctx.rng.uniform(ctx.width * 0.3, ctx.width * 0.7),
-            ctx.rng.uniform(ctx.height * 0.35, ctx.height * 0.65),
-        )
+        rainbow = art_rng.random() < self.RAINBOW_CHANCE
+        self._eye_ink = None
+        self._pop = None
+        source = _stickers.get(text)
+        if source is None:
+            art = render_glyph(text, size, self.color, art_rng, rainbow)
+            native = art.get_size()
+            height = art.get_height()
+        else:
+            native = source.get_size()
+            # Match the ink height the outlined font would have displayed.
+            _, _, low, high, _ = _font(size).metrics(text)[0]
+            height = max(1, high - low + 2 * max(2, size // 36))
+        if pos is None and _painted:
+            obstacles = ctx.occupied()
+            if arrival_space:
+                obstacles = obstacles + arrival_space
+            pos, height = _place(ctx, native, height, obstacles)
+        self.pos = pos or (ctx.rng.uniform(ctx.width * 0.3, ctx.width * 0.7),
+                           ctx.rng.uniform(ctx.height * 0.35, ctx.height * 0.65))
+        if source is not None:
+            art, self._eye_ink = _scaled_sticker(text, height)
+        elif height != art.get_height():
+            art = pygame.transform.smoothscale(art, (_width_at(native, height), height))
+        if _painted:
+            self._pop = _pop_frames(art)
+        # A subsurface shares the cached pixels but owns its blanket fade alpha.
+        self.glyph = art.subsurface(art.get_rect()) if source is not None else art
         self.eyes = eyes
         self.eye_phase = ctx.rng.uniform(0, math.tau)
         self.age = 0.0
@@ -108,6 +265,12 @@ class GiantLetter:
         # digit up until the last object has been counted).
         self.hold_time = self.HOLD_TIME if hold_time is None else hold_time
         self.total = self.POP_TIME + self.hold_time + self.FADE_TIME
+
+    @property
+    def footprint(self) -> pygame.Rect:
+        rect = _footprint(*self.glyph.get_size())
+        rect.center = int(self.pos[0]), int(self.pos[1])
+        return rect
 
     def update(self, dt: float) -> bool:
         self.age += dt
@@ -137,11 +300,16 @@ class GiantLetter:
         """
         r = max(6, rect.height // 14)
         cy = rect.top + int(rect.height * 0.10)
+        xs = (rect.centerx - int(rect.width * 0.16), rect.centerx + int(rect.width * 0.16))
+        if self._eye_ink is not None:
+            left, right, y = self._eye_ink
+            xs = rect.x + left, rect.x + right
+            cy = rect.y + y
+            r = max(2, min(r, (right - left) // 2 - 1))
         wander = self.age * 2.6 + self.eye_phase
         px = int(math.cos(wander) * r * 0.35)
         py = int(math.sin(wander * 0.7) * r * 0.35)
-        for side in (-1, 1):
-            ex = rect.centerx + side * int(rect.width * 0.16)
+        for ex in xs:
             pygame.draw.circle(surface, (25, 25, 30), (ex, cy), r + 2)
             pygame.draw.circle(surface, (255, 255, 255), (ex, cy), r)
             pygame.draw.circle(surface, (25, 25, 30), (ex + px, cy + py),
@@ -156,9 +324,12 @@ class GiantLetter:
                 scale = max(0.05, 1.15 * (t / 0.7))
             else:
                 scale = 1.15 - 0.15 * ((t - 0.7) / 0.3)
-            w = max(1, int(img.get_width() * scale))
-            h = max(1, int(img.get_height() * scale))
-            img = pygame.transform.scale(img, (w, h))
+            if self._pop is not None:
+                img = self._pop[bisect_left(_POP_CUTS, scale)]
+            else:
+                w = max(1, int(img.get_width() * scale))
+                h = max(1, int(img.get_height() * scale))
+                img = pygame.transform.scale(img, (w, h))
         elif self.age > self.POP_TIME + self.hold_time:
             fade = 1.0 - (self.age - self.POP_TIME - self.hold_time) / self.FADE_TIME
             # The glyph is instance-owned and the phases are monotonic, so

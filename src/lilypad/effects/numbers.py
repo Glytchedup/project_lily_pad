@@ -15,7 +15,7 @@ import pygame
 
 from .animals import MINI_KINDS, mini_sprite
 from .base import EffectContext
-from .letters import GiantLetter
+from .letters import GiantLetter, painted_letters
 from .particles import ParticleSystem, burst
 
 
@@ -54,7 +54,8 @@ class CountAlong:
         # and 10th objects had even appeared.
         self.digit = GiantLetter(
             ctx, str(self.count),
-            pos=(ctx.width * 0.5, ctx.height * 0.2), height_frac=0.28,
+            pos=None if painted_letters() else (ctx.width * 0.5, ctx.height * 0.2),
+            height_frac=0.28,
             eyes=False,
             hold_time=self.total - GiantLetter.POP_TIME - GiantLetter.FADE_TIME,
         )
