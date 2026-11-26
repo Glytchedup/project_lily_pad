@@ -221,7 +221,8 @@ record the real one and fix this file.
       (journal timestamps). Note the prebuild time; the painted cast prebuilds
       every pose at display size before the first keypress.
       _2026-11-26: about 4 s from `Started lilypad` (7.97 s after boot) to the
-      Razer grab (12.0 s). The cast prebuild ran between 10.3 s and 11.3 s._
+      Razer lighting claim (12.0 s). That is the last startup log line, not a
+      measured first frame. The cast prebuild ran between 10.3 s and 11.3 s._
 - [ ] After a minute of play, `ps -o rss= -p $(systemctl show lilypad -p MainPID --value)`
       leaves comfortable headroom (`free -m` available memory, no swap in use) and
       `journalctl -k | grep -i oom` is empty. Record the RSS.

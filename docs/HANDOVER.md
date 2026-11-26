@@ -21,17 +21,16 @@ He has tested `main` on the dev PC and said "Looks perfect". What remains: **fin
   - `4d46eaa`: the party fires on the 8th distinct animal, the gap is 120 s counted from the previous party's end, and there are more fireworks.
   - `ee1a8d8`: V is a feathered raptor with a crowned kitten rider in sunglasses.
 - Docs (CHANGELOG `[Unreleased]`, CLAUDE.md, PLAN.md decisions, README, VERIFY) were closed out in the `docs:` commit that follows those.
-- **The card on the Pi runs `4b43ca6`, which is 88 commits behind `main`.** This comes from the Ground-Zero registry and was not re-verified on the device: the Pi was unreachable at hand-off.
-- **The Pi was not reachable on 2026-11-25.** `tools/pi/find_pi.ps1` returned NOT FOUND:
-  - mDNS `lilypad.local` did not resolve.
-  - No Raspberry Pi MAC address appeared after a ping sweep of `192.168.68.0/22`.
-  - The only other SSH host (`.120`, a different device) rejected the Pi key.
-  - So the Pi was most likely off or unplugged from Ethernet.
-- Ground-Zero registry PR: https://github.com/Glytchedup/Ground-Zero/pull/20 (next steps updated). It needs merging.
+- **The card runs `2e612a8` (deployed 2026-11-26) and is locked again.** `main` is ahead of it only by docs commits, so the device does not need a redeploy for them.
+- Ground-Zero registry PR: https://github.com/Glytchedup/Ground-Zero/pull/20 (deploy recorded in `ed4f445`). It needs merging.
 
 ## Update 2026-11-26: deploy done
 
-Steps 1-3 and 5 below are done. The card runs `2e612a8` and is locked (`overlayroot overlay`), and `lilypad` is active. The Pi is now at `192.168.0.131/24` on `end0`, and `lilypad.local` resolves over IPv6. The kiosk smoke passed. Ground-Zero PR #20 has the registry update (`ed4f445`) and still needs merging. VERIFY §7c records the startup, memory and bench numbers. **Still open:** step 4, the hands-on checks with Dave at the keyboard. The bench misses p95 16.7 ms (party 17.1, heavy 20.5, parade 24.9), so decide whether to try `effects.fx_style = "glow"`, or to accept the engine's own degradation.
+Steps 1-3 and 5 below are done. The card runs `2e612a8` and is locked (`overlayroot overlay`), and `lilypad` is active. The Pi is now at `192.168.0.131/24` on `end0`, and `lilypad.local` resolves over IPv6. The kiosk smoke passed. Ground-Zero PR #20 has the registry update (`ed4f445`) and still needs merging. VERIFY §7c records the startup, memory and bench numbers. **Still open:** step 4, the hands-on checks with Dave at the keyboard. The bench misses p95 16.7 ms (party 17.1, heavy 20.5, parade 24.9), so decide whether to try `effects.fx_style = "glow"`, or to accept the engine's own degradation. In all three scenarios `min_scale` reached 0.25, the floor of the engine's degradation scale. There is no on-device baseline for `4b43ca6`, so this is not a proven regression. Run the glow A/B with `--config` pointed at a temp copy so `/etc` stays untouched; it needs the service stopped, so ask Dave first.
+
+`install.sh`'s `apt-get install` upgraded Mesa from 26.2.0 to 26.2.7 (`libgbm1`, `libegl-mesa0`, `libgl1-mesa-dri`, `libglx-mesa0` and `mesa-libgallium`). `dpkg --verify` passes, and the smoke and bench ran on it.
+
+**Fresh session: start at step 4 (hands-on checks).** Steps 1-3 below are kept as the recipe for the next deploy.
 
 ## Next step
 
