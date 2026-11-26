@@ -1,0 +1,4 @@
+# Painted googly-eye kit: cream eye whites (plum keyline) and glossy brown irises with two catchlights.
+schema = 1
+whites = ["eye_white_1.webp", "eye_white_2.webp", "eye_white_3.webp"]
+irises = ["iris_1.webp", "iris_2.webp", "iris_3.webp"]

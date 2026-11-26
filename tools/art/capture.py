@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 POND = (14, 26, 44)
 FPS = 60
 SEED = 319
-SCENARIOS = ("walk", "hop", "crossing", "peekaboo", "fireworks", "party", "count", "letters")
+SCENARIOS = ("walk", "hop", "crossing", "peekaboo", "fireworks", "party", "count", "letters", "eyes")
 
 
 class StaticPond:
@@ -172,6 +172,12 @@ def _scene_frames(pygame, surface, eng, scenario, pond, out):
             presses = {round(.66 * FPS): "C", round(1.28 * FPS): "S"}
             captures = {round(1.21 * FPS): "crossing-letter-C",
                         round(1.84 * FPS): "crossing-letters-CS"}
+    elif scenario == "eyes":
+        # Three kit variants from ordinary keypresses. At 1080p this seed puts
+        # B inside its own blink at tick 170. The gaze pair uses the same pond.
+        presses = {1: "C", 131: "B", 261: "S"}
+        captures = {38: "eyes-C", 170: "eyes-B-blink", 300: "eyes-S",
+                    449: "pip-look-left", 450: "pip-look-right"}
     elif scenario == "peekaboo":
         cow = animals.animal_effect(eng.ctx, "cow")
         eng.effects.append(cow)
@@ -191,6 +197,8 @@ def _scene_frames(pygame, surface, eng, scenario, pond, out):
             letter = presses[tick]
             eng.spawn(Action("letter", key=letter, letter=letter), tick / FPS)
         eng.update(1/FPS, tick/FPS)
+        if scenario == "eyes" and tick in (449, 450) and hasattr(eng.frog, "look"):
+            eng.frog.look(-1 if tick == 449 else 1, 0)
         eng.draw(surface)
         if getattr(eng, "album", None) is not None:
             eng.album.draw(surface)
@@ -231,6 +239,8 @@ def run(args):
             critter.set_pip_art(cfg.effects.pip_art, root=root)
             if hasattr(letters, "set_letter_art"):
                 letters.set_letter_art(cfg.effects.animal_art, root=root)
+            if hasattr(letters, "set_eye_art"):
+                letters.set_eye_art(cfg.effects.animal_art, root=root)
             if hasattr(glow, "set_fx_style"):
                 glow.set_fx_style(cfg.effects.fx_style, root=root)
         if args.pip_override:

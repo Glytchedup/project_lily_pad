@@ -243,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         animal_art.set_art_mode(cfg.effects.animal_art, root=root)
         critter.set_pip_art(cfg.effects.pip_art, root=root)
         letters.set_letter_art(cfg.effects.animal_art, root=root)
+        letters.set_eye_art(cfg.effects.animal_art, root=root)
         set_fx_style(cfg.effects.fx_style, root=root)
         animals.prewarm(h, screen_width=w, max_sprite_width=cfg.effects.max_sprite_width,
                        layout=layout_for(cfg.scene.world))

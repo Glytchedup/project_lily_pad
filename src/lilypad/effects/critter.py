@@ -28,7 +28,7 @@ pad) and scales them into the very same ``(radius, pose)`` cache and the same
 box the drawn sprites occupy, so physics, ``floor_y`` and ``pad_reach`` never
 notice which route is active. Anything missing or undecodable logs once and
 falls back to the drawn Pip. ``eyes_white`` is a pupil-less frame; the pupils
-are two small discs drawn on top at draw time so they can look around.
+are painted irises or two small fallback discs drawn on top so they can look around.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from pathlib import Path
 import pygame
 
 from ..audio.tracks import BeatClock
-from . import assets
+from . import assets, eyes
 
 log = logging.getLogger(__name__)
 
@@ -553,11 +553,16 @@ class Frog:
         # guessed 1.8r left the notch hanging a few pixels off the screen.
         self.floor_y = self.h - pad_reach(self.r) - self._feet
         self.pad = _Pad(size, self.r, self.floor_y + self._feet)
+        self._look_irises = None
         if painted_pip_active():
             # Scale every painted pose now so the first cheer or blink does not
             # cost a frame. (The drawn route is left lazy, as it always was.)
             for pose in PAINTED_POSES:
                 frog_sprite(self.r, pose)
+            art = _painted_pip()
+            if art is not None and "eyes_white" in art.frames:
+                self._look_irises = eyes.prepare_pip(
+                    art.frames["eyes_white"], art.eye_at, frog_sprite(self.r, "eyes_white").get_size())
 
     def shove(self, direction: tuple[int, int]) -> None:
         self.cancel_ride()
@@ -759,6 +764,9 @@ class Frog:
     def _draw_pupils(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         art = _painted_pip()
         if art is None or "eyes_white" not in art.frames or self.gaze is None:
+            return
+        if self._look_irises is not None:
+            self._look_irises.draw(surface, rect, self.gaze)
             return
         ex, ey = art.eye_at
         travel = self.r * _PUPIL_TRAVEL

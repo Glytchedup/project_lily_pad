@@ -2,9 +2,8 @@
 
 Upgraded per VISUAL_REVIEW.md #6: thick contrasting outline, occasional
 rainbow-gradient fill, a gentle bob/sway wobble during the hold phase, and
-googly eyes that turn the glyph into a creature. All expensive work (glyph +
-outline + gradient) happens once at spawn; per-frame cost is blits, two
-circles, and — only during the short pop-in — an integer scale.
+googly eyes that turn the glyph into a creature. Painted glyphs and their eye
+poses are sized at spawn. The original font pop uses an integer scale.
 """
 
 from __future__ import annotations
@@ -23,6 +22,8 @@ import pygame
 
 from . import assets
 from .base import EffectContext, random_bright
+from .eyes import draw_eye, draw_original_eye, prepare_eye
+from .eyes import set_eye_art as set_eye_art  # App and capture configure both glyph art kits here.
 
 _font_cache: dict[int, pygame.font.Font] = {}
 _painted = False
@@ -260,6 +261,16 @@ class GiantLetter:
         self.glyph = art.subsurface(art.get_rect()) if source is not None else art
         self.eyes = eyes
         self.eye_phase = ctx.rng.uniform(0, math.tau)
+        self._eye_frames = {}
+        if eyes and self._pop is not None:
+            variant = sum(map(ord, text)) - ord("A")
+            for pose in self._pop:
+                _, _, radius = self._eye_layout(pose.get_rect())
+                if radius not in self._eye_frames:
+                    frames = prepare_eye(radius, variant)
+                    if frames is None:
+                        break
+                    self._eye_frames[radius] = frames
         self.age = 0.0
         # hold_time lets a caller stretch the display (count-along keeps its
         # digit up until the last object has been counted).
@@ -289,31 +300,44 @@ class GiantLetter:
         return (int(math.sin(t * 2.1 + self.eye_phase) * h * 0.012),
                 int(math.sin(t * 3.4) * h * 0.02))
 
-    def _draw_eyes(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
-        """Googly eyes during the hold, perched on top of the glyph.
-
-        Placing them INSIDE the glyph was glyph-blind: on most letters the
-        white ball vanished into the white outline (leaving pupil-holes in
-        the stroke) or floated in a counter. On top, every letter becomes a
-        creature peeking at you, and legibility is untouched. A dark rim
-        keeps the ball readable over the white outline it overlaps.
-        """
+    def _eye_layout(self, rect: pygame.Rect) -> tuple[tuple[int, int], int, int]:
+        """Carry the two upper-stroke anchors through the painted pop poses."""
         r = max(6, rect.height // 14)
         cy = rect.top + int(rect.height * 0.10)
         xs = (rect.centerx - int(rect.width * 0.16), rect.centerx + int(rect.width * 0.16))
         if self._eye_ink is not None:
             left, right, y = self._eye_ink
+            w, h = self.glyph.get_size()
+            if rect.size != (w, h):
+                left, right = round(left * rect.w / w), round(right * rect.w / w)
+                y = round(y * rect.h / h)
             xs = rect.x + left, rect.x + right
             cy = rect.y + y
             r = max(2, min(r, (right - left) // 2 - 1))
+        return xs, cy, r
+
+    def _blink(self) -> float:
+        phase = self.eye_phase / math.tau
+        period = 2 + 3 * phase
+        elapsed = (self.age + phase * period) % period
+        return max(0., 1 - abs(elapsed - .10) / .10)
+
+    def _draw_eyes(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        xs, cy, r = self._eye_layout(rect)
         wander = self.age * 2.6 + self.eye_phase
         px = int(math.cos(wander) * r * 0.35)
         py = int(math.sin(wander * 0.7) * r * 0.35)
+        frames = self._eye_frames.get(r)
+        if frames is None:
+            for ex in xs:
+                draw_original_eye(surface, (ex, cy), r, px, py)
+            return
+        blink = self._blink()
+        settle = self.age / (self.POP_TIME + .12)
+        if settle < 1:
+            py -= round(r * .40 * (1 - settle) * math.sin(math.tau * settle))
         for ex in xs:
-            pygame.draw.circle(surface, (25, 25, 30), (ex, cy), r + 2)
-            pygame.draw.circle(surface, (255, 255, 255), (ex, cy), r)
-            pygame.draw.circle(surface, (25, 25, 30), (ex + px, cy + py),
-                               max(3, r // 2))
+            draw_eye(surface, (ex, cy), r, px, py, blink, art=frames)
 
     def draw(self, surface: pygame.Surface) -> None:
         img = self.glyph
@@ -339,7 +363,8 @@ class GiantLetter:
         ox, oy = self._wobble()
         rect = img.get_rect(center=(int(self.pos[0]) + ox, int(self.pos[1]) + oy))
         surface.blit(img, rect)
-        if self.eyes and self.POP_TIME <= self.age <= self.POP_TIME + self.hold_time:
+        if self.eyes and self.age <= self.POP_TIME + self.hold_time and (
+                self._eye_frames or self.age >= self.POP_TIME):
             self._draw_eyes(surface, rect)
 
     def __len__(self) -> int:  # counts toward particle budget as a flat cost
