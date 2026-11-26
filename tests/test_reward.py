@@ -477,3 +477,259 @@ def test_party_bar_draws_without_error_and_only_when_earned():
     for p in (0.01, 0.5, 1.0):
         _draw_party_meter(surface, p)
     assert surface.get_at((1180, 30))[:3] != (0, 0, 0)   # something is there
+
+
+# ---------------------------------------------- the "animals" reward rule
+#
+# A party is earned by meeting N DIFFERENT animals, spaced by a minimum gap
+# from the previous party's end. Mashing one key, numbers and non-animal keys
+# earn nothing. The effect engine's on_animal hook names the creature that
+# really spawned (F7-F12 dinosaur picks included).
+
+from lilypad.effects.animals import ANIMAL_LETTERS, DINOSAURS  # noqa: E402
+
+CAST = sorted(set(ANIMAL_LETTERS.values()) | set(DINOSAURS))
+
+
+def animal_engine(tmp_path, **kwargs):
+    kwargs.setdefault("reward_rule", "animals")
+    kwargs.setdefault("reward_animals", 8)
+    kwargs.setdefault("reward_min_gap", 180.0)
+    return reward_engine(tmp_path, **kwargs)
+
+
+def meet(engine, names, start=0.0, gap=0.5):
+    """Show each animal in turn (notify_activity follows, as in the main loop)."""
+    now = start
+    for name in names:
+        engine.note_animal(name, now)
+        engine.notify_activity(now)
+        now += gap
+    return now
+
+
+def test_eight_different_animals_earn_a_party_once_the_gap_has_passed(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=0.0)
+    try:
+        meet(engine, CAST[:7])
+        assert engine.party_active is False
+        assert engine.reward_progress == pytest.approx(7 / 8)
+        engine.note_animal(CAST[7], 10.0)
+        assert engine.party_active is True
+        assert engine.consume_party_started() is True
+    finally:
+        engine.close()
+
+
+def test_repeats_and_mashing_one_key_never_earn_a_party(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=0.0)
+    try:
+        meet(engine, ["cow"] * 500, gap=0.02)
+        assert engine.party_active is False
+        assert engine.reward_progress == pytest.approx(1 / 8)
+        # Far past the "play" rule's seconds and press limits.
+        press(engine, 500, start=100.0, gap=7.0)
+        assert engine.party_active is False
+    finally:
+        engine.close()
+
+
+def test_a_dinosaur_counts_by_the_name_that_spawned(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=0.0)
+    try:
+        meet(engine, ["trex", "trex", "triceratops", "triceratops", "pterodactyl"])
+        assert engine.reward_progress == pytest.approx(3 / 8)
+    finally:
+        engine.close()
+
+
+def test_number_keys_and_other_actions_never_count(tmp_path):
+    """Only an animal name fills the meter: the effect hook is never called
+    for a number, and presses alone add nothing."""
+    engine = animal_engine(tmp_path, reward_min_gap=0.0)
+    try:
+        for i, key in enumerate(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] * 3):
+            engine.on_action(classify(key))
+            engine.notify_activity(i * 0.3)
+        assert engine.reward_progress == 0.0
+        assert engine.party_active is False
+        engine.note_animal("", 20.0)            # an unnamed animal is no animal
+        assert engine.reward_progress == 0.0
+    finally:
+        engine.close()
+
+
+def test_real_key_presses_through_the_effect_engine(tmp_path):
+    """End to end: letters and F-key dinos spawn animals that reach the meter;
+    digits, Space and Enter spawn none."""
+    audio = animal_engine(tmp_path, reward_min_gap=0.0)
+    eng = _engine()
+    eng.on_animal = audio.note_animal
+    try:
+        now = 1.0
+        for key in ["1", "2", "SPACE", "ENTER"]:
+            eng.spawn(classify(key), now)
+            audio.notify_activity(now)
+            now += 0.2
+        assert audio.reward_progress == 0.0
+        for key in ["A", "A", "A", "B", "D"]:
+            eng.spawn(classify(key), now)
+            audio.notify_activity(now)
+            now += 0.2
+        assert audio.reward_progress == pytest.approx(3 / 8)
+        # An F-key summons a random dinosaur, and it is that one that counts
+        # (a fresh engine: the five-animal cap would drop it on this one).
+        dino_audio = animal_engine(tmp_path, reward_min_gap=0.0)
+        try:
+            dino_eng = _engine()
+            dino_eng.on_animal = dino_audio.note_animal
+            dino_eng.spawn(classify("F9"), 1.0)
+            assert dino_audio._animals_met and dino_audio._animals_met <= set(DINOSAURS)
+            assert dino_audio.reward_progress == pytest.approx(1 / 8)
+        finally:
+            dino_audio.close()
+    finally:
+        audio.close()
+
+
+def test_the_gap_holds_a_full_meter_until_the_first_press_after_it(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=180.0)
+    try:
+        engine.tick(0.0)                                    # app start
+        meet(engine, CAST[:8], start=10.0)                  # all eight at ~10 s
+        assert engine.reward_progress == 1.0
+        assert engine.party_active is False                 # held by the gap
+        press(engine, 10, start=60.0, gap=5.0)              # presses inside the gap
+        assert engine.party_active is False
+        engine.tick(179.0)                                  # time alone never starts one
+        assert engine.party_active is False
+        engine.notify_activity(179.9)
+        assert engine.party_active is False
+        engine.notify_activity(180.0)                       # first press after the gap
+        assert engine.party_active is True
+    finally:
+        engine.close()
+
+
+def test_a_number_key_after_the_gap_releases_a_full_meter(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=30.0)
+    try:
+        engine.tick(0.0)
+        meet(engine, CAST[:8], start=1.0)
+        assert engine.party_active is False
+        engine.on_action(classify("5"))
+        engine.notify_activity(31.0)
+        assert engine.party_active is True
+    finally:
+        engine.close()
+
+
+def test_the_counter_resets_after_a_party_and_the_gap_runs_from_its_end(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=100.0)
+    try:
+        engine.tick(0.0)
+        meet(engine, CAST[:8], start=101.0)
+        assert engine.party_active is True
+        assert engine.reward_progress == 0.0                # hidden during the party
+        meet(engine, CAST[8:20], start=102.0)               # animals mid-party don't bank
+        engine._end_party(200.0)
+        assert engine.party_active is False
+        assert engine.reward_progress == 0.0                # counter was reset
+        meet(engine, CAST[:8], start=201.0)                 # full again, 1 s after the end
+        assert engine.reward_progress == 1.0
+        assert engine.party_active is False                 # gap runs from the END (200)
+        engine.notify_activity(299.0)
+        assert engine.party_active is False
+        engine.notify_activity(300.0)
+        assert engine.party_active is True
+    finally:
+        engine.close()
+
+
+def test_animals_met_before_a_party_do_not_carry_over(tmp_path):
+    engine = animal_engine(tmp_path, reward_min_gap=0.0)
+    try:
+        meet(engine, CAST[:8])
+        assert engine.party_active is True
+        engine._end_party(50.0)
+        meet(engine, CAST[:7], start=51.0)                  # the same seven again
+        assert engine.party_active is False
+        assert engine.reward_progress == pytest.approx(7 / 8)
+    finally:
+        engine.close()
+
+
+def test_the_party_failsafe_is_untouched_under_the_animals_rule(tmp_path, monkeypatch):
+    engine = animal_engine(tmp_path, reward_min_gap=0.0)
+    try:
+        meet(engine, CAST[:8])
+        assert engine.party_active is True
+        monkeypatch.setattr(engine, "_music_playing", lambda: True)   # never finishes
+        engine.tick(engine._party_at + PARTY_FANFARE_SECONDS + 0.1)
+        assert engine._party == "playing"
+        engine.tick(engine._party_at + PARTY_MAX_SECONDS + 1.0)
+        assert engine.party_active is False
+    finally:
+        engine.close()
+
+
+def test_animals_rule_is_silent_when_muted_or_outside_reward_mode(tmp_path):
+    muted = AudioEngine(tmp_path, mute=True, autogen=False, tunes="reward",
+                        reward_rule="animals", reward_animals=2, reward_min_gap=0.0)
+    muted.note_animal("cow", 0.0)
+    muted.note_animal("pig", 1.0)
+    assert muted.party_active is False and muted.reward_progress == 0.0
+    muted.close()
+    idle = AudioEngine(tmp_path, mute=False, autogen=False, tunes="idle",
+                       reward_rule="animals", reward_animals=2, reward_min_gap=0.0)
+    idle.note_animal("cow", 0.0)
+    idle.note_animal("pig", 1.0)
+    assert idle.party_active is False and idle.reward_progress == 0.0
+    idle.close()
+
+
+# ------------------------------------------------ the "play" rule is unchanged
+
+def test_play_rule_ignores_animals_and_the_gap(tmp_path):
+    """The play rule earns on seconds-or-presses exactly as before: animals
+    are not counted and the animals-rule spacing gap does not apply."""
+    engine = reward_engine(tmp_path, reward_rule="play", reward_min_gap=10_000.0,
+                           reward_animals=1, reward_presses=20)
+    try:
+        for name in CAST:
+            engine.note_animal(name, 0.0)
+        assert engine.party_active is False
+        assert engine.reward_progress == 0.0
+        press(engine, 19, gap=0.05)
+        assert engine.party_active is False
+        engine.notify_activity(1.0)
+        assert engine.party_active is True       # no gap holds it back
+        assert engine._press_count == 0
+    finally:
+        engine.close()
+
+
+def test_play_rule_progress_is_the_older_meter(tmp_path):
+    engine = reward_engine(tmp_path, reward_rule="play", reward_seconds=10_000.0,
+                           reward_presses=20)
+    try:
+        press(engine, 10, gap=0.05)
+        assert engine.reward_progress == pytest.approx(10 / 20)
+    finally:
+        engine.close()
+
+
+def test_the_bare_constructor_keeps_the_play_rule(tmp_path):
+    engine = reward_engine(tmp_path)
+    try:
+        assert engine.reward_rule == "play"
+    finally:
+        engine.close()
+
+
+def test_unknown_rule_falls_back_to_play(tmp_path):
+    engine = reward_engine(tmp_path, reward_rule="mashing")
+    try:
+        assert engine.reward_rule == "play"
+    finally:
+        engine.close()

@@ -150,6 +150,9 @@ PAINTED_SETTINGS = (
     ("audio.count_aloud", True, False),
     ("music.bundled_tracks", True, False),
     ("music.reward_source", "folder_first", "folder_first"),
+    ("music.reward_rule", "animals", "play"),
+    ("music.reward_animals", 8, 8),
+    ("music.reward_min_gap", 180.0, 180.0),
     ("music.party_show", True, False),
     ("lighting.mirror_animals", True, False),
     ("escape.summary_seconds", 8.0, 0.0),
@@ -183,7 +186,7 @@ def load_setting(tmp_path, name, literal):
 @pytest.mark.parametrize("name,default,legacy", PAINTED_SETTINGS)
 def test_painted_settings_reject_wrong_types(tmp_path, name, default, legacy):
     # A quoted boolean is truthy in Python, and a TOML bool is an int subclass.
-    wrong = {bool: '"false"', float: 'true', str: '["painted"]'}[type(default)]
+    wrong = {bool: '"false"', float: 'true', int: '8.5', str: '["painted"]'}[type(default)]
     with pytest.raises(ValueError, match=name):
         load_setting(tmp_path, name, wrong)
 
@@ -196,6 +199,7 @@ def test_painted_settings_reject_wrong_types(tmp_path, name, default, legacy):
     ("scene.world", ("painted", "drawn")),
     ("audio.voice", ("narrator", "espeak")),
     ("music.reward_source", ("folder_first", "bundled", "generated")),
+    ("music.reward_rule", ("animals", "play")),
 ])
 def test_painted_choices(tmp_path, name, allowed):
     for choice in allowed:
@@ -242,3 +246,30 @@ def test_painted_numeric_settings(tmp_path, name, literal, expected):
 def test_painted_invalid_numbers(tmp_path, name, literal):
     with pytest.raises(ValueError, match=name):
         load_setting(tmp_path, name, literal)
+
+
+@pytest.mark.parametrize("literal", ["0", "-3", "true", '"8"', "2.0"])
+def test_reward_animals_must_be_a_positive_integer(tmp_path, literal):
+    with pytest.raises(ValueError, match="music.reward_animals"):
+        load_setting(tmp_path, "music.reward_animals", literal)
+
+
+@pytest.mark.parametrize("literal", ["-1", "true", '"180"', "nan", "inf"])
+def test_reward_min_gap_must_be_a_finite_non_negative_number(tmp_path, literal):
+    with pytest.raises(ValueError, match="music.reward_min_gap"):
+        load_setting(tmp_path, "music.reward_min_gap", literal)
+
+
+def test_reward_min_gap_accepts_zero_and_integers(tmp_path):
+    assert load_setting(tmp_path, "music.reward_min_gap", "0").music.reward_min_gap == 0.0
+    assert load_setting(tmp_path, "music.reward_min_gap", "60").music.reward_min_gap == 60.0
+    assert load_setting(tmp_path, "music.reward_animals", "1").music.reward_animals == 1
+
+
+def test_reward_rule_defaults_to_animals_and_legacy_keeps_play():
+    root = Path(__file__).resolve().parents[1]
+    assert load().music.reward_rule == "animals"
+    assert load(root / "config.toml").music.reward_rule == "animals"
+    legacy = load(root / "config.legacy.toml").music
+    assert legacy.reward_rule == "play"
+    assert (legacy.reward_seconds, legacy.reward_presses, legacy.reward_window) == (60.0, 50, 10.0)

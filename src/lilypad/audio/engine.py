@@ -90,6 +90,9 @@ class AudioEngine:
                  reward_seconds: float = 60.0,
                  reward_presses: int = 50,
                  reward_window: float = 10.0,
+                 reward_rule: str = "play",
+                 reward_animals: int = 8,
+                 reward_min_gap: float = 180.0,
                  reward_source: str = "folder_first",
                  bundled_tracks: bool = False,
                  party_show: bool = False,
@@ -108,6 +111,13 @@ class AudioEngine:
         self.reward_seconds = max(1.0, reward_seconds)
         self.reward_presses = max(1, reward_presses)
         self.reward_window = max(0.5, reward_window)
+        # "animals": a party is earned by meeting `reward_animals` different
+        # animals, and at most one every `reward_min_gap` seconds. "play": the
+        # seconds-or-presses meter. (The config default is "animals"; the bare
+        # constructor keeps "play" so direct callers are unchanged.)
+        self.reward_rule = reward_rule if reward_rule in ("animals", "play") else "play"
+        self.reward_animals = max(1, int(reward_animals))
+        self.reward_min_gap = max(0.0, float(reward_min_gap))
         self.reward_source = reward_source
         self.beat_clock: BeatClock | None = None
         self._beat_maps = {}
@@ -154,6 +164,10 @@ class AudioEngine:
         self._party_pending = False
         self._active_seconds = 0.0
         self._press_count = 0
+        self._animals_met: set[str] = set()
+        # When the spacing clock started: the first event the engine sees
+        # (~start-up; tick() runs every frame) and then each party's end.
+        self._gap_origin: float | None = None
         self._duck = 1.0
         if mute:
             log.info("audio: muted by config")
@@ -414,8 +428,15 @@ class AudioEngine:
         last, self._last_activity = self._last_activity, now
         if self.tunes != "reward" or not self._enabled or self.mute:
             return
+        if self._gap_origin is None:
+            self._gap_origin = now
         if self._party != "idle":
             return  # the party IS the reward; the meter restarts once it ends
+        if self.reward_rule == "animals":
+            # Presses and seconds earn nothing here; only note_animal() fills
+            # the meter. A press after the gap is what releases a full one.
+            self._maybe_start_animal_party(now)
+            return
         # Engaged play, not wall clock: a gap longer than reward_window means
         # the child wandered off, and that time must not count toward the next
         # track. Progress itself survives the gap — a toddler who comes back
@@ -425,6 +446,26 @@ class AudioEngine:
         self._press_count += 1
         if (self._active_seconds >= self.reward_seconds
                 or self._press_count >= self.reward_presses):
+            self._start_party(now)
+
+    def note_animal(self, name: str, now: float) -> None:
+        """An animal was shown for a keypress (the effect engine's
+        ``on_animal`` hook, which names the creature actually spawned — the
+        F7-F12 dinosaur pick included). Only the "animals" rule uses it."""
+        if (self.reward_rule != "animals" or self.tunes != "reward"
+                or not self._enabled or self.mute):
+            return
+        if self._gap_origin is None:
+            self._gap_origin = now
+        if self._party != "idle":
+            return  # animals met during a party don't bank the next one
+        if name:
+            self._animals_met.add(name)
+        self._maybe_start_animal_party(now)
+
+    def _maybe_start_animal_party(self, now: float) -> None:
+        if (len(self._animals_met) >= self.reward_animals
+                and now - self._gap_origin >= self.reward_min_gap):
             self._start_party(now)
 
     # ----------------------------------------------- background (reward mode)
@@ -445,8 +486,10 @@ class AudioEngine:
     def reward_progress(self) -> float:
         """How full the meter is, 0..1 — what the on-screen party bar shows.
 
-        Either threshold can fire the party, so progress is whichever is
-        further along. Returns 0.0 when there is nothing to show: reward mode
+        "play" rule: either threshold can fire the party, so progress is
+        whichever is further along. "animals" rule: distinct animals met over
+        ``reward_animals`` (full while the spacing gap still holds the party
+        back). Returns 0.0 when there is nothing to show: reward mode
         off, no audio, or a party already running (the party is its own
         feedback — a full bar sitting there during the fireworks would be
         telling the child something they can already see).
@@ -455,12 +498,15 @@ class AudioEngine:
             return 0.0
         if self._party != "idle":
             return 0.0
+        if self.reward_rule == "animals":
+            return min(1.0, len(self._animals_met) / self.reward_animals)
         return min(1.0, max(self._active_seconds / self.reward_seconds,
                             self._press_count / self.reward_presses))
 
     def _start_party(self, now: float) -> None:
         self._active_seconds = 0.0
         self._press_count = 0
+        self._animals_met.clear()
         self._party = "starting"
         self._party_at = now
         self._party_pending = True
@@ -477,6 +523,7 @@ class AudioEngine:
         if self._party == "idle":
             return
         self._party = "idle"
+        self._gap_origin = now        # the spacing gap runs from the party's END
         self.beat_clock = None
         self._duck = 1.0
         # The party is not an idle gap: without this the first press after it
@@ -559,6 +606,8 @@ class AudioEngine:
             return
         self._tick_narrator(now)
         if self.tunes == "reward":
+            if self._gap_origin is None:
+                self._gap_origin = now
             self._tick_reward(now)
             clock = self.beat_clock
             if clock is not None:

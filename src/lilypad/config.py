@@ -29,6 +29,11 @@ class MusicConfig:
     reward_seconds: float = 60.0   # cumulative seconds of engaged play
     reward_presses: int = 50       # keypresses
     reward_window: float = 10.0    # gap over which play stops counting as engaged
+    # Which rule fills the meter: "animals" (new animals met) or "play" (the
+    # seconds-or-presses meter above, unchanged).
+    reward_rule: str = "animals"
+    reward_animals: int = 8        # distinct animals met since the last party
+    reward_min_gap: float = 180.0  # seconds from the last party's end (or start-up)
     party_volume: float = 0.95     # reward track level — the party's whole point
     party_duck: float = 0.25       # key cues drop to this fraction during a party
     bundled_tracks: bool = True
@@ -132,6 +137,13 @@ def _number(data: dict, name: str, default: float) -> float:
     return float(value)
 
 
+def _count(data: dict, name: str, default: int, minimum: int = 1) -> int:
+    value = _value(data, name, default)
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{name} must be an integer of at least {minimum}, got {value!r}")
+    return value
+
+
 def load(path: str | Path | None = None) -> Config:
     """Load config from ``path``; missing file or keys fall back to defaults."""
     data: dict = {}
@@ -156,6 +168,12 @@ def load(path: str | Path | None = None) -> Config:
     combo = tuple(str(k).upper() for k in escape.get("combo", EscapeConfig.combo))
     if len(combo) < 2:
         raise ValueError("escape.combo needs at least 2 keys — a single key is too easy to mash")
+
+    reward_rule = _choice(data, "music.reward_rule", MusicConfig.reward_rule, "animals", "play")
+    reward_animals = _count(data, "music.reward_animals", MusicConfig.reward_animals)
+    reward_min_gap = _number(data, "music.reward_min_gap", MusicConfig.reward_min_gap)
+    if reward_min_gap < 0:
+        raise ValueError(f"music.reward_min_gap must not be negative, got {reward_min_gap!r}")
 
     dev_window = display.get("dev_window", (1280, 720))
     if not (isinstance(dev_window, (list, tuple)) and len(dev_window) == 2):
@@ -189,6 +207,9 @@ def load(path: str | Path | None = None) -> Config:
             reward_seconds=max(1.0, float(music.get("reward_seconds", 60.0))),
             reward_presses=max(1, int(music.get("reward_presses", 50))),
             reward_window=max(0.5, float(music.get("reward_window", 10.0))),
+            reward_rule=reward_rule,
+            reward_animals=reward_animals,
+            reward_min_gap=reward_min_gap,
             party_volume=_clamp(float(music.get("party_volume", 0.95)), 0.0, 1.0),
             party_duck=_clamp(float(music.get("party_duck", 0.25)), 0.0, 1.0),
             bundled_tracks=_flag(data, "music.bundled_tracks", MusicConfig.bundled_tracks),
