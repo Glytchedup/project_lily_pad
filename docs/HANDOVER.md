@@ -1,148 +1,113 @@
-# Handover: deploy the visual upgrade to the Lily Pad Pi
+# Handover: Lily Pad after the 2026-11-26 Pi deploy
 
-_Written 2026-11-25 at the end of the visual-upgrade session._
+_Written 2026-11-26 at the end of the deploy session._
 
 ## Goal
 
-Dave asked for a big visual upgrade of the toddler app and to load it onto the Raspberry Pi once he had tested it locally. Done so far:
-- painted AI art for the whole cast, Pip, FX, letters and googly eyes
-- Lily as a pond character
-- storybook cards, a sticker album, a beat-synced party show and the Grand Parade
-- a narrator voice and bundled music
-
-He has tested `main` on the dev PC and said "Looks perfect". What remains: **find the Pi on the local network and update it to `main`**, then run the on-device checks.
+Dave wanted a big visual upgrade of the toddler app on the Raspberry Pi: painted art, Lily, storybook cards, the album, parties, the parade and the narrator. He then asked for the Pi to start correctly however it gets power-cycled or reset. Both are done and deployed. What remains is optional follow-up work: performance tuning, porting features from the August branch, the letter V repaint and a tagged release.
 
 ## State
 
-- `main` is pushed to `origin` (GitHub `Glytchedup/project_lily_pad`).
-  - The suite passes: 1772 passed, 5 skipped (`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python -m pytest -q`).
-  - `python -m lilypad --dev --smoke 6` exits 0.
-- Last code commits on `main`:
-  - `4d46eaa`: the party fires on the 8th distinct animal, the gap is 120 s counted from the previous party's end, and there are more fireworks.
-  - `ee1a8d8`: V is a feathered raptor with a crowned kitten rider in sunglasses.
-- Docs (CHANGELOG `[Unreleased]`, CLAUDE.md, PLAN.md decisions, README, VERIFY) were closed out in the `docs:` commit that follows those.
-- **The card runs `2e612a8` (deployed 2026-11-26) and is locked again.** `main` is ahead of it only by docs commits, so the device does not need a redeploy for them.
-- Ground-Zero registry PR: https://github.com/Glytchedup/Ground-Zero/pull/20 (deploy recorded in `ed4f445`). It needs merging.
+- **The Pi runs `71dbbd1` (main) and is locked.**
+  - It shows `overlayroot overlay` and `/boot/firmware` is `ro`, and `lilypad` is active.
+  - Dave played it hands-on and reported "everything is working good".
+  - Cold boot passed with the monitor unplugged and the Pi powered on first.
+  - `main` is ahead of the card by docs and CI commits only. Nothing needs a redeploy.
+- **Boot robustness (`1f1de52`).** `install.sh` saves the attached monitor's EDID to `/lib/firmware/edid/lilypad-HDMI-A-2.bin` and adds `drm.edid_firmware=HDMI-A-2:edid/lilypad-HDMI-A-2.bin` to `cmdline.txt`.
+  - Without the pin, a Pi that boots before the monitor invents a CVT 1080p timing (172.8 MHz). The ASUS VE276 shows that as "out of range", and HDMI audio fails with error 524.
+  - The card already had the overlay, `fsck.repair=yes`, `video=...@60D`, getty off, sysrq 0 and `Restart=on-failure`.
+- **Remote screen view (`fd73bc6`).** `sudo kill -USR1 $(systemctl show lilypad -p MainPID --value)` writes `/run/lilypad/frame.png`, which lives in RAM, so nothing touches the card. Verified live on the Pi.
+- **Tools.** `tools/pi/find_pi.ps1` finds the Pi. `tools/pi/pi_run.ps1` covers the rest:
+  - `-Script` / `-Command` run a script on the Pi.
+  - `-Restart` always ends with the app running.
+  - `-Fetch` copies a file off the Pi with scp.
+- **Installer.** `install.sh` now runs `apt-get install --no-upgrade` (`750c836`), so a deploy never moves system packages again.
+- **CI (`0a9dad1`).** GitHub Actions runs pytest and `--smoke 6` on Python 3.11 and 3.13, plus `bash -n` and `shellcheck -S error` on `install.sh`. It is green as of `603ba90`.
+- **Tests.** The local suite has 1780 passed, 6 skipped.
+- **Bench on the Pi at 1080p (VERIFY §7c).** All three scenarios miss the 16.7 ms p95 target:
+  - party: 58.6 fps, p95 17.1 ms
+  - heavy: 54.2 fps, p95 20.5 ms
+  - parade: 55.9 fps, p95 24.9 ms
 
-## Update 2026-11-26: deploy done
-
-Steps 1-3 and 5 below are done. The card runs `2e612a8` and is locked (`overlayroot overlay`), and `lilypad` is active. The Pi is now at `192.168.0.131/24` on `end0`, and `lilypad.local` resolves over IPv6. The kiosk smoke passed. Ground-Zero PR #20 has the registry update (`ed4f445`) and still needs merging. VERIFY §7c records the startup, memory and bench numbers. **Still open:** step 4, the hands-on checks with Dave at the keyboard. The bench misses p95 16.7 ms (party 17.1, heavy 20.5, parade 24.9), so decide whether to try `effects.fx_style = "glow"`, or to accept the engine's own degradation. In all three scenarios `min_scale` reached 0.25, the floor of the engine's degradation scale. There is no on-device baseline for `4b43ca6`, so this is not a proven regression. Run the glow A/B with `--config` pointed at a temp copy so `/etc` stays untouched; it needs the service stopped, so ask Dave first.
-
-`install.sh`'s `apt-get install` upgraded Mesa from 26.2.0 to 26.2.7 (`libgbm1`, `libegl-mesa0`, `libgl1-mesa-dri`, `libglx-mesa0` and `mesa-libgallium`). `dpkg --verify` passes, and the smoke and bench ran on it.
-
-**Fresh session: start at step 4 (hands-on checks).** Steps 1-3 below are kept as the recipe for the next deploy.
+  The engine's `min_scale` hit its 0.25 floor in all three. There is no on-device baseline for the old build.
+- **Ground-Zero.** PR https://github.com/Glytchedup/Ground-Zero/pull/20 (branch `lily-pad/visual-upgrade-2026-11-25`) carries the registry updates. It is open and needs merging.
 
 ## Next step
 
-1. **Find the Pi:** `pwsh -NoProfile -File C:/Github_Repos/project_lily_pad/tools/pi/find_pi.ps1`.
-   - It is read-only. It prints `FOUND <ip>` with the model, the root filesystem type (`overlay` means locked), the deployed commit and the service state.
-   - If it reports NOT FOUND, ask Dave to power the Pi on and plug in its Ethernet cable (its Wi-Fi config names an old network), then run it again.
-2. **Get Dave's explicit go for the deploy.** Changing the Pi is a production change, so name the target (`pi@<ip>`, hostname `lilypad`) and the scope:
-   - unlock the overlay
-   - pull `main`
-   - re-run `install.sh`
-   - merge the config
-   - relock
-3. **Deploy.** Run each step over `ssh -i ~/.ssh/lilypad_ed25519 pi@<ip>`, using Git's `ssh.exe`.
-   1. **Check before changing anything:**
-      - `findmnt -no SOURCE,FSTYPE /`
-      - `cd ~/project_lily_pad && git status --short && git log --oneline -1`
-      - `free -m`
-      - `df -h /media/root-ro`
-   2. **Unlock:** `sudo raspi-config nonint do_overlayfs 1 && sudo reboot`. After the reboot, `findmnt /` must no longer say `overlay`.
-   3. **Pull:** `cd ~/project_lily_pad && git fetch && git log --oneline -1 origin/main && git pull --ff-only`. The tip must match `origin/main` on GitHub.
-   4. **Boot partition:** it stays read-only even after the unlock. Run `sudo mount -o remount,rw /boot/firmware` so `install.sh` can add the `D` suffix to `video=` in `cmdline.txt`.
-   5. **Install:** `sudo ./install.sh`. It is idempotent: apt packages, `pip install .[pi]` into `/opt/lilypad/venv`, regenerated sounds, units and udev. Check that it ends without errors.
-   6. **Config merge:** `install.sh` keeps an existing `/etc/lilypad/config.toml`.
-      - Diff it against the repo's `config.toml`.
-      - Keep Dave's tuned values: volume, brightness, escape combo and timeouts.
-      - Make sure it does not pin old settings that switch off the upgrade:
-        - `music.tunes` must be `"reward"`
-        - `music.reward_rule` `"animals"`
-        - `effects.animal_art`, `pip_art` and `fx_style` `"painted"`
-        - `effects.silhouettes` not `false`
-        - `music.bundled_tracks` and `party_show` `true`
-      - Missing keys fall back to these defaults, so deleting a stale line is enough.
-   7. **Confirm the display pin:** `grep -o 'video=[^ ]*' /boot/firmware/cmdline.txt` must show `video=HDMI-A-2:1920x1080@60D`. Then `sudo mount -o remount,ro /boot/firmware`.
-   8. **Smoke test:** `sudo systemctl stop lilypad && sudo /opt/lilypad/venv/bin/python -m lilypad --kiosk --smoke 15`. It must exit 0. Then `sudo systemctl start lilypad`.
-   9. **Relock:** `sudo raspi-config nonint do_overlayfs 0 && sudo reboot`. Verify that `findmnt -no SOURCE,FSTYPE /` prints `overlayroot overlay` and `systemctl is-active lilypad` prints `active`.
-4. **On-device checks:** work through the new VERIFY.md items with Dave at the keyboard:
-   - startup time and RAM on the 1 GB Pi 5 (painted sprites prebuild at startup)
-   - 60 fps during a party
-   - a party on the 8th distinct animal
-   - music audible on HDMI audio (card 1)
-   - letters not covering animals
-   - the narrator saying "A" and "E" correctly
-   - the RGB keyboard lighting (only ever tested with the mock)
-   
-   Log the results in VERIFY.md and CHANGELOG.
-5. Update the Ground-Zero registry (`registry/projects/project-lily-pad.yaml`): the card's commit, and drop the "Deploy main" next step. Then merge PR #20 or add to it.
+1. **Ask Dave which follow-up he wants first.** Nothing is broken. The candidates are:
+   - **Frame rate:** an A/B of `effects.fx_style = "glow"` on the Pi.
+     - Use `python -m lilypad.bench --scenario party --display --config <temp copy>`, so `/etc` stays untouched.
+     - It stops the app, so ask Dave first, and use `pi_run.ps1 -Restart`.
+   - **Port features from `worktree-improvements-and-testing` (PR #4).** Do them one feature at a time with tests, in this order:
+     1. `--doctor`
+     2. HDMI audio
+     3. punctuation shapes
+     4. backend tests
+
+     Skip what `main` already covers (screen sleep, Pip's gaze). Close PR #4 when done.
+   - **Letter V repaint** (about $0.15): see Parked.
+   - **First tagged release:** everything is still under `[Unreleased]`.
+2. Merge Ground-Zero PR #20, or update it when the next steps change.
+
+**Deploy recipe**, for the next time code must reach the Pi. Production rules apply: name the target and scope and get Dave's go in that session. Steps marked **(stops app)** take the kiosk down, so the go must cover them.
+
+1. Read-only checks: `pwsh tools/pi/find_pi.ps1`, then `pi_run.ps1 -Command 'findmnt -no SOURCE,FSTYPE /; cd ~/project_lily_pad && git status --short && git log --oneline -1; free -m'`.
+2. **(stops app)** Unlock: `sudo systemctl stop lilypad; sudo raspi-config nonint do_overlayfs 1; sudo systemctl reboot`. Afterwards root must be `ext4`.
+3. **(stops app)** Pull and install, as one `pi_run.ps1 -Script ... -Restart`:
+   - `git pull --ff-only`
+   - `sudo mount -o remount,rw /boot/firmware`
+   - `sudo ./install.sh`, which must end with `==> Done`
+   - check `/etc/lilypad/config.toml` against the repo for new keys; `install.sh` keeps the existing file
+   - `sudo mount -o remount,ro /boot/firmware`
+4. **(stops app)** Optional smoke test: `sudo /opt/lilypad/venv/bin/python -m lilypad --kiosk --smoke 15 --config /etc/lilypad/config.toml`. Run it with the service stopped and `-Restart`.
+5. **(stops app)** Relock: `sync; sudo raspi-config nonint do_overlayfs 0; sudo systemctl reboot`. Then check:
+   - root is `overlayroot overlay`
+   - the service is `active`
+   - `tmds_char_rate=148500000` in `/sys/kernel/debug/dri/1/state`
+   - a `kill -USR1` frame dump looks right
+6. **(stops app)** Bench (`lilypad.bench --display`) and any red-screen display test.
 
 ## Parked / blocked
 
-- **Pi offline at hand-off:** see above.
-- **Letter V art:** the painted letter V still wears the old teal-with-orange-stripes pattern, which no longer matches the new raptor. Dave was offered a repaint (about $0.15, one 6-letter sheet job via `work/prod/make_letters.py` with V's `PAT` entry changed) and has not answered.
-- **Party drop markers:** the bundled songs' beat maps (`src/lilypad/assets/music/*.beats.json`) have no drop markers, so the party show's drop flash and firework never fire on the real songs. Whether to hand-author drops is an open decision.
-- **Fast key mashing:** `MAX_ANIMALS` (5 on screen) drops extra spawns when the child mashes keys, and a dropped animal does not count toward the party. This was kept deliberately: only animals the child actually sees count.
-- **`main` is the only official branch** (Dave, 2026-11-25). Everything else on GitHub was merged and deleted, except one branch.
-- **That branch: `worktree-improvements-and-testing` (open PR #4, Aug 13).**
-  - It holds 12 commits that never reached `main`:
-    - the `--doctor` health check
-    - `hdmi_audio.py` plus `deploy/lilypad-audio.service`
-    - reactive Pip (tongue-catch and celebration), with a piano flourish when he celebrates
-    - punctuation keys that name a colour or shape (`effects/shapes.py`)
-    - an "unattended playground goes quiet" mode
-    - the `animal_art` package split
-    - `SWAP.md`
-    - about 2,000 lines of backend tests
-  - It forked from `fa75e37`, so merging it would conflict in about 20 files.
-  - **Dave's decision:** keep it out of `main` for now. After the Pi deploy, port the still-useful parts onto `main` one feature at a time, each with its tests (`--doctor`, HDMI audio, punctuation shapes, backend tests first). Skip anything `main` already covers, such as screen sleep and Pip's gaze. Close PR #4 when the port is done.
+- **Letter V art.** The painted letter V still has the old teal-with-orange-stripes pattern, which doesn't match the new raptor.
+  - The fix is one 6-letter sheet job via `work/prod/make_letters.py`, with V's `PAT` entry changed.
+  - It's paid generation, so re-confirm the spend cap with Dave first.
+- **Party drop markers.** The bundled songs' beat maps have no drop markers, so the drop flash never fires on real songs. Whether to hand-author them is an open decision.
+- **Personal music plays first.** `/opt/lilypad/music` holds Dave's 11 OneRepublic instrumentals. With `reward_source = "folder_first"`, parties play those before the bundled anthems. Dave knows; no change has been asked for.
+- **The earlier black screen.** The monitor once showed a lit black screen with no "No signal" message, while the Pi was driving a healthy 148.5 MHz signal. Even solid red and green test fills didn't appear. Power-cycling the monitor fixed it. The cause was monitor state; nothing on the Pi needs changing.
+- **Stale file on the Pi.** `/etc/lilypad/config.toml.real` (Aug 29) and `config.toml.4b43ca6` are unused backups. Both are harmless.
 
 ## Environment
 
 - **Pi access:**
+  - `lilypad.local`, which resolves over IPv6 mDNS; Ethernet `end0` is `192.168.0.131/24`, a different subnet from the dev PC's Wi-Fi.
   - user `pi`, key `~/.ssh/lilypad_ed25519`, passwordless sudo
-  - hostname `lilypad`, Pi 5 with 1 GB RAM, Ethernet only (`end0`)
-  - client: Git's `C:\Program Files\Git\usr\bin\ssh.exe`
-  - The card is locked read-only (overlayroot). The unlock and relock steps are above; `do_bootro` does not exist.
-- The monitor is on **HDMI-A-2 / ALSA card 1**. The `@60D` force suffix in `cmdline.txt` is load-bearing.
-- **Dev box:** `C:/Python314/python.exe`. Tests need `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`.
-- **Paid generation tools** live in the git-ignored `work/`:
-  - `work/art-tools/imgbatch.py`, with `OPENROUTER_ENV_FILE=C:/Users/davek/claude-cloud.env` and `COLLAGE_SPEND_CAP=35`
-  - pose sheets: `work/prod/make_sheets.py`
-  - letters: `make_letters.py`
-  - cutter: `work/prod/sticker_cut.py`
-  - cast builder: `tools/art/stage_build.py`
-  - Run paid batches one at a time, because the ledger `work/spend.json` is not concurrency-safe.
-- **Spend:** OpenRouter about $17.18 of the run's $40 cap. That cap was granted for that session only, so re-confirm it before any paid generation.
-- **Ground-Zero:** clone at `C:/Github_Repos/Ground-Zero`, branch `lily-pad/visual-upgrade-2026-11-25`. Its git identity is set repo-locally.
+  - Git's `ssh.exe`/`scp.exe` in `C:\Program Files\Git\usr\bin`
+- **Monitor:** ASUS VE276 on DRM `HDMI-A-2`, which is the board's HDMI1 port, the micro-HDMI socket farther from USB-C. Its ALSA card is card 1.
+- **Dev box:**
+  - Python is `C:/Python314/python.exe`.
+  - Tests need `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`.
+  - There's no `shellcheck` locally; CI runs it.
+- **Paid art tools** are in the git-ignored `work/`. See `CLAUDE.md` and the [[visual-upgrade-run-2026-11-25]] memory. The earlier $40 cap was for that run only.
+- **Ground-Zero clone:** `C:/Github_Repos/Ground-Zero`, branch `lily-pad/visual-upgrade-2026-11-25`, with its git identity set repo-locally.
 
 ## Decisions
 
 These are settled; don't reopen them.
-- The party rule is **8 distinct animals since the last party**, with at least **120 s between parties counted from the previous party's end**. The first party has no gap. `config.legacy.toml` keeps the old `play` rule.
-- Letters are placed clear of animals, Pip and Lily (the sky band and side margins) through `ctx.occupied()`.
-- Painted googly eyes on letters and on Pip's look-around eyes are wanted; the larger letter eyes were approved.
-- V is a feathered turquoise raptor with an original orange kitten rider in a gold crown and sunglasses, and has **no claws or teeth**: the cast rule stands.
-- The narrator says the letter names "A" and "E" (not "Ay" or "Ee").
-- Lily's likeness is in the public repo by Dave's choice.
-- Painted AI art is committed with a per-file `CREDITS.md` row. The asset budget is 1.5 MB per file and 2.5 MB per music `.ogg`.
-- The Pi deploy always needs Dave's explicit go in the session that does it.
+- `main` is the only official branch. Features from the August branch are ported one at a time; it is never merged.
+- Party rule: 8 distinct animals; 120 s gap from the last party's end; the first party has no gap.
+- The EDID pin is the fix for boot order. Re-run `install.sh` after changing monitors.
+- Deploys never upgrade system packages (`--no-upgrade`). Upgrades are a separate, deliberate step.
+- Remote diagnosis of the screen uses the SIGUSR1 frame dump before anyone is asked to look at the monitor.
+- Idle timings stay at the defaults: attract mode at 60 s, screen sleep at 300 s.
+- V is a feathered raptor with an orange kitten rider, with no claws or teeth. The narrator says "A" and "E". Lily's likeness is public by Dave's choice.
 
-## Files touched this session (since the last handover)
+## Files touched this session
 
-- `src/lilypad/assets/{painted,letters,eyes,storybook,fx,music,album}/`: painted art, music, manifests and CREDITS
-- `src/lilypad/effects/{letters,eyes,numbers,engine,critter,album,...}.py`: painted route, placement, eyes, party fireworks
-- `src/lilypad/audio/{engine,voice}.py`: reward rule and gap, narrator letter names
-- `src/lilypad/__main__.py`: startup art setters
-- `src/lilypad/config.py`, `config.toml`: new defaults
-- `tests/`: about 80 new tests across the art, placement, eye, reward, asset-budget, storybook and album suites
-- `tools/pi/find_pi.ps1`: Pi discovery, new
-- `CHANGELOG.md`, `CLAUDE.md`, `PLAN.md`, `README.md`, `VERIFY.md`, `docs/fragments/`, `docs/HANDOVER.md`: docs
-
-## Retro candidates
-
-- The first narrator speech-recognition check left out letter names, so "Ay" being heard as "I" shipped and Dave caught it. Voice checks must cover every line, including the single letters.
-- The image model drew claws on V despite "no claws" in the prompt. Describe the wanted shape positively ("stubby toes ending in soft round tips") and look at every sheet before cutting it.
-- `git commit` failed in a fresh Ground-Zero clone because there is no global git identity on this machine; it was set repo-locally.
-- A subagent reported that Bash hung on simple commands in this environment and switched to PowerShell.
+- `install.sh`: EDID pin, `--no-upgrade`, SC1087 brace fix
+- `src/lilypad/frame_dump.py`, `src/lilypad/__main__.py`, `tests/test_frame_dump.py`: SIGUSR1 frame dump
+- `deploy/lilypad.service`: `RuntimeDirectory=lilypad`
+- `tools/pi/pi_run.ps1`: remote run, restart and fetch helper (new)
+- `.github/workflows/ci.yml`: CI (new)
+- `CLAUDE.md`, `CHANGELOG.md`, `VERIFY.md`, `docs/HANDOVER.md`: docs
+- Ground-Zero `registry/projects/project-lily-pad.yaml`: deploy recorded, next steps

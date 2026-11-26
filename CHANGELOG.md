@@ -6,6 +6,15 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added (2026-11-26, boot robustness and remote tools)
+- **EDID pin.** `install.sh` saves the attached monitor's EDID and adds `drm.edid_firmware=`, so a Pi that boots before the monitor wakes still uses the monitor's real mode and has HDMI audio. Verified with a cold boot, monitor unplugged.
+- **Frame dump.** `kill -USR1 <pid>` saves the frame just shown to `/run/lilypad/frame.png` (tmpfs) for a remote look.
+- **`tools/pi/pi_run.ps1`.** Runs scripts on the Pi with Unix line endings, guarantees the app restarts with `-Restart`, and fetches files with `-Fetch`.
+- **CI.** GitHub Actions runs pytest and the smoke test on Python 3.11 and 3.13, plus `shellcheck` on `install.sh`.
+
+### Changed (2026-11-26)
+- `install.sh` uses `apt-get install --no-upgrade`, so deploys never move system packages.
+
 ### Deployed (2026-11-26)
 - The Pi 5 card now runs `2e612a8`, up from `4b43ca6`. The deploy ran unlock, pull, `install.sh`, the repo's `config.toml` (values unchanged; the old file is kept as `/etc/lilypad/config.toml.4b43ca6`), the kiosk smoke (exit 0, peak RSS 408 MB) and relock. All 1539 venv files match their RECORD hashes after a cache drop, and ext4 is clean. The bench misses the 16.7 ms p95 target on the device: party 17.1 ms, heavy 20.5 ms, parade 24.9 ms (see VERIFY §7c). Dave checked it hands-on the same day: everything works. One problem surfaced. If the Pi boots before the monitor answers, it has no EDID, and the forced `video=` falls back to a CVT 1080p timing (172.8 MHz) that the ASUS rejects as "out of range". Audio also fails then. Restarting the app once EDID reads fixes both.
 

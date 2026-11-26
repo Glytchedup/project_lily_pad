@@ -210,6 +210,11 @@ Defaults ship painted (`effects.animal_art = "painted"`, `scene.world = "painted
 on a Pi yet. Where a number is given it is a starting guess, not a measurement:
 record the real one and fix this file.
 
+_2026-11-26, card at `71dbbd1`: Dave played it hands-on and reported "everything is working good". The
+party, music, narrator and letter-placement items below were not ticked one by one. Cold boot passed with
+the monitor unplugged and the Pi powered on first, thanks to the pinned EDID: it came up at 148.5 MHz with
+audio. `kill -USR1` produced `/run/lilypad/frame.png`, showing the painted pond, with the app running._
+
 **Startup and memory (Pi 5 with 1 GB)**
 - [x] `journalctl -u lilypad | grep "animal art"` reads
       `animal art: painted (N), traced (M), drawn (K)` with `K = 0` and no
