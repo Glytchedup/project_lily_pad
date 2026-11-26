@@ -33,7 +33,7 @@ class MusicConfig:
     # seconds-or-presses meter above, unchanged).
     reward_rule: str = "animals"
     reward_animals: int = 8        # distinct animals met since the last party
-    reward_min_gap: float = 180.0  # seconds from the last party's end (or start-up)
+    reward_min_gap: float = 120.0  # seconds from the last party's end (none before the first)
     party_volume: float = 0.95     # reward track level — the party's whole point
     party_duck: float = 0.25       # key cues drop to this fraction during a party
     bundled_tracks: bool = True

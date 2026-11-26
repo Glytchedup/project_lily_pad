@@ -49,6 +49,16 @@ log = logging.getLogger(__name__)
 
 CELEBRATION_COOLDOWN = 10.0  # s between milestone parties (mash-proofing)
 PARTY_PULSE = 4.0        # s of rainbow border when a reward track is earned
+# Party fireworks: a sky burst every PARTY_BURST_EVERY seconds (twice as fast
+# during the silent fanfare, PARTY_FANFARE_WINDOW mirroring the audio engine's
+# PARTY_FANFARE_SECONDS), plus a bigger shaped burst on every bar's downbeat.
+# Particle-budget gated, and kept out of the frog/animal/storybook footprints.
+PARTY_BURST_EVERY = 0.8
+PARTY_FANFARE_BURST_EVERY = 0.4
+PARTY_FANFARE_WINDOW = 3.0
+PARTY_BURST_COUNT = 70
+PARTY_DOWNBEAT_COUNT = 120
+PARTY_SKY = (0.06, 0.46)  # burst heights, as a fraction of screen height
 MAX_ANIMALS = 5          # concurrent creatures; see the note in spawn()
 ANIMAL_TYPES = (PeekabooAnimal, AnimalCrossing)
 #: Concurrent giant letters / count-alongs. Each one is screen-sized, so a
@@ -201,6 +211,9 @@ class EffectEngine:
         self._free_clock = None
         self._party_elapsed = 0.0
         self._last_drop = self._last_trio_bar = -1
+        self._burst_timer = 0.0      # party fireworks: seconds until the next sky burst
+        self._burst_n = 0            # bursts fired this party (steers the sky lane)
+        self._last_burst_bar = -1
         self.reflections = ReflectionCache(bool(self.painted and scene.reflections))
         self._foot_margins = {}
         if scene is not None:
@@ -520,6 +533,7 @@ class EffectEngine:
         self.party = True
         self._party_elapsed = 0.0
         self._last_drop = self._last_trio_bar = -1
+        self._burst_timer, self._burst_n, self._last_burst_bar = 0.0, 0, -1
         if self.party_show_enabled:
             self._free_clock = BeatClock()
             self.show = PartyShow()
@@ -731,6 +745,52 @@ class EffectEngine:
         if self.storybook is not None:
             self.storybook.close()
 
+    def _sky_spot(self) -> tuple[float, float] | None:
+        """A burst origin in the sky band, clear of Pip, Lily, the animals and
+        the storybook card. The x lane rotates left/middle/right so successive
+        bursts spread across the whole sky instead of clumping."""
+        ctx = self.ctx
+        keep_out = [r.inflate(r.w // 2, r.h // 2) for r in ctx.occupied()]
+        lane = self._burst_n % 3
+        for _ in range(8):
+            x = ctx.rng.uniform(ctx.width * (.06 + lane * .30), ctx.width * (.36 + lane * .30))
+            y = ctx.rng.uniform(ctx.height * PARTY_SKY[0], ctx.height * PARTY_SKY[1])
+            if not any(r.collidepoint(x, y) for r in keep_out):
+                return x, y
+            lane = (lane + 1) % 3
+        return None
+
+    def _party_fireworks(self, dt: float, clock) -> None:
+        """Sky bursts through the whole party (fanfare and track): one every
+        PARTY_BURST_EVERY s (twice as often in the fanfare) and a bigger
+        picture-burst on each bar's downbeat. Skipped while the particle
+        budget is spent, so the show can never push the frame rate down."""
+        self._burst_timer -= dt
+        bar = clock.bar
+        downbeat = bar >= 0 and bar > self._last_burst_bar
+        if self._burst_timer > 0 and not downbeat:
+            return
+        if self.particle_count() >= self.max_particles:
+            self._burst_timer = max(self._burst_timer, 0.1)   # retry soon
+            return
+        ctx = self.ctx
+        if downbeat:
+            self._last_burst_bar = bar
+            pos = self._sky_spot()
+            if pos is not None:
+                shape = ("heart", "star", "smiley")[bar % 3]
+                self.effects.append(shaped_burst(ctx, pos, shape, count=PARTY_DOWNBEAT_COUNT,
+                                                 spread=300, painted=False))
+                self._burst_n += 1
+        if self._burst_timer <= 0:
+            self._burst_timer = (PARTY_FANFARE_BURST_EVERY if self._party_elapsed < PARTY_FANFARE_WINDOW
+                                 else PARTY_BURST_EVERY)
+            pos = self._sky_spot()
+            if pos is not None:
+                self.effects.append(burst(ctx, pos, count=PARTY_BURST_COUNT, speed=480, gravity=300,
+                                          size=6, life=1.4, painted=False))
+                self._burst_n += 1
+
     def _update_show(self, dt):
         self._party_elapsed += dt
         clock = self.beat_clock
@@ -739,6 +799,7 @@ class EffectEngine:
         if clock.is_drop and clock.beat_index > self._last_drop:
             self._last_drop = clock.beat_index
             self.effects.append(shaped_burst(self.ctx, self.ctx.random_pos(.25), "star"))
+        self._party_fireworks(dt, clock)
         bar = clock.bar
         if bar > 0 and bar % 8 == 0 and bar > self._last_trio_bar:
             self._last_trio_bar = bar
