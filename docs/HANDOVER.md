@@ -81,7 +81,19 @@ He has tested `main` on the dev PC and said "Looks perfect". What remains: **fin
 - **Letter V art:** the painted letter V still wears the old teal-with-orange-stripes pattern, which no longer matches the new raptor. Dave was offered a repaint (about $0.15, one 6-letter sheet job via `work/prod/make_letters.py` with V's `PAT` entry changed) and has not answered.
 - **Party drop markers:** the bundled songs' beat maps (`src/lilypad/assets/music/*.beats.json`) have no drop markers, so the party show's drop flash and firework never fire on the real songs. Whether to hand-author drops is an open decision.
 - **Fast key mashing:** `MAX_ANIMALS` (5 on screen) drops extra spawns when the child mashes keys, and a dropped animal does not count toward the party. This was kept deliberately: only animals the child actually sees count.
-- **Old unmerged branches:** `art/cast-v1`, `cx/J10`, `cx/J11`, `cx/J12` and `cx/J14` predate this session. They were left alone and need a decision before deleting.
+- **`main` is the only official branch** (Dave, 2026-11-25). Everything else on GitHub was merged and deleted, except one branch.
+- **That branch: `worktree-improvements-and-testing` (open PR #4, Aug 13).**
+  - It holds 12 commits that never reached `main`:
+    - the `--doctor` health check
+    - `hdmi_audio.py` plus `deploy/lilypad-audio.service`
+    - reactive Pip (tongue-catch and celebration), with a piano flourish when he celebrates
+    - punctuation keys that name a colour or shape (`effects/shapes.py`)
+    - an "unattended playground goes quiet" mode
+    - the `animal_art` package split
+    - `SWAP.md`
+    - about 2,000 lines of backend tests
+  - It forked from `fa75e37`, so merging it would conflict in about 20 files.
+  - **Dave's decision:** keep it out of `main` for now. After the Pi deploy, port the still-useful parts onto `main` one feature at a time, each with its tests (`--doctor`, HDMI audio, punctuation shapes, backend tests first). Skip anything `main` already covers, such as screen sleep and Pip's gaze. Close PR #4 when the port is done.
 
 ## Environment
 
