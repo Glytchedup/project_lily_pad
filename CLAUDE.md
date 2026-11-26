@@ -206,7 +206,9 @@ both verified on-device), and dropping the output would risk the hot-plug-detect
 deadlock that `video=HDMI-A-1:...D` exists to prevent.
 
 Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry Pi OS Lite
-64-bit (Bookworm), rendering via SDL `kmsdrm` — no desktop environment.
+64-bit (Bookworm), rendering via SDL `kmsdrm` — no desktop environment. `install.sh` pins the
+attached monitor's EDID (`drm.edid_firmware=`), so the Pi uses the monitor's real mode and HDMI audio even
+when it boots before the monitor wakes. Re-run `install.sh` after changing monitors.
 
 ## Conventions
 
@@ -241,6 +243,9 @@ On a headless box run `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python -m pyt
   unverified on real metal until VERIFY.md is run on-device.
 - The lighting keymap (`lighting/keymap.py`) is documentation-derived; ripple
   origins may need on-device nudging (cosmetic only).
+- **Pi access from Windows:** `tools/pi/find_pi.ps1` finds the Pi (read-only). `tools/pi/pi_run.ps1` runs
+  remote scripts and fetches files; plain PowerShell-to-ssh pipes add CR to every line. Deploy steps and
+  every step that stops the app are listed in `docs/HANDOVER.md`.
 - `install.sh` is the single source of deployment truth; keep unit/udev/sysctl
   files in `deploy/` and the installer in sync.
 - Windows dev box: line endings are handled by `.gitattributes` (LF forced for
