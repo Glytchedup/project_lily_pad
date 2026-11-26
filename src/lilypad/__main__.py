@@ -17,6 +17,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import frame_dump
 from .audio.engine import PHRASE_WINDOW, AudioEngine
 from .effects.animals import ANIMAL_LETTERS, ANIMAL_VOICES
 from .lighting.base import LightingEngine
@@ -225,6 +226,7 @@ def _install_signal_handlers() -> None:
     _stop_requested = False
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
+    frame_dump.install()  # SIGUSR1 -> save the current frame (no-op on Windows)
 
 
 DRM_SYS = Path("/sys/class/drm")
@@ -521,6 +523,7 @@ def main(argv: list[str] | None = None) -> int:
                     engine.album.draw(screen)
             _draw_escape_cue(screen, escape.hold_progress(now))
             pygame.display.flip()
+            frame_dump.service_request(screen, kiosk)
             if cfg.lighting.mirror_animals:
                 tracked = _mirror_frame(engine, lighting, tracked, now)
             lighting.tick(now)

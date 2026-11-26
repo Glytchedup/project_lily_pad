@@ -19,6 +19,9 @@ Type=simple
 # on a single-purpose appliance (RESEARCH.md §2, PLAN.md D5).
 User=root
 WorkingDirectory=/opt/lilypad
+# /run/lilypad (tmpfs, owned by the service user) is where SIGUSR1 drops
+# frame.png for a remote look at the screen; nothing touches the read-only SD.
+RuntimeDirectory=lilypad
 ExecStart=/opt/lilypad/venv/bin/python -m lilypad --kiosk --config /etc/lilypad/config.toml
 Environment=SDL_VIDEODRIVER=kmsdrm
 Environment=PYTHONUNBUFFERED=1
