@@ -96,6 +96,26 @@ if [ -f "$CMDLINE" ]; then
     # D suffix drives the port regardless. The app also self-heals at runtime,
     # but a configured card should not need it.
     sed -E -i 's/(video=HDMI-A-[0-9]+:[0-9]+x[0-9]+@[0-9]+)( |$)/\1D\2/' "$CMDLINE"
+    # Forcing the port on is not enough when the Pi boots before the monitor
+    # answers: with no EDID the kernel invents a CVT 1080p timing (172.8 MHz)
+    # that the ASUS VE276 rejects as "out of range", and with no ELD the HDMI
+    # audio device fails to open (2026-11-26). So save the attached monitor's
+    # EDID and pin it, so boot never depends on which device wakes first.
+    # Runs only while a real EDID is readable; re-run install.sh after
+    # changing monitors (or delete the drm.edid_firmware= param).
+    conn="$(tr ' ' '\n' < "$CMDLINE" | sed -nE 's/^video=(HDMI-A-[0-9]+):.*/\1/p' | head -n1)"
+    if [ -n "$conn" ] && ! grep -q 'drm.edid_firmware=' "$CMDLINE"; then
+        edid_src="$(ls /sys/class/drm/card*-"$conn"/edid 2>/dev/null | head -n1)"
+        if [ -n "$edid_src" ] && [ "$(wc -c < "$edid_src")" -ge 128 ] \
+           && [ "$(head -c 8 "$edid_src" | od -An -tx1 | tr -d ' \n')" = "00ffffffffffff00" ]; then
+            mkdir -p /lib/firmware/edid
+            cp "$edid_src" "/lib/firmware/edid/lilypad-$conn.bin"
+            sed -i "1s/\$/ drm.edid_firmware=$conn:edid\/lilypad-$conn.bin/" "$CMDLINE"
+            echo "pinned $conn EDID ($(wc -c < "/lib/firmware/edid/lilypad-$conn.bin") bytes)"
+        else
+            warn "no EDID readable on $conn — monitor off? Re-run install.sh with it on to pin its modes"
+        fi
+    fi
     echo "cmdline: $(cat "$CMDLINE")"
 else
     warn "$CMDLINE not found — skipping quiet-boot params (not a Pi?)"
