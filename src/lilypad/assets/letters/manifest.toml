@@ -1,2 +1,82 @@
 # Painted capital stickers. Each [letters.A] through [letters.Z] row names its relative file.
 schema = 1
+
+[letters.A]
+file = "A.webp"
+
+[letters.B]
+file = "B.webp"
+
+[letters.C]
+file = "C.webp"
+
+[letters.D]
+file = "D.webp"
+
+[letters.E]
+file = "E.webp"
+
+[letters.F]
+file = "F.webp"
+
+[letters.G]
+file = "G.webp"
+
+[letters.H]
+file = "H.webp"
+
+[letters.I]
+file = "I.webp"
+
+[letters.J]
+file = "J.webp"
+
+[letters.K]
+file = "K.webp"
+
+[letters.L]
+file = "L.webp"
+
+[letters.M]
+file = "M.webp"
+
+[letters.N]
+file = "N.webp"
+
+[letters.O]
+file = "O.webp"
+
+[letters.P]
+file = "P.webp"
+
+[letters.Q]
+file = "Q.webp"
+
+[letters.R]
+file = "R.webp"
+
+[letters.S]
+file = "S.webp"
+
+[letters.T]
+file = "T.webp"
+
+[letters.U]
+file = "U.webp"
+
+[letters.V]
+file = "V.webp"
+
+[letters.W]
+file = "W.webp"
+
+[letters.X]
+file = "X.webp"
+
+[letters.Y]
+file = "Y.webp"
+
+[letters.Z]
+file = "Z.webp"
+
+
