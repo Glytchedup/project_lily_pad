@@ -31,8 +31,12 @@ say "1/6 Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 # --no-install-recommends keeps Debian's generic kernel/headers off the Pi
-# (RESEARCH.md §1) and the footprint small.
-apt-get install -y --no-install-recommends \
+# (RESEARCH.md §1) and the footprint small. --no-upgrade installs what is
+# missing and leaves what is already there alone: on 2026-11-26 a plain
+# install quietly moved the kiosk's Mesa 26.2.0 -> 26.2.7 mid-deploy. System
+# upgrades are a deliberate, separate step (`sudo apt-get upgrade` with the
+# card unlocked, then the VERIFY.md display checks).
+apt-get install -y --no-install-recommends --no-upgrade \
     python3-venv python3-dev build-essential \
     libegl1 libgles2 libgbm1 libdrm2 libegl-dev \
     alsa-utils \
