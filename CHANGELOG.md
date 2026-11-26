@@ -6,6 +6,9 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Deployed (2026-11-26)
+- The Pi 5 card now runs `2e612a8`, up from `4b43ca6`. The deploy ran unlock, pull, `install.sh`, the repo's `config.toml` (values unchanged; the old file is kept as `/etc/lilypad/config.toml.4b43ca6`), the kiosk smoke (exit 0, peak RSS 408 MB) and relock. All 1539 venv files match their RECORD hashes after a cache drop, and ext4 is clean. The bench misses the 16.7 ms p95 target on the device: party 17.1 ms, heavy 20.5 ms, parade 24.9 ms (see VERIFY §7c). The hands-on VERIFY items are still open.
+
 ### Added (visual upgrade waves: the painted pond, 2026-11-25)
 One line per user-visible change. `config.toml` ships the painted experience;
 `config.legacy.toml` (`--config config.legacy.toml`) is the pixel-identical

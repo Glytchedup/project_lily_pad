@@ -211,16 +211,23 @@ on a Pi yet. Where a number is given it is a starting guess, not a measurement:
 record the real one and fix this file.
 
 **Startup and memory (Pi 5 with 1 GB)**
-- [ ] `journalctl -u lilypad | grep "animal art"` reads
+- [x] `journalctl -u lilypad | grep "animal art"` reads
       `animal art: painted (N), traced (M), drawn (K)` with `K = 0` and no
       `Ignoring painted ...` warnings. Any warning means a kit fell back (the app
       still runs, but you are judging the older art).
-- [ ] Time from `Started lilypad` to the first frame is under about 15 s
+      _2026-11-26, card at `2e612a8`: `painted (30), traced (0), drawn (0)`, no
+      `Ignoring painted` lines._
+- [x] Time from `Started lilypad` to the first frame is under about 15 s
       (journal timestamps). Note the prebuild time; the painted cast prebuilds
       every pose at display size before the first keypress.
+      _2026-11-26: about 4 s from `Started lilypad` (7.97 s after boot) to the
+      Razer grab (12.0 s). The cast prebuild ran between 10.3 s and 11.3 s._
 - [ ] After a minute of play, `ps -o rss= -p $(systemctl show lilypad -p MainPID --value)`
       leaves comfortable headroom (`free -m` available memory, no swap in use) and
       `journalctl -k | grep -i oom` is empty. Record the RSS.
+      _2026-11-26, no play yet: 370 MB RSS idle after boot with 370 MB available
+      (locked card). The 15 s kiosk smoke with a party peaked at 408 MB and never
+      left less than 408 MB available. No OOM lines. Still to do: after real play._
 - [ ] The first press of every letter (A-Z, F7-F12) shows no hitch. Painted
       letters, eyes and storybook cards are the new first-press costs.
 
@@ -242,6 +249,16 @@ record the real one and fix this file.
       `sudo /opt/lilypad/venv/bin/python -m lilypad.bench --scenario party --display`
       (also `--scenario heavy` and `--scenario parade`): the report's p95 frame time
       is under 16.7 ms. The dev box measures about 7 ms for `party`.
+      _2026-11-26, Pi 5 at 1920x1080 over KMSDRM with the shipped config: misses._
+
+      | scenario | achieved fps | p50 ms | p95 ms | p99 ms | worst spawn ms |
+      |---|---|---|---|---|---|
+      | party | 58.6 | 13.6 | 17.1 | 28.2 | 40.3 (giraffe, frame 0) |
+      | heavy | 54.2 | 18.2 | 20.5 | 22.3 | 35.9 (giraffe, frame 0) |
+      | parade | 55.9 | 10.0 | 24.9 | 26.7 | 39.7 (zebra, frame 0) |
+
+      _Parade peak RSS was 390 MB, with a 114 MB sprite cache. The `glow` A/B
+      comparison below has not run yet._
 - [ ] `effects.fx_style = "glow"` and restart if it does not hold, and report.
 
 **Letters do not cover animals**

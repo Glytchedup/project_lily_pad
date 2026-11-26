@@ -29,6 +29,10 @@ He has tested `main` on the dev PC and said "Looks perfect". What remains: **fin
   - So the Pi was most likely off or unplugged from Ethernet.
 - Ground-Zero registry PR: https://github.com/Glytchedup/Ground-Zero/pull/20 (next steps updated). It needs merging.
 
+## Update 2026-11-26: deploy done
+
+Steps 1-3 and 5 below are done. The card runs `2e612a8` and is locked (`overlayroot overlay`), and `lilypad` is active. The Pi is now at `192.168.0.131/24` on `end0`, and `lilypad.local` resolves over IPv6. The kiosk smoke passed. Ground-Zero PR #20 has the registry update (`ed4f445`) and still needs merging. VERIFY §7c records the startup, memory and bench numbers. **Still open:** step 4, the hands-on checks with Dave at the keyboard. The bench misses p95 16.7 ms (party 17.1, heavy 20.5, parade 24.9), so decide whether to try `effects.fx_style = "glow"`, or to accept the engine's own degradation.
+
 ## Next step
 
 1. **Find the Pi:** `pwsh -NoProfile -File C:/Github_Repos/project_lily_pad/tools/pi/find_pi.ps1`.
