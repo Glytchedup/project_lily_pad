@@ -20,8 +20,7 @@ count_aloud = false
 key_notes = true
 # Background instrumental tunes:
 #   "reward" — silence while playing, then a whole track has to be EARNED:
-#              `reward_seconds` of engaged play or `reward_presses` keys,
-#              whichever lands first, buys fireworks and then a full track
+#              new animals met (`reward_rule`, below) buy fireworks and then a full track
 #              with Pip throwing a dance party. The track ending ends the
 #              party, and the next one has to be earned again.
 #   "active" — play while keys are being pressed, fading out after
@@ -44,10 +43,24 @@ background_folder = "music"
 # "active" mode only: seconds of no keypress before the music fades out. A
 # fade caught mid-track resumes from the same spot, not the top, next time.
 fade_after = 30.0
-# "reward" mode only. A track is earned by whichever of these lands first.
+# "reward" mode only. How the track is earned (`reward_rule`):
+#   "animals" — meet `reward_animals` DIFFERENT animals since the last party
+#               (letters A-Z, the F7-F12 dinosaurs, anything that brings an
+#               animal; repeats, numbers and other keys never count). Mashing
+#               one key earns nothing. Parties are spaced: at most one every
+#               `reward_min_gap` seconds, counted from the previous party's end
+#               (from start-up for the first). If the animals are met early,
+#               the party starts on the first keypress after the gap.
+#   "play"    — the older meter: `reward_seconds` of engaged play or
+#               `reward_presses` keys, whichever lands first.
 # reward_window is what makes the seconds mean *play* rather than wall clock:
 # a gap longer than this stops counting, so a key touched once a minute never
 # earns anything. Progress survives a break; only a party spends it.
+# (reward_seconds / reward_presses / reward_window are used by "play" only;
+# reward_animals / reward_min_gap by "animals" only.)
+reward_rule = "play"
+reward_animals = 8
+reward_min_gap = 180.0
 reward_seconds = 60.0
 reward_presses = 50
 reward_window = 10.0

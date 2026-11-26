@@ -404,6 +404,9 @@ def main(argv: list[str] | None = None) -> int:
                         reward_seconds=cfg.music.reward_seconds,
                         reward_presses=cfg.music.reward_presses,
                         reward_window=cfg.music.reward_window,
+                        reward_rule=cfg.music.reward_rule,
+                        reward_animals=cfg.music.reward_animals,
+                        reward_min_gap=cfg.music.reward_min_gap,
                         bundled_tracks=cfg.music.bundled_tracks, reward_source=cfg.music.reward_source,
                         party_volume=cfg.music.party_volume,
                         party_duck=cfg.music.party_duck)
@@ -412,7 +415,11 @@ def main(argv: list[str] | None = None) -> int:
     escape = EscapeHatch(combo=cfg.escape.combo,
                          hold_seconds=cfg.escape.hold_seconds)
     stats = PlayStats()
-    engine.on_animal = stats.on_animal
+    def animal_shown(name, now):
+        stats.on_animal(name, now)
+        audio.note_animal(name, now)   # the "animals" reward rule counts these
+
+    engine.on_animal = animal_shown
     if engine.storybook is not None:
         engine.storybook.on_show.append(audio.storybook_shown)
 
