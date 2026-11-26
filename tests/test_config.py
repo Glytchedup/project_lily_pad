@@ -152,7 +152,7 @@ PAINTED_SETTINGS = (
     ("music.reward_source", "folder_first", "folder_first"),
     ("music.reward_rule", "animals", "play"),
     ("music.reward_animals", 8, 8),
-    ("music.reward_min_gap", 180.0, 180.0),
+    ("music.reward_min_gap", 120.0, 180.0),  # legacy profile is frozen at 180
     ("music.party_show", True, False),
     ("lighting.mirror_animals", True, False),
     ("escape.summary_seconds", 8.0, 0.0),

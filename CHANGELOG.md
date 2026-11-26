@@ -6,6 +6,31 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### fix: the party fires on the 8th animal, comes back sooner, and has more fireworks (2026-11-25)
+Owner feedback after a live test: the party took a long time to trigger, the
+wait between parties should be two minutes, and there should be more fireworks.
+
+- **Root cause of the delay.** `AudioEngine._gap_origin` was started at the
+  first event the engine saw (about app start), so the *first* party of a run
+  waited out the whole `reward_min_gap` (180 s) after launch even with all eight
+  animals met. And a meter filled inside the gap only fired on the next
+  keypress or animal, because only `notify_activity` / `note_animal` checked it.
+  Now the gap exists only after a party, measured from that party's **end**
+  (`_gap_origin` stays `None` until one has ended), so the 8th distinct animal
+  fires it on that same `note_animal` call (the main loop starts the show the
+  same frame). `tick()` also checks the meter each frame, so one held back by
+  the gap fires the moment the gap expires with no further input.
+- `music.reward_min_gap` default 180 -> 120 (`config.py`, `config.toml`, the
+  `AudioEngine` constructor). `config.legacy.toml` is untouched (still `play`
+  rule, 180).
+- **More party fireworks** (`music.party_show`, so legacy is unchanged): a sky
+  burst every 0.8 s through the track and every 0.4 s through the 3 s fanfare,
+  plus a bigger heart/star/smiley burst on every bar's downbeat. Previously the
+  party showed only the opening salvo and the occasional drop star. Bursts spawn
+  in the sky band (6-46% of screen height), rotate across left/middle/right
+  lanes, steer clear of `ctx.occupied()` (Pip, Lily, animals, storybook card),
+  and are skipped while `max_particles` is spent. Bench `party` p95 6.5 -> 7.1 ms.
+
 ### fix: a monitor that drops hot-plug detect no longer leaves the Pi blind (2026-09-13)
 After two idle weeks the Pi 5 booted with both HDMI connectors
 `disconnected`, dmesg saying `Cannot find any crtc or sizes`, and the app

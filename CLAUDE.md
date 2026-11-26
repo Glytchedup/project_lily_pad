@@ -72,7 +72,14 @@ Python 3.11+ package `lilypad/`, src-layout:
   `not audio.party_active` -> `engine.end_party()`. While `engine.party` is
   set, attract mode, screen sleep and milestone celebrations are all
   suppressed: a child watching the frog dance presses nothing, and a
-  three-minute track outlasts both timeouts. `_start_tune` grew a `loops`
+  three-minute track outlasts both timeouts. With the default
+  `reward_rule = "animals"` the meter is 8 distinct animals and parties are
+  spaced by `reward_min_gap` (120 s) measured from the previous party's END;
+  the first party has no gap, the 8th animal fires it that frame, and `tick()`
+  releases one held back by the gap the instant it expires. During a party
+  (`music.party_show`) `EffectEngine._party_fireworks` adds a sky burst every
+  0.8 s (0.4 s in the fanfare) and a big shaped burst per bar, budget-gated
+  and clear of `ctx.occupied()`. `_start_tune` grew a `loops`
   argument for this — a reward track must END, so it plays once; every other
   mode still loops forever. `PARTY_MAX_SECONDS` is the failsafe: every mixer
   call in there swallows its exceptions, so a wedged mixer would otherwise

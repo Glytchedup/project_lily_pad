@@ -700,6 +700,75 @@ def test_audio_clock_coasts_between_mixer_reads_and_corrects_each_bar(tmp_path, 
         audio.close()
 
 
+def _watch_party_bursts(monkeypatch):
+    """Record the origin of every sky burst the party show fires."""
+    from lilypad.effects import engine as fx_engine
+    origins = []
+    for name in ("burst", "shaped_burst"):
+        real = getattr(fx_engine, name)
+
+        def spy(ctx, pos, *a, _real=real, **kw):
+            origins.append(pos)
+            return _real(ctx, pos, *a, **kw)
+        monkeypatch.setattr(fx_engine, name, spy)
+    return origins
+
+
+def _run_party(e, seconds, dt=1 / 30):
+    e.start_party(0, None)
+    for i in range(int(seconds / dt)):
+        e.update(dt, now=i * dt)
+
+
+def test_party_show_throws_a_steady_stream_of_sky_fireworks(monkeypatch):
+    """Floor: 20 s of party is at least 30 bursts (fanfare 0.4 s, track 0.8 s,
+    plus one big shaped burst per 2 s bar) where it used to be none beyond the
+    opening salvo. They fill the sky band and spread across its width."""
+    origins = _watch_party_bursts(monkeypatch)
+    e = make_engine(party_show=True)
+    _run_party(e, 20)
+    assert len(origins) >= 30
+    xs = [x for x, _ in origins]
+    assert min(xs) < SIZE[0] * .36 and max(xs) > SIZE[0] * .64      # whole sky, not a clump
+    assert all(SIZE[1] * .06 <= y <= SIZE[1] * .46 for _, y in origins)
+
+
+def test_party_fireworks_come_faster_in_the_fanfare_than_in_the_track(monkeypatch):
+    origins = _watch_party_bursts(monkeypatch)
+    e = make_engine(party_show=True)
+    _run_party(e, 3.0)
+    fanfare = len(origins)
+    del origins[:]
+    for i in range(90):                                              # 3 s more
+        e.update(1 / 30, now=3.0 + i / 30)
+    assert fanfare > len(origins) >= 3
+
+
+def test_party_fireworks_keep_off_pip_and_the_animals(monkeypatch):
+    origins = _watch_party_bursts(monkeypatch)
+    e = make_engine(party_show=True)
+    wall = pygame.Rect(0, 0, int(SIZE[0] * .66), SIZE[1])           # something big on the left
+    monkeypatch.setattr(e.ctx, "occupied", lambda: [wall])
+    _run_party(e, 10)
+    assert origins
+    assert all(not wall.inflate(wall.w // 2, wall.h // 2).collidepoint(x, y) for x, y in origins)
+
+
+def test_party_fireworks_respect_the_particle_budget(monkeypatch):
+    origins = _watch_party_bursts(monkeypatch)
+    e = make_engine(party_show=True)
+    monkeypatch.setattr(e, "particle_count", lambda: e.max_particles)
+    _run_party(e, 10)
+    assert origins == []
+
+
+def test_party_fireworks_are_off_without_the_party_show(monkeypatch):
+    origins = _watch_party_bursts(monkeypatch)
+    e = make_engine()                                               # legacy: party_show off
+    _run_party(e, 10)
+    assert origins == []
+
+
 def test_trio_reserves_three_animal_slots_once_per_eight_bars(monkeypatch):
     from lilypad.effects.engine import MAX_ANIMALS
     from lilypad.effects.parade import GrandParade

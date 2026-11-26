@@ -494,7 +494,7 @@ CAST = sorted(set(ANIMAL_LETTERS.values()) | set(DINOSAURS))
 def animal_engine(tmp_path, **kwargs):
     kwargs.setdefault("reward_rule", "animals")
     kwargs.setdefault("reward_animals", 8)
-    kwargs.setdefault("reward_min_gap", 180.0)
+    kwargs.setdefault("reward_min_gap", 120.0)
     return reward_engine(tmp_path, **kwargs)
 
 
@@ -592,21 +592,50 @@ def test_real_key_presses_through_the_effect_engine(tmp_path):
         audio.close()
 
 
-def test_the_gap_holds_a_full_meter_until_the_first_press_after_it(tmp_path):
-    engine = animal_engine(tmp_path, reward_min_gap=180.0)
+def test_the_gap_default_is_two_minutes(tmp_path):
+    import inspect
+    assert inspect.signature(AudioEngine).parameters["reward_min_gap"].default == 120.0
+    assert AudioEngine(tmp_path, mute=True).reward_min_gap == 120.0
+
+
+def test_the_first_party_fires_on_the_eighth_animal_with_no_gap_wait(tmp_path):
+    """The gap spaces parties apart; it is not a start-up delay. The 8th
+    distinct animal fires it on that very note_animal call (so the main loop
+    starts the show the same frame), seconds after launch, with the 2-minute
+    default gap nowhere near over."""
+    engine = animal_engine(tmp_path, reward_min_gap=120.0)
     try:
         engine.tick(0.0)                                    # app start
-        meet(engine, CAST[:8], start=10.0)                  # all eight at ~10 s
+        meet(engine, CAST[:7], start=3.0)
+        assert engine.party_active is False
+        assert engine.reward_progress == pytest.approx(7 / 8)
+        engine.note_animal(CAST[7], 8.0)                    # the 8th, 8 s after launch
+        assert engine.party_active is True
+        assert engine.consume_party_started() is True
+        assert engine._party_at == 8.0
+    finally:
+        engine.close()
+
+
+def test_a_meter_filled_inside_the_gap_fires_when_the_gap_expires(tmp_path):
+    """No further animal and no keypress needed: tick() releases it."""
+    engine = animal_engine(tmp_path, reward_min_gap=120.0)
+    try:
+        meet(engine, CAST[:8], start=1.0)                   # first party, immediately
+        assert engine.party_active is True
+        engine.consume_party_started()
+        engine._end_party(200.0)                            # the gap runs from the END
+        meet(engine, CAST[8:16], start=201.0)               # a full meter again
         assert engine.reward_progress == 1.0
         assert engine.party_active is False                 # held by the gap
-        press(engine, 10, start=60.0, gap=5.0)              # presses inside the gap
+        press(engine, 10, start=210.0, gap=5.0)             # presses inside the gap
+        engine.note_animal(CAST[16], 250.0)                 # extra animals inside it
         assert engine.party_active is False
-        engine.tick(179.0)                                  # time alone never starts one
+        engine.tick(319.9)
         assert engine.party_active is False
-        engine.notify_activity(179.9)
-        assert engine.party_active is False
-        engine.notify_activity(180.0)                       # first press after the gap
+        engine.tick(320.0)                                  # gap over: fires on this tick
         assert engine.party_active is True
+        assert engine.consume_party_started() is True
     finally:
         engine.close()
 
@@ -614,11 +643,12 @@ def test_the_gap_holds_a_full_meter_until_the_first_press_after_it(tmp_path):
 def test_a_number_key_after_the_gap_releases_a_full_meter(tmp_path):
     engine = animal_engine(tmp_path, reward_min_gap=30.0)
     try:
-        engine.tick(0.0)
         meet(engine, CAST[:8], start=1.0)
+        engine._end_party(5.0)                              # an earlier party ended at 5 s
+        meet(engine, CAST[8:16], start=6.0)
         assert engine.party_active is False
         engine.on_action(classify("5"))
-        engine.notify_activity(31.0)
+        engine.notify_activity(35.0)
         assert engine.party_active is True
     finally:
         engine.close()

@@ -51,8 +51,9 @@ fade_after = 30.0
 #               animal; repeats, numbers and other keys never count). Mashing
 #               one key earns nothing. Parties are spaced: at most one every
 #               `reward_min_gap` seconds, counted from the previous party's end
-#               (from start-up for the first). If the animals are met early,
-#               the party starts on the first keypress after the gap.
+#               (the first party of a run has no wait). The party starts the
+#               moment the last animal appears; if that lands inside the gap,
+#               it starts the moment the gap expires.
 #   "play"    — the older meter: `reward_seconds` of engaged play or
 #               `reward_presses` keys, whichever lands first.
 # reward_window is what makes the seconds mean *play* rather than wall clock:
@@ -62,7 +63,7 @@ fade_after = 30.0
 # reward_animals / reward_min_gap by "animals" only.)
 reward_rule = "animals"
 reward_animals = 8
-reward_min_gap = 180.0
+reward_min_gap = 120.0
 reward_seconds = 60.0
 reward_presses = 50
 reward_window = 10.0
