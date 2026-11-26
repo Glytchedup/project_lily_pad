@@ -48,7 +48,7 @@ if [ ! -x "$APP_DIR/venv/bin/python" ]; then
     python3 -m venv "$APP_DIR/venv"
 fi
 "$APP_DIR/venv/bin/pip" install --upgrade pip >/dev/null
-"$APP_DIR/venv/bin/pip" install "$REPO_DIR[pi]"
+"$APP_DIR/venv/bin/pip" install "${REPO_DIR}[pi]"
 
 # Notes, chords, character cues and four ~20 s instrumental tunes, all
 # synthesized in pure Python — a minute or so on a Pi, then never again.
