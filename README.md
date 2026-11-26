@@ -14,13 +14,15 @@ exit the app, reach the OS, or trigger anything unexpected.
 - **Two keys at once** → chord supernova · **Mashing 5+ keys** → rainbow chaos mode
 - **Keyboard RGB**: pressed keys flash, ripples spread, idle breathing, mash strobe
 - **After 5 quiet minutes** the screen goes black and the keys go dark; any key wakes it
+- **A painted pond**: animals walk, hop, fly and swim across a moonlit pond, a narrator
+  says the letters, and meeting 8 different animals earns a **dance party**
 
 **Parent escape hatch: hold BOTH Shifts + Backspace for 5 seconds.** A small
 progress bar appears bottom-right while you hold. The app exits cleanly and
 stays exited until you `sudo systemctl start lilypad` (or reboot).
 
 Docs: [RESEARCH.md](RESEARCH.md) · [PLAN.md](PLAN.md) · [BOM.md](BOM.md) ·
-[VERIFY.md](VERIFY.md) · [CHANGELOG.md](CHANGELOG.md)
+[VERIFY.md](VERIFY.md) · [CHANGELOG.md](CHANGELOG.md) · [docs/ART_BIBLE.md](docs/ART_BIBLE.md)
 
 ---
 
@@ -97,10 +99,45 @@ keys pressed at once is a chord: a toddler lying on the keyboard still makes
 music. Two keys inside the chord window add the diatonic triad their lower note
 roots; a mash storm brings a wide open swell.
 
-When nobody has touched a key for `display.idle_timeout`, one of four original
-instrumental tunes fades in behind the attract animation and fades straight out
-on the next keypress. They are in the same key as the keys, so playing over
-them lands in tune.
+The room is quiet while your child plays. A **narrator** says each letter's name
+(then "A is for Alligator!" once the keyboard goes quiet) and counts the number
+shapes aloud; if a recording is missing it falls back to the built-in robot voice.
+
+Music is **earned**. Meet 8 different animals (letters A-Z and the F7-F12
+dinosaurs; pressing the same key over and over earns nothing) and the screen
+fills with fireworks, then a whole song plays while Pip dances, Lily cheers and
+the keyboard lights follow the beat. The next party can start two minutes
+after the last one ends. The little bar in the top-right corner shows how close
+the next party is. The song comes from your own MP3s in the `music/` folder if
+there are any, then from four bundled anthems, then from the built-in tunes
+(`music.reward_source`). Every song is in the same key as the keys, so
+playing over it lands in tune.
+
+## The pond
+
+The default look is a painted, moonlit pond (the "Moonlit Gouache" style in
+[docs/ART_BIBLE.md](docs/ART_BIBLE.md)); the art was AI-generated and every file is
+credited in the `CREDITS.md` beside it under `src/lilypad/assets/`.
+
+- **Letters** are painted animal-pattern stickers with googly eyes, placed so they
+  don't cover the animals, Pip or Lily.
+- **Pip** greets passing animals, ducks, and sometimes rides one; an arrow key
+  always hands control straight back.
+- **Lily**, a cartoon girl, sits at one of six spots and moves
+  every 75 seconds. Turn her off with `scene.lily = false`.
+- **Storybook**: press the same letter three times quickly and its full-screen
+  picture-book page appears for a few seconds.
+- **Sticker album**: each new animal flies its portrait into a strip along the top
+  edge; while idle the strip shows the whole collection.
+- **Grand Parade**: find all 26 letters and every animal crosses the pond in a
+  parade with Pip riding the brachiosaurus.
+- **Today's play card**: when you leave with the escape combo, a card shows the time
+  played, the letters found, the favourite animal and parties earned. It is kept in
+  memory only, never saved, and it never holds up the exit.
+
+Prefer the original look? Run with `--config config.legacy.toml` (or copy it over
+`/etc/lilypad/config.toml`): drawn pond, traced animals, robot voice, and the older
+rule where a party is earned by playing for a minute.
 
 ## The animals
 
@@ -152,21 +189,31 @@ Edit `/etc/lilypad/config.toml` (dev mode uses `./config.toml`), then
 | Setting | Default | Notes |
 |---|---|---|
 | `audio.mute` | `false` | `true` = fully silent |
-| `audio.volume` | `0.8` | keypress cue level, 0–1 |
+| `audio.volume` | `0.65` | keypress cue level, 0–1 |
+| `audio.voice` | `"narrator"` | `narrator` (recorded clips) \| `espeak` (robot voice, the old behaviour) |
 | `music.key_notes` | `true` | every key plays a musical note |
 | `music.tunes` | `"reward"` | background music: `reward` \| `active` \| `idle` \| `always` \| `off` |
 | `music.tune_volume` | `0.6` | background music level, 0–1 |
 | `music.background_folder` | `"music"` | your own MP3s for `reward`/`active`; git-ignored |
-| `music.reward_seconds` | `60` | `reward`: engaged seconds that earn a track |
-| `music.reward_presses` | `50` | `reward`: keypresses that earn a track |
-| `music.reward_window` | `10` | `reward`: gap over which play stops counting as engaged |
+| `music.reward_rule` | `"animals"` | what earns a party: `animals` (meet `reward_animals` different animals) \| `play` (the older seconds-or-presses meter) |
+| `music.reward_animals` | `8` | `animals`: different animals that earn a party |
+| `music.reward_min_gap` | `120` | `animals`: seconds from the end of one party before the next can start |
+| `music.reward_seconds` | `60` | `play`: engaged seconds that earn a track |
+| `music.reward_presses` | `50` | `play`: keypresses that earn a track |
+| `music.reward_window` | `10` | `play`: gap over which play stops counting as engaged |
+| `music.reward_source` | `"folder_first"` | where party songs come from: `folder_first` \| `bundled` \| `generated` |
+| `music.party_show` | `true` | keyboard, Pip, Lily and fireworks follow the song's beat |
 | `lighting.backend` | `"auto"` | `razer_hid` → `openrazer` → `mock` fallback chain |
 | `lighting.brightness` | `0.9` | keyboard LEDs, 0–1 |
 | `escape.combo` | both Shifts + Backspace | evdev key names |
 | `escape.hold_seconds` | `5.0` | |
 | `display.idle_timeout` | `60` | seconds until the attract animation |
 | `display.sleep_timeout` | `300` | seconds until the screen goes black; `0` = never |
+| `effects.animal_art` | `"painted"` | `painted` \| `traced` \| `drawn`; overrides `silhouettes` |
 | `effects.silhouettes` | `true` | traced-outline art for all 26 side-on animals; `false` = the older drawn versions |
+| `effects.pip_art` / `effects.fx_style` | `"painted"` | `painted` or `drawn` Pip; `painted` or `glow` particles |
+| `effects.ecosystem` / `storybook` / `album` / `parade` | on (`storybook = "both"`) | Pip's encounters; storybook cards (`encore` \| `attract` \| `both` \| `off`); sticker album; Grand Parade |
+| `scene.world` / `scene.lily` | `"painted"` / `true` | painted or drawn (classic) pond; Lily on or off |
 
 ## Dev mode (no Pi needed)
 
@@ -177,7 +224,7 @@ lighting backend that logs LED frames:
 python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m lilypad --dev        # play in a window; same escape combo exits
-pytest                         # 934 unit tests
+pytest                         # 1772 passed, 5 skipped
 python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = healthy
 ```
 
@@ -198,9 +245,9 @@ python -m lilypad --dev --smoke 6   # 6s automated self-test, exit code 0 = heal
 Python 3.11+, pygame-ce on SDL KMSDRM (no desktop), python-evdev with an
 exclusive `EVIOCGRAB` grab, and direct-USB Razer lighting with OpenRazer and
 mock fallbacks. See [PLAN.md](PLAN.md) for the module map and
-[RESEARCH.md](RESEARCH.md) for why each piece was chosen. All sounds are
-procedurally generated (synth + espeak-ng) — no copyrighted assets. The
-background tunes are original compositions written for this project.
+[RESEARCH.md](RESEARCH.md) for why each piece was chosen. All key and effect cues are procedurally generated (synth + espeak-ng). The painted art, narrator
+recordings and the four bundled party anthems are AI-generated originals written
+for this project, credited file by file; no copyrighted characters or recordings.
 
 ## License
 

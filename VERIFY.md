@@ -65,9 +65,10 @@ your PC (`ssh pi@lilypad.local`) — the Pi's console is intentionally dead.
             of the screen width. Intended, but say so if they overwhelm the pond.
       - [ ] Weakest of the set, by my own judgement — say if they don't read:
             **monkey**, **koala**, **pterodactyl**.
-      - [ ] `journalctl -u lilypad | grep "animal art"` says `traced outlines`.
-            `drawn` means SDL_image here can't rasterise SVG and it fell back —
-            harmless, but you'd be judging the old art, so check this first.
+      - [ ] With `effects.animal_art = "traced"`, `journalctl -u lilypad | grep "animal art"`
+            says `traced (26)`. `drawn` means SDL_image here can't rasterise SVG
+            and it fell back — harmless, but you'd be judging the old art, so
+            check this first. (The shipped default is `painted`: see §7c.)
       - [ ] No stutter on the *first* press of any letter. They're prebuilt at
             boot (`grep prebuilt` shows 156 sprites, ~2–3 s of the boot); if
             that ever regresses it shows up exactly here and nowhere else.
@@ -201,6 +202,74 @@ you aren't waiting five minutes; put it back to `300.0` afterwards.
   read-only), and cutting it would risk exactly the hot-plug-detect deadlock
   §1 fixes. If you want the monitor's backlight off, use the monitor's own
   power-save setting.
+
+## 7c. Painted pond, parties and narrator
+
+Defaults ship painted (`effects.animal_art = "painted"`, `scene.world = "painted"`,
+`audio.voice = "narrator"`, `music.reward_rule = "animals"`). Nothing here has run
+on a Pi yet. Where a number is given it is a starting guess, not a measurement:
+record the real one and fix this file.
+
+**Startup and memory (Pi 5 with 1 GB)**
+- [ ] `journalctl -u lilypad | grep "animal art"` reads
+      `animal art: painted (N), traced (M), drawn (K)` with `K = 0` and no
+      `Ignoring painted ...` warnings. Any warning means a kit fell back (the app
+      still runs, but you are judging the older art).
+- [ ] Time from `Started lilypad` to the first frame is under about 15 s
+      (journal timestamps). Note the prebuild time; the painted cast prebuilds
+      every pose at display size before the first keypress.
+- [ ] After a minute of play, `ps -o rss= -p $(systemctl show lilypad -p MainPID --value)`
+      leaves comfortable headroom (`free -m` available memory, no swap in use) and
+      `journalctl -k | grep -i oom` is empty. Record the RSS.
+- [ ] The first press of every letter (A-Z, F7-F12) shows no hitch. Painted
+      letters, eyes and storybook cards are the new first-press costs.
+
+**A party triggers on the 8th animal**
+- [ ] Press 8 *different* animal letters one after another (e.g. A G O W C B D F):
+      the 8th starts fireworks the same moment, then a song plays while Pip dances.
+      The top-right bar fills as animals are met and disappears during the party.
+- [ ] Press one letter 30 times: no party, the bar does not move past 1/8.
+- [ ] The song ends and the party ends with it. Meet 8 new animals straight away:
+      nothing starts until two minutes after the song *ended* (`music.reward_min_gap
+      = 120`); then the party starts on its own without another keypress.
+- [ ] The song is audible near full volume, key cues are ducked under it, and it
+      sounds in tune with the keys. With no files in `music/` you hear a bundled
+      anthem; drop an MP3 in `music/`, restart, and that plays first.
+
+**Fireworks keep 60 fps**
+- [ ] During a party (sky bursts every 0.8 s, a bigger burst each bar) hold a
+      few letters and watch for stutter. Stop the service, then
+      `sudo /opt/lilypad/venv/bin/python -m lilypad.bench --scenario party --display`
+      (also `--scenario heavy` and `--scenario parade`): the report's p95 frame time
+      is under 16.7 ms. The dev box measures about 7 ms for `party`.
+- [ ] `effects.fx_style = "glow"` and restart if it does not hold, and report.
+
+**Letters do not cover animals**
+- [ ] Press `G`, then a letter or two while the giraffe is walking: the giant
+      letters sit in the sky and margins, clear of the animal, Pip, Lily and the
+      album strip. A crowded screen makes a letter a little smaller instead of
+      overlapping. The letter just pressed is always visible.
+- [ ] During a party the fireworks do not burst on top of Pip, Lily or an animal.
+
+**Narrator letters A and E**
+- [ ] Press `A` and `E` (several times, and mixed with other letters): the narrator
+      says the *names* of the letters, "A" as in "ay" and "E" as in "ee", cleanly and
+      at normal volume. Walk the alphabet once and listen for any other letter
+      that sounds wrong.
+- [ ] After a quiet moment "A is for Alligator!" follows the letter; mashing many
+      keys speaks only letter names, never over each other.
+- [ ] `audio.voice = "espeak"` and restart gives the old robot voice.
+
+**The rest of the new show (quick look)**
+- [ ] Three quick presses of one letter open that letter's storybook page; any key
+      still draws on top of it.
+- [ ] New animals fly a portrait into the strip along the top.
+- [ ] Lily appears, moves to a new spot after about 75 s, and sleeps when the screen does.
+- [ ] Hold both Shifts + Backspace: a "Today's play" card shows for a few seconds
+      and the app still exits at the 5 s mark with no extra wait.
+- [ ] Keyboard lights follow walking animals and the party beat.
+- [ ] `--config config.legacy.toml` (or `effects.animal_art = "traced"`,
+      `scene.world = "drawn"`, `audio.voice = "espeak"`) restores the classic look.
 
 ## 8. Escape hatch + service behavior
 

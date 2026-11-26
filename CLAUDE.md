@@ -19,6 +19,7 @@ held 5 s) exits cleanly.
 | `README.md` | Flash-to-playing instructions for the Pi |
 | `VERIFY.md` | On-device verification checklist (no Pi was attached during development) |
 | `CHANGELOG.md` | Entry per meaningful change |
+| `docs/ART_BIBLE.md` | House style ("Moonlit Gouache") every painted asset must match |
 
 ## Architecture (summary — details in PLAN.md)
 
@@ -43,13 +44,16 @@ Python 3.11+ package `lilypad/`, src-layout:
   budget is sacred, which is also why concurrent animals are capped at
   `MAX_ANIMALS` — and giant letters/count-alongs at `MAX_GLYPHS` (6), which
   retires the *oldest* glyph into its fade rather than dropping the newest,
-  so the key just pressed is always the visible one. **All 26 side-on creatures get their *shape* from a traced
-  public-domain outline** (`animal_stencil.py`) — see below.
+  so the key just pressed is always the visible one. The shipped art route is
+  **painted** (`effects.animal_art = "painted"`, see *Painted route*); beneath it,
+  **all 26 side-on creatures get their *shape* from a traced public-domain
+  outline** (`animal_stencil.py`) — see below.
 - `lighting/` — `LightingBackend` interface with three implementations: `razer_hid`
   (direct USB control, primary on Pi), `openrazer_backend` (fallback), `mock` (dev).
   `keymap.py` maps keycodes to the BlackWidow's (row, col) matrix for ripple math.
-- `audio/` — pygame.mixer cues, all procedurally generated (zero copyrighted assets
-  *in the repo* — see `background_folder` below for the one deliberate, git-ignored
+- `audio/` — pygame.mixer cues, procedurally generated, plus the bundled AI-generated
+  narrator clips and party anthems (zero copyrighted assets *in the repo* — see
+  `background_folder` below for the one deliberate, git-ignored
   exception). `music.py` is the theory core: every key maps to a **C major
   pentatonic** note, derived from `lighting/keymap.py`'s matrix (lower rows = lower
   notes, left→right climbs). That scale has no minor 2nd / tritone / major 7th in any
@@ -58,7 +62,11 @@ Python 3.11+ package `lilypad/`, src-layout:
   `Voice` instruments (per-harmonic decay, chorus, brightness rolloff, reverb) plus
   the character cues (animals, whoosh, boom — deliberately not musical). `tunes.py`
   holds four original anthemic-pop instrumental loops, rendered to seamless WAVs.
-  Letter/number names come from espeak-ng.
+  `voice.py` is the narrator: `audio.voice = "narrator"` (default) plays recorded
+  letter/phrase/counting/praise clips on one reserved mixer channel (letters always
+  pre-empt; "X is for Animal!" only after a quiet moment); `"espeak"`, and any missing
+  clip, falls back to espeak-ng for letter/number names. `voice.LETTER_NAMES`
+  spells names for TTS ("A" and "E" bare — the respellings "Ay"/"Ee" were spoken wrong).
 
   **Background music.** The default is `music.tunes = "reward"`: the room is
   quiet while the child plays, an `AudioEngine`-owned meter fills with
@@ -76,7 +84,14 @@ Python 3.11+ package `lilypad/`, src-layout:
   `reward_rule = "animals"` the meter is 8 distinct animals and parties are
   spaced by `reward_min_gap` (120 s) measured from the previous party's END;
   the first party has no gap, the 8th animal fires it that frame, and `tick()`
-  releases one held back by the gap the instant it expires. During a party
+  releases one held back by the gap the instant it expires;
+  `reward_rule = "play"` is the older seconds-or-presses meter (legacy profile).
+  `music.reward_source` orders the track pool (`folder_first`: the parent's
+  `background_folder`, then the bundled anthems in `assets/music`, then generated
+  tunes; `bundled` and `generated` reorder or narrow it). The four anthems are AI-generated, shifted to C major so they sit in the
+  keys' pentatonic, each with a `.ogg.beats.json` map; `audio/tracks.py`'s
+  `BeatClock` reads it (120 BPM without one) and times the party show.
+  During a party
   (`music.party_show`) `EffectEngine._party_fireworks` adds a sky burst every
   0.8 s (0.4 s in the fanfare) and a big shaped burst per bar, budget-gated
   and clear of `ctx.occupied()`. `_start_tune` grew a `loops`
@@ -136,6 +151,51 @@ deliberately well above the bottom of the screen: that gap is what the pad
 occupies. Anything that needs to know where he lands must ask `floor_y` rather
 than assume `h - r`.
 
+**Painted route (`effects.animal_art = "painted"`, the shipped default).** AI-generated
+gouache art in the house style (`docs/ART_BIBLE.md`) lives in `src/lilypad/assets/<kit>/`
+(`assets/…` below means that directory). A kit is a `manifest.toml`, its files and a
+`CREDITS.md`, read through `effects/assets.py`. **Every kit degrades alone**: a missing
+or invalid manifest, or a missing frame, logs once and the older route takes over
+(painted -> traced -> drawn; painted FX -> glow), so a checkout without art still runs.
+`__main__` configures them together — `critter.set_pip_art`, `letters.set_letter_art`,
+`letters.set_eye_art`, `glow.set_fx_style` — and the capture tool and `bench.py` must
+call the same four or they render the legacy look.
+
+| Kit | Used by | Holds |
+|---|---|---|
+| `painted/` | `painted.py`, `animals.py`, `critter.py`, `lily.py` | cast frames (idle/blink/step), Pip + pad (`pip_art`), count-along minis, Lily's six poses |
+| `world/` | `scenery.py`, `reflection.py`, `layout.py` | four pond moods, shore/water strips; `layout.py` holds the POND vs classic bands |
+| `fx/` | `glow.py` (`fx_style`) | painted stars, confetti, bubbles, balloons, glints, bokeh |
+| `letters/`, `eyes/` | `letters.py`, `eyes.py` | A–Z animal-pattern stickers and the googly-eye kit; digits keep the outline font |
+| `storybook/`, `album/` | `storybook.py`, `album.py` | 26 letter cards; the day-card backdrop |
+| `voice/`, `music/` | `audio/voice.py`, `audio/tracks.py` | narrator clips; four anthems + beat maps |
+
+Gait frames come from the effect clock (`AnimalCrossing.pose_for`, no rng). The
+characters and shows built on it: **Lily** (`lily.py`) sits at one of six spots and
+moves every `scene.lily_move_seconds`; `ecosystem.py`'s seeded Director picks Pip's
+rides, ducks, jumps and greetings; `storybook.py` shows a letter's card after three
+presses (and cycles them in attract); `album.py` flies each new animal's portrait into
+a top strip; `parade.py` runs the **Grand Parade** on alphabet completion and the
+three-animal trios during parties; `lighting/show.py` mirrors animals and the beat onto
+the keyboard. `stats.py` + `summary.py` back the parent's "Today's play" card — memory
+only, nothing on disk, and `summary` runs on the escape path so it must return by its
+deadline and never raise.
+
+**Letter placement.** Giant letters and count-along digits ask `ctx.occupied()`
+(`EffectEngine._occupied`: Pip and his pad, Lily, the storybook card's third, the
+album strip, crossing animals) and use the sky and margins, shrinking up to 15% when
+crowded; party fireworks use it too. A new thing a child can summon on screen must
+report its footprint there.
+
+**Asset rules.** `tests/test_asset_budget.py` fails the build over 1.5 MB per file
+(2.5 MB for `music/*.ogg`, which stream and are never decoded), 40 MB total, a file
+with no `CREDITS.md` row, or a manifest naming a missing file. Credit AI art with
+model, date and style ID; never add a reference to an existing character. Lily is a
+cartoon of the family's daughter, committed at the owner's choice (D35).
+`config.legacy.toml` is the **pixel-identical legacy profile** (drawn pond, traced
+animals, `play` rule, espeak, every painted feature off); run it with
+`--config config.legacy.toml`, and keep it passing when a feature touches old pixels.
+
 **Screen sleep**: after `display.sleep_timeout` (default 300 s) with no keypresses
 the engine goes `asleep` — black frame, LEDs blanked, tunes stopped, main loop
 throttled to `SLEEP_FPS`. Any *raw* keypress wakes it (`engine.wake()` is called
@@ -157,7 +217,7 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
   and tests on a desktop with `--dev`.
 - Update `CHANGELOG.md` and this file with every meaningful change.
 - No copyrighted characters/assets anywhere **in the repo** — original visuals,
-  generated audio. The one deliberate exception is `music.background_folder`
+  generated audio (AI-generated art, narration and music are credited per file). The one deliberate exception is `music.background_folder`
   (default `music/`, git-ignored): a parent's own songs for background music,
   local to their device only. Never remove it from `.gitignore` or commit its
   contents.
@@ -168,8 +228,11 @@ Deployment: `install.sh` (idempotent) + systemd unit + udev rules on Raspberry P
 pip install -e .[dev]
 python -m lilypad --dev       # windowed dev mode, mock lighting
 python -m lilypad --dev --smoke 6   # automated full-pipeline self-test
-pytest                        # 934 unit tests (mapper, registry, config, escape, lighting, music, synth, tunes, threading, effects, animals, sleep, stencil, critter, reward)
+pytest                        # 1772 passed, 5 skipped (~90 s)
+python -m lilypad.bench       # frame-time replay of heavy, party and idle scenes
 ```
+
+On a headless box run `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy python -m pytest -q`.
 
 ## Status / gotchas
 

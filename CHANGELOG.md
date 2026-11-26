@@ -6,6 +6,50 @@ pre-1.0, so everything lands under Unreleased until first on-device verification
 
 ## [Unreleased]
 
+### Added (visual upgrade waves: the painted pond, 2026-11-25)
+One line per user-visible change. `config.toml` ships the painted experience;
+`config.legacy.toml` (`--config config.legacy.toml`) is the pixel-identical
+classic profile. Every painted feature falls back to the drawn one when its
+art is missing, and every new file under `src/lilypad/assets/` has a CREDITS row.
+
+- **Painted cast.** `effects.animal_art = "painted"` (default; `traced` and `drawn` remain) draws the side-on animals, the farm four and the dinosaurs from painted PNG/WebP frames in `assets/painted`; a missing animal falls back to its traced outline, then its drawn sprite. Startup logs the painted/traced/drawn counts and prebuilds every pose at display size.
+- **Walk cycles.** Each gait picks its frame from the effect clock: walkers step on every bob trough, hoppers show the step mid-hop, flyers flap, swimmers swish, the jellyfish pulses.
+- **Painted pond worlds.** Four moods (starry, twilight, aurora, mist) cross-fade every `scene.mood_minutes`; shore and water drift separately; walkers and hoppers get rippling reflections; foreground water passes over swimmers; dinosaurs shake the shore; 24 fireflies gather where a key was pressed. `scene.world = "drawn"` restores the original pond.
+- **Painted Pip.** `effects.pip_art = "painted"` gives Pip a painted pad and pose set (idle, blink, cheer) and pupils that follow the action; the count-along shapes are painted minis.
+- **Lily.** A cartoon of the family's daughter lives in the pond as a quiet companion: six spots, a move every `scene.lily_move_seconds` (75) with a sparkle and a fade, waves at arriving animals, cheers on the beat in a party, sleeps with the screen (`scene.lily`).
+- **Painted effects.** `effects.fx_style = "painted"` swaps the glow dots for painted stars, petal and leaf confetti, bubbles, balloons, firework glints and bokeh flashes, on the same particle budget.
+- **Painted letters.** A-Z are patterned animal stickers (`assets/letters`) with cream googly eyes (`assets/eyes`, `effects/eyes.py`) whose pupils bounce on arrival, wander and blink. Digits and symbols keep the outlined font.
+- **Letters stay clear of characters.** Giant letters and count-along digits are placed through `ctx.occupied()` in the sky and margins, away from crossing animals, Pip, Lily, other glyphs, album stickers and storybook animals; a crowded scene shrinks a glyph by up to 15%.
+- **Storybook cards.** Three presses of the same letter within 1.2 s dissolve the pond into that letter's full-screen card for 4 s (`effects.storybook`: `encore`, `attract`, `both`, `off`); attract mode cycles the cards every 8 s. All 26 cards are painted.
+- **Sticker album.** The first sighting of each animal flies its painted portrait into a strip along the top edge; attract mode shows the whole collection (`effects.album`).
+- **Today's play card.** The parent escape combo can show a timed summary: time played, an A-Z grid lit where letters were found, favourite animal, parties earned and the longest streak. In memory only, never written to disk, and it can never delay or block the exit.
+- **Living pond.** Pip greets passing animals, ducks, jumps, waves and rides a moving back for up to eight seconds; any arrow press hands control straight back (`effects.ecosystem`). Encounters share a six-second cooldown and pause when the frame budget degrades.
+- **Party show.** A reward party plays a parent folder track, one of four bundled anthems or a generated tune (`music.reward_source`, `music.bundled_tracks`); Pip lands on the beat, and the keyboard, Lily and fireflies follow it (120 BPM clock when a track has no beat map). Drop markers fire fireworks and every eighth bar can bring a trio of animals across (`music.party_show`).
+- **Bundled music.** Four original Lyria-generated anthems with beat maps in `assets/music`, shifted to C major so they sit in the keyboard's pentatonic key.
+- **Grand Parade.** Completing the alphabet sends all 26 animals across the pond with Pip riding the brachiosaurus, the farm animals cheering, and a heart firework and fanfare to close (`effects.parade`).
+- **Narrator.** `audio.voice = "narrator"` (default) speaks 127 recorded lines (letters, animal phrases, counting, praise, five for Lily) on a reserved mixer channel: letter names always pre-empt, "X is for Animal!" follows only after a quiet moment, so a mash speaks only names. Missing clips fall back to espeak (`audio.voice = "espeak"` is the old behaviour).
+- **Keyboard mirror.** The RGB keyboard follows up to five crossing animals (coat patterns, owl blinks, waves, dinosaur stomps), flashes at firework bursts, and choreographs beat chases, downbeat rainbow wipes, drop flashes and a parade ribbon.
+- **Clean sprites.** `effects.clean_sprites` keeps particle trails in their own buffer so animals, Pip and letters stay crisp over them; `effects.max_sprite_width` caps wide animals (0.60 of the screen).
+- **Config and tooling.** 22 painted-pond settings with validation and `config.legacy.toml`; pond and classic layout presets; `python -m lilypad.bench` (heavy, party and idle scenes, `--display` for real presentation); `python -m lilypad.effects.assets --probe` (WebP decoder check); optional `art` dependencies.
+- **Art toolkit.** `tools/art/` generates, cuts, splices, packs, QA-reviews and captures art, renders narration takes and builds beat maps, all through a shared spend ledger; synthetic tests cover the paid interfaces.
+- **Asset budget test.** `tests/test_asset_budget.py` caps every file at 1.5 MB (2.5 MB for music `.ogg`) and the bundle at 40 MB, and requires a CREDITS row per file and a real file behind every manifest reference.
+
+### Changed (visual upgrade waves, 2026-11-25)
+- **Parties are earned by meeting animals.** `music.reward_rule = "animals"` (default) fires a party on the 8th different animal (`music.reward_animals`) since the last one, at most once every `music.reward_min_gap` (120 s) counted from the previous party's end; repeats, digits and non-animal keys never count, and the top-right meter shows animals met out of eight. `"play"` keeps the old seconds-or-presses meter and is what `config.legacy.toml` sets. Mechanics in the party-timing entry below.
+- **More party fireworks.** Sky bursts through the fanfare and the track, and a bigger heart, star or smiley burst on every downbeat.
+- **Painted celebrations.** The painted pond celebrates with fireworks and confetti and no longer draws the solid party border.
+- **Time spent watching a party counts as play** for the day card and the longest streak.
+- **Crossings follow the scene.** Walkers, fliers and swimmers use the selected scene's ground, flight and swim bands; the legacy profile keeps the classic bands and uncapped sizes.
+- **V is a feathered raptor.** The velociraptor now carries a crowned orange kitten rider in sunglasses (sprite frames and storybook card V).
+- **Bigger painted googly eyes** on the letters.
+
+### Fixed (visual upgrade waves, 2026-11-25)
+- The narrator said "Ay" and "Ee" for A and E; both letter clips (and the A phrase) were re-recorded so they say the letter names.
+- The first party of a run waited out the whole gap after launch, and a held-back meter fired only on the next keypress; the 8th animal now fires it at once and the expiring gap fires it with no further input (party-timing entry below).
+- Painted pond moods fade the outgoing moon into a shared dark sky, and Mist's shoreline meets the walkers' ground and reflections (plate 43 px lower at 1080p).
+- Painted portraits stay grounded through the farm animals' peekaboo jumps.
+- Album stickers whose start point is off-screen are clamped onto the screen.
+
 ### fix: the party fires on the 8th animal, comes back sooner, and has more fireworks (2026-11-25)
 Owner feedback after a live test: the party took a long time to trigger, the
 wait between parties should be two minutes, and there should be more fireworks.
